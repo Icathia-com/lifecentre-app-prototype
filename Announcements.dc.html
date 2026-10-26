@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Announcements</title>
+<script src="./support.js"></script>
+</head>
+
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0B1220;text-decoration:none}a:hover{color:#3F5675}
+summary::-webkit-details-marker{display:none}
+.tab{position:relative;width:62px;height:56px;display:flex;align-items:center;justify-content:center;color:#55627A;border-radius:28px;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:color .25s ease}.tab .lens{position:absolute;inset:3px 4px;border-radius:26px;background:rgba(255,255,255,0);border:1px solid rgba(255,255,255,0);box-shadow:none;transition:background .25s ease,border-color .25s ease,box-shadow .25s ease,transform .25s ease}.tab svg{position:relative;z-index:1}.tab:hover .lens,.tab:focus-visible .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.5);border-color:rgba(255,255,255,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 6px 16px rgba(40,60,90,.14)}.tab:hover,.tab:focus-visible{color:#0B1220}.tab[aria-current=page]{color:#0B1220}.tab[aria-current=page] .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.82);border-color:#fff;box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(40,60,90,.2)}.tab:active .lens{transform:scale(.93)}.tab-off{cursor:not-allowed;opacity:.4}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: linear-gradient(180deg, #5A7999 0px, #6B89A8 120px, #A9BCCF 280px, #D8E0E8 480px, #EEF0F3 760px, #F3F3F5 100%); font-family: Manrope, 'Segoe UI', system-ui, sans-serif; color: #0B1220; overflow: hidden">
+<div class="hide-sb" style="position: absolute; inset: 0; overflow-y: auto; box-sizing: border-box; padding: 52px 20px 120px; display: flex; flex-direction: column; gap: 16px">
+<header style="padding-top: 12px"><div style="font-size: 33px; font-weight: 500; line-height: 1.15; color: #FFFFFF">Announcements</div></header>
+<a href="Splash-Conference.dc.html" style="border-radius: 28px; background: linear-gradient(135deg, #1B1740 0%, #2A3B8F 60%, #3558C8 100%); color: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; box-shadow: 0 14px 34px rgba(30,40,110,0.28)">
+<div style="display: flex; align-items: center; justify-content: space-between"><span style="padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,0.18); font-size: 11px; font-weight: 700; letter-spacing: 0.04em">PINNED</span><span style="font-size: 12px; opacity: 0.8">[Date]</span></div>
+<div style="font-size: 21px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2">Empower Conference 2027: registration is open</div>
+<div style="font-size: 13.5px; opacity: 0.85; line-height: 1.4">[A short message from the church team about the conference]</div>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; padding-top: 2px">Register <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+</a>
+<div style="display: flex; flex-direction: column; gap: 12px; padding-top: 6px; flex-shrink: 0">
+<div style="font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: #0B1220">Services this weekend</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="6"><button onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button></sc-for>
+</div>
+</div>
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="3">
+<div style="border-radius: 26px; background: rgba(255,255,255,0.62); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); padding: 16px 18px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 3px; min-width: 0"><div style="font-size: 14px; font-weight: 800; letter-spacing: 0.03em; color: #D9261C; text-transform: uppercase; line-height: 1.25">{{c.name}}</div><div style="{{c.tagStyle}}">{{c.tag}}</div></div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0"><div style="font-size: 11.5px; color: #55627A">{{c.when}}</div><div style="font-size: 15px; font-weight: 700">{{c.time}}</div></div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px"><span style="{{c.av}}">{{c.initials}}</span><span style="display: flex; flex-direction: column; gap: 1px; min-width: 0"><span style="{{c.prefixStyle}}">{{c.prefix}}</span><span style="font-size: 15px; font-weight: 600">{{c.person}}</span><span style="font-size: 12px; color: #55627A">{{c.role}}</span></span></div>
+<div style="{{c.noteStyle}}">{{c.note}}</div>
+<div style="{{c.venueStyle}}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#55627A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg><span style="display: flex; flex-direction: column; gap: 1px"><span style="font-size: 13.5px; font-weight: 600">{{c.venue}}</span><span style="font-size: 12.5px; color: #3A4558; line-height: 1.4">{{c.address}}</span></span></div>
+</div>
+</sc-for>
+<div style="font-size: 11px; color: #55627A; text-align: center; padding: 2px 0 6px; flex-shrink: 0">Source: lifecentre.sg</div>
+</div>
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 20px; height: 68px; background: rgba(255,255,255,0.72); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); border-radius: 34px; display: flex; align-items: center; justify-content: space-around; padding: 0 6px; box-sizing: border-box; z-index: 40">
+<a href="Main.dc.html" class="tab" title="Home" aria-label="Home"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></a>
+<a href="Announcements.dc.html" class="tab" title="Announcements" aria-label="Announcements" aria-current="page"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4a1 1 0 0 0 1 1h2.4L16.5 19.5V4.5L6.4 9H4a1 1 0 0 0-1 1z"/><path d="M7.6 15.6l1.3 4.1a1 1 0 0 0 .95.7h1.1a1 1 0 0 0 .95-1.3L10.9 17.6"/><path d="M19.6 8.4l2-1.1M19.8 12h2.4M19.6 15.6l2 1.1"/></svg></a>
+<a href="Giving.dc.html" class="tab" title="Giving" aria-label="Giving"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M12 8c-1-3-5-3.5-5-1s3 1 5 1zM12 8c1-3 5-3.5 5-1s-3 1-5 1z"/></svg></a>
+<a href="Watch.dc.html" class="tab" title="Watch" aria-label="Watch"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></svg></a>
+<a href="Contact.dc.html" class="tab" title="Contact" aria-label="Contact"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 'yishun' }; }
+  renderVals() {
+    const SITES = [
+      { id: 'yishun', label: 'Yishun', items: [
+        { name: 'Tamil Service', person: 'Pas Grace Deborah', role: 'Senior Pastor · Life Centre', when: 'Every Sunday', time: '8.00am & 7.00pm' },
+        { name: 'English Service', person: 'Rev. Samuel Gift', role: 'Senior Overseer · Life Centre', when: 'Every Sunday', time: '10.30am' },
+        { name: 'Thai Service', person: 'Pas. Kittiya Darakam', role: 'Thai Pastor · Life Centre', when: 'Every Sunday', time: '1.00pm' },
+        { name: 'Mandarin Service', person: 'Sis Amanda', role: 'Mandarin Ministry Leader', when: 'Every Sunday', time: '4.00pm' },
+        { name: 'Malayalam Service', person: 'Pas. Rajesh Menon', role: 'Malayalam Service Pastor', when: 'Every 3rd Saturday', time: '7.00pm', note: 'Please contact 98551154 for any enquiries' }
+      ] },
+      { id: 'tuas', label: 'Tuas', items: [
+        { name: 'Tamil & Telugu Service', person: 'Pastor Joel Daniel', role: 'Church Elder · Life Centre', when: 'Every Sunday', time: '7:00pm', venue: 'Life Centre @ Tuas', address: 'Tuas South Recreation Center, 12 Tuas South Street 13, Singapore 636937' }
+      ] },
+      { id: 'kranji', label: 'Kranji', items: [
+        { name: 'Tamil Service', person: 'Bro. Selvaraj', role: 'Ministry Leader (Kranji) · Life Centre', when: 'Every Sunday', time: '8.00pm', venue: 'Life Centre @ Kranji', address: 'Kranji Recreation Center, 11 Kranji Cl, Singapore 737673' }
+      ] },
+      { id: 'pasir', label: 'Pasir Ris', items: [
+        { name: 'Tamil / English Service', person: 'Rev P Kunam', role: 'Lead Pastor · Life Centre @ Pasir Ris', when: 'Every Sunday', time: '5.00pm', venue: 'Life Centre @ Pasir Ris', address: 'Pentecost Methodist Church, 4 Pasir Ris Drive 6, Singapore 519420' }
+      ] },
+      { id: 'kids', label: 'Kids', items: [
+        { name: 'Sunday School', person: 'Pas Aarathi Ramchand', role: 'Children & Youth Pastor · Life Centre', when: 'Every Sunday', time: '8.30am', note: "Children's Church" }
+      ] },
+      { id: 'teens', label: 'Teens & Youth', items: [
+        { name: 'Youth Connect', tag: '17 – 24 yrs', prefix: 'Speaker', person: 'Bro. Andrew & Sis. Sharon', role: 'Youth Leaders · Life Centre', when: 'Every Saturday', time: '3.00pm' },
+        { name: 'Teens Connect', tag: '12 – 17 yrs', prefix: 'Speaker', person: 'Pas. Aarathi & Bro. Ryan', role: 'Youth Leaders · Life Centre', when: 'Every Saturday', time: '3.00pm' }
+      ] }
+    ];
+    const cur = SITES.find((x) => x.id === this.state.tab) || SITES[0];
+    const TITLES = /^(pas|pas\.|pastor|rev|rev\.|bro|bro\.|sis|sis\.)$/i;
+    const initials = (full) => full.split('&').map((p) => { const w = p.trim().split(/\s+/).filter((x) => x && !TITLES.test(x.replace(/\.$/, '')) ); const a = w[0] || '?', b = w.length > 1 ? w[w.length - 1] : ''; return (a[0] + (b ? b[0] : '')).toUpperCase(); }).join(full.indexOf('&') >= 0 ? '' : '').slice(0, 2);
+    const PAL = ['#E5322D', '#2F6BFF', '#2E7D5B', '#B4472A', '#6B4FA8', '#C98A00'];
+    const tabs = SITES.map((x) => ({ label: x.label, pick: () => this.setState({ tab: x.id }),
+      style: 'height:36px;padding:0 15px;border-radius:18px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .25s ease,color .25s ease;border:1px solid ' + (x.id === cur.id ? '#0B1220' : 'rgba(255,255,255,.9)') + ';background:' + (x.id === cur.id ? '#0B1220' : 'rgba(255,255,255,.62)') + ';color:' + (x.id === cur.id ? '#FFFFFF' : '#0B1220') }));
+    const cards = cur.items.map((it, i) => ({
+      name: it.name, tag: it.tag || '', tagStyle: 'font-size:12px;font-weight:600;color:#55627A;display:' + (it.tag ? 'block' : 'none'),
+      when: it.when, time: it.time,
+      initials: initials(it.person), av: 'width:44px;height:44px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;background:' + PAL[(i + SITES.indexOf(cur)) % PAL.length],
+      prefix: it.prefix || '', prefixStyle: 'font-size:11px;font-weight:600;color:#55627A;display:' + (it.prefix ? 'block' : 'none'),
+      person: it.person, role: it.role,
+      note: it.note || '', noteStyle: 'font-size:13px;color:#3A4558;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.6);display:' + (it.note ? 'block' : 'none'),
+      venue: it.venue || '', address: it.address || '', venueStyle: 'display:' + (it.venue ? 'flex' : 'none') + ';gap:8px;align-items:flex-start;padding-top:2px'
+    }));
+    return { tabs, cards };
+  }
+}
+</script>
+</body>
+</html>

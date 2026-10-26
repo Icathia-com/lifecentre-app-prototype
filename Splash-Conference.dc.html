@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Conference pop-up</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Manrope:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFFFFF;text-decoration:none}a:hover{color:#E3D7FF}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: radial-gradient(120% 60% at 50% 105%, #5B2BD6 0%, rgba(91,43,214,0) 60%), radial-gradient(70% 45% at 105% 35%, #A13CC8 0%, rgba(161,60,200,0) 60%), radial-gradient(60% 40% at -10% 20%, #3A1C8C 0%, rgba(58,28,140,0) 60%), #050508; font-family: Manrope, 'Segoe UI', system-ui, sans-serif; color: #FFFFFF; overflow: hidden">
+
+<div style="position: absolute; left: 20px; right: 20px; top: 24px; display: flex; align-items: center; justify-content: space-between">
+<span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #B9AEDB">Life Centre presents</span>
+<a href="Main.dc.html" aria-label="Close" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: #FFFFFF">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+</a>
+</div>
+
+<div aria-label="Speakers to be announced" role="img" style="position: absolute; left: 0; right: 0; top: 96px; height: 300px">
+<div style="position: absolute; left: 125px; top: 70px; width: 140px; height: 140px; border-radius: 50%; background: #E5322D; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #FFFFFF; box-shadow: 0 0 60px rgba(229,50,45,0.45)">[Speaker]</div>
+<div style="position: absolute; left: 34px; top: 30px; width: 82px; height: 82px; border-radius: 50%; background: #2F5BE8; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600">[Speaker]</div>
+<div style="position: absolute; left: 290px; top: 10px; width: 70px; height: 70px; border-radius: 50%; background: #B35FD6; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600">[Speaker]</div>
+<div style="position: absolute; left: 286px; top: 150px; width: 90px; height: 90px; border-radius: 50%; background: #F3E31C; color: #111111; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700">[Speaker]</div>
+<div style="position: absolute; left: 200px; top: 0px; width: 46px; height: 46px; border-radius: 50%; background: #3BD15A; filter: blur(0.5px)"></div>
+<div style="position: absolute; left: 20px; top: 190px; width: 56px; height: 56px; border-radius: 50%; background: #F08A24"></div>
+<div style="position: absolute; left: 110px; top: 236px; width: 34px; height: 34px; border-radius: 50%; background: #7E8CFF; filter: blur(1.5px)"></div>
+</div>
+
+<div style="position: absolute; left: 14px; right: 14px; bottom: 16px; border-radius: 40px; background: linear-gradient(180deg, rgba(18,14,40,0.55) 0%, rgba(84,52,210,0.55) 100%); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.14); padding: 26px 22px 22px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 22px; font-weight: 500; line-height: 1.2">Empower Conference</div>
+<div style="font-size: 13px; color: #C8BDEB">Registration pop-up on app launch</div>
+</div>
+</div>
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 10px">
+<div style="font-size: 92px; font-weight: 300; line-height: 0.9; letter-spacing: -0.04em">2027</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-bottom: 6px; font-size: 13px; color: #D9D0F5; text-align: right"><span>[Dates]</span><span>[Venue]</span></div>
+</div>
+<div aria-hidden="true" style="display: flex; align-items: flex-end; justify-content: space-between; height: 40px">
+<sc-for list="{{ticks}}" as="t" hint-placeholder-count="44"><span style="{{t.style}}"></span></sc-for>
+</div>
+<div style="display: flex; justify-content: space-between; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #C8BDEB"><span>[Theme or tagline]</span><span>[Seats]</span></div>
+<div style="display: flex; gap: 10px; margin-top: 4px">
+<a href="Main.dc.html" style="flex-grow: 1; height: 56px; border-radius: 28px; background: #FFFFFF; color: #0B0820; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700">Register now</a>
+<a href="Main.dc.html" style="height: 56px; padding: 0 20px; border-radius: 28px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; font-size: 14px; font-weight: 600">Later</a>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const colors = ['#FF5A36', '#FF7A3D', '#F59E5B', '#E8C27A', '#9EE0B8', '#5FD3C9', '#4CC3E8'];
+    const n = 44, filled = 30;
+    const ticks = Array.from({ length: n }, (_, i) => {
+      const on = i < filled;
+      const c = on ? colors[Math.min(colors.length - 1, Math.floor(i / filled * colors.length))] : 'rgba(255,255,255,0.28)';
+      const h = on ? 26 + (i % 3) * 4 + Math.round(i / filled * 10) : 22;
+      return { style: 'width: 3px; height: ' + h + 'px; border-radius: 2px; background: ' + c };
+    });
+    return { ticks };
+  }
+}
+</script>
+</body>
+</html>

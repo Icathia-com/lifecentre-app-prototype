@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Life Centre app: prototype</title>
+<style>
+:root{--bg:#0E1117;--bar:#171B24;--ink:#EDEFF4;--muted:#9AA3B2}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.bar{height:48px;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--bar);border-bottom:1px solid #262C38}
+.bar b{font-size:14px;font-weight:700;letter-spacing:.01em;white-space:nowrap}
+.bar select{flex:1;max-width:340px;height:34px;border-radius:10px;border:1px solid #333B4A;background:#0E1117;color:var(--ink);padding:0 10px;font-size:14px}
+.bar span{font-size:12px;color:var(--muted);white-space:nowrap}
+.stage{height:calc(100% - 48px);display:flex;align-items:flex-start;justify-content:center;padding:18px 0 0;overflow:hidden}
+.phone{width:390px;height:844px;border-radius:46px;border:10px solid #000;background:#000;box-shadow:0 30px 80px rgba(0,0,0,.55);overflow:hidden;transform-origin:top center;flex-shrink:0}
+.phone iframe{width:390px;height:824px;border:0;display:block;background:#fff}
+@media (max-width:520px){
+  .bar span{display:none}
+  .stage{padding:0;display:block}
+  .phone{width:100%;height:100%;border:0;border-radius:0;box-shadow:none;transform:none!important}
+  .phone iframe{width:100%;height:100%}
+}
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Life Centre app</b>
+  <select id="screen" aria-label="Choose a screen">
+    <option value="Splash-Conference.dc.html">Launch pop-up (start here)</option>
+    <option value="Main.dc.html">Home</option>
+    <option value="Home-Scrolled.dc.html">Home, scrolled</option>
+    <option value="Main-Overlap.dc.html">Home calendar: overlapping items</option>
+    <option value="Day-Plan.dc.html">Day plan</option>
+    <option value="Announcements.dc.html">Announcements</option>
+    <option value="Giving.dc.html">Giving</option>
+    <option value="Watch.dc.html">Watch</option>
+    <option value="Watch-Publisher.dc.html">Watch: publisher view</option>
+    <option value="Contact.dc.html">Contact</option>
+    <option value="Booking-SignedOut.dc.html">Facilities Booking Request: sign in</option>
+    <option value="Booking.dc.html">Facilities Booking Request: signed in</option>
+    <option value="Story-Devotion.dc.html">Story: morning devotion</option>
+    <option value="Story-Greeting.dc.html">Story: welcome video</option>
+  </select>
+  <span>Prototype with sample data</span>
+</div>
+<div class="stage"><div class="phone" id="phone"><iframe id="app" src="Splash-Conference.dc.html" title="Life Centre app prototype"></iframe></div></div>
+<script>
+(function(){
+  var sel=document.getElementById('screen'), app=document.getElementById('app'), phone=document.getElementById('phone');
+  sel.addEventListener('change',function(){ app.src=sel.value; });
+  function fit(){
+    if(window.innerWidth<=520){ phone.style.transform=''; return; }
+    var room=window.innerHeight-48-36, k=Math.min(1,room/844);
+    phone.style.transform='scale('+k+')';
+    phone.style.marginBottom=(-(844*(1-k)))+'px';
+  }
+  window.addEventListener('resize',fit); fit();
+  // keep the picker in step when the member taps through the app
+  app.addEventListener('load',function(){
+    try{ var f=app.contentWindow.location.pathname.split('/').pop(); for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===f){ sel.selectedIndex=i; break; } } }catch(e){}
+  });
+})();
+</script>
+</body>
+</html>

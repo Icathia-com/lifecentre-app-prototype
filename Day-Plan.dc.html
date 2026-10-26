@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Day plan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;color:inherit}
+.hide-sb{scrollbar-width:none}.hide-sb::-webkit-scrollbar{display:none}
+
+@keyframes glowA{0%,100%{transform:translate(0,0);opacity:.6}50%{transform:translate(-40px,60px);opacity:1}}
+@keyframes glowB{0%,100%{transform:translate(0,0)}50%{transform:translate(0,-50px)}}
+@keyframes riseIn{from{opacity:0;transform:translateY(36px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}
+.glowA{animation:glowA 7s ease-in-out infinite}.glowB{animation:glowB 7s ease-in-out infinite}
+.pop{animation:popIn .6s cubic-bezier(.2,.9,.3,1.3) both}
+.rise{animation:riseIn .7s cubic-bezier(.2,.9,.3,1.1) both}
+.gbtn{background:rgba(255,255,255,.1);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.2)}
+
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;font-family:Manrope,'Segoe UI',system-ui,sans-serif;color:#fff;background:radial-gradient(300px 300px at 400px 330px,rgba(208,64,154,.7),transparent),radial-gradient(200px 200px at 395px 620px,rgba(240,120,12,.5),transparent),radial-gradient(220px 220px at -20px 120px,rgba(90,46,134,.5),transparent),#0D0A11"><div class="glowA" aria-hidden="true" style="position:absolute;left:250px;top:210px;width:260px;height:260px;border-radius:50%;background:#E0489E;opacity:.55;filter:blur(80px)"></div><div class="glowB" aria-hidden="true" style="position:absolute;left:290px;top:520px;width:200px;height:200px;border-radius:50%;background:#FF8A1F;opacity:.45;filter:blur(70px)"></div><div style="position:absolute;left:0;right:0;top:0;height:44px;z-index:40;pointer-events:none"><div style="position:absolute;left:139px;top:11px;width:112px;height:32px;border-radius:16px;background:#000"></div><div style="position:absolute;left:36px;top:14px;font-size:15px;font-weight:600;color:#fff">9:41</div><svg aria-hidden="true" style="position:absolute;left:296px;top:17px" width="66" height="14" viewBox="0 0 66 14"><rect x="0" y="9" width="3" height="5" rx="1" fill="#fff"/><rect x="5" y="6" width="3" height="8" rx="1" fill="#fff"/><rect x="10" y="3" width="3" height="11" rx="1" fill="#fff"/><rect x="15" y="0" width="3" height="14" rx="1" fill="#fff" fill-opacity="0.45"/><path d="M26 5a8 8 0 0 1 12 0M28.5 8a5 5 0 0 1 7 0" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="32" cy="11.5" r="1.5" fill="#fff"/><rect x="44" y="1.5" width="20" height="11" rx="3" stroke="#fff" stroke-opacity="0.5" fill="none"/><rect x="46" y="3.5" width="14" height="7" rx="1.6" fill="#fff"/></svg></div><a href="Main.dc.html" aria-label="Back to Home" class="gbtn" style="position:absolute;left:22px;top:58px;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:10"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></a><div style="position:absolute;left:0;right:0;top:118px;display:flex;align-items:center;justify-content:center;gap:10px"><button onClick="{{prevWeek}}" aria-label="Previous week" style="width:40px;height:40px;border-radius:50%;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6l-6 6 6 6"/></svg></button><span style="font-size:22px;font-weight:500;letter-spacing:-.04em">{{monthName}}</span><span style="font-size:22px;font-weight:300;letter-spacing:-.04em;color:#B9AEC2">{{rangeText}}</span><button onClick="{{nextWeek}}" aria-label="Next week" style="width:40px;height:40px;border-radius:50%;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M9 6l6 6-6 6"/></svg></button></div><div style="position:absolute;left:20px;right:20px;top:172px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));align-items:start"><sc-for list="{{days}}" as="d" hint-placeholder-count="7"><button onClick="{{d.pick}}" aria-label="{{d.aria}}" aria-pressed="{{d.sel}}" style="background:none;border:0;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;color:#fff"><span style="{{d.dowStyle}}">{{d.dow}}</span><span style="{{d.halo}}"><span style="{{d.wrap}}"><span style="{{d.ring}}"></span><span style="{{d.num}}">{{d.label}}</span></span></span></button></sc-for></div><div style="position:absolute;left:0;right:0;top:276px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px"><b style="font-weight:600">Schedule</b><span style="color:#B9AEC2">{{scheduleLabel}}</span><span style="color:#B9AEC2">· {{progressLabel}}</span></div><div class="hide-sb" style="position:absolute;left:0;right:0;top:306px;bottom:0;overflow-y:auto;padding:6px 20px 150px;display:flex;flex-direction:column;gap:14px;-webkit-mask-image:linear-gradient(#000 calc(100% - 170px),transparent);mask-image:linear-gradient(#000 calc(100% - 170px),transparent)"><sc-for list="{{items}}" as="it" hint-placeholder-count="6"><div class="rise" onClick="{{it.open}}" style="{{it.card}}"><div style="display:flex;align-items:center;gap:12px"><span style="{{it.disc}}"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{it.icColor}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{it.ic}}"/></svg></span><span style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:0"><b style="font-size:15px;font-weight:600">{{it.t}}</b><span style="font-size:12px;color:{{it.subColor}}">{{it.sub}}</span></span><span onClick="{{it.toggle}}" style="{{it.stWrap}}"><span style="{{it.dot}}">{{it.check}}</span>{{it.status}}</span></div><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;font-weight:600;background:rgba(13,10,17,.45);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:6px 12px">{{it.time}}</span><span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600">{{it.act}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M9 6l6 6-6 6"/></svg></span></div></div></sc-for></div><div style="position:absolute;left:0;right:0;bottom:26px;display:flex;justify-content:center;z-index:10"><button onClick="{{openAdd}}" aria-label="Add a task" class="gbtn" style="height:54px;padding:0 24px 0 18px;border-radius:27px;display:flex;align-items:center;gap:10px;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 5v14M5 12h14"/></svg>Add task</button></div><sc-if value="{{sheetOpen}}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:0;z-index:60;display:flex;align-items:flex-end;background:rgba(0,0,0,.55)"><div onClick="{{closeSheet}}" style="position:absolute;inset:0"></div><div role="dialog" aria-label="{{sheetTitle}}" style="position:relative;width:100%;box-sizing:border-box;max-height:92%;overflow-y:auto;background:#1B1520;border-radius:34px 34px 0 0;padding:22px 20px 28px;display:flex;flex-direction:column;gap:12px;color:#fff;border-top:1px solid rgba(255,255,255,.14)"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:22px;font-weight:500;letter-spacing:-.03em">{{sheetTitle}}</div><button onClick="{{closeSheet}}" aria-label="Close" style="width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.1);font-size:18px;cursor:pointer;color:#fff">✕</button></div><div style="display:flex;flex-direction:column;gap:6px"><label style="font-size:13px;font-weight:600">What do you want to do?</label><input value="{{fTitle}}" onChange="{{setTitle}}" placeholder="e.g. Walk, call a friend, read Psalm 23" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,.08);color-scheme:dark;width:100%;box-sizing:border-box"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div style="display:flex;flex-direction:column;gap:6px"><label style="font-size:13px;font-weight:600">Date</label><input type="date" value="{{fDate}}" onChange="{{setDate}}" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,.08);color-scheme:dark;width:100%;box-sizing:border-box"></div><div style="display:flex;flex-direction:column;gap:6px"><label style="font-size:13px;font-weight:600">Time</label><input type="time" value="{{fTime}}" onChange="{{setTime}}" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,.08);color-scheme:dark;width:100%;box-sizing:border-box"></div></div><div style="display:flex;flex-direction:column;gap:6px"><label style="font-size:13px;font-weight:600">Repeat</label><select value="{{fRepeat}}" onChange="{{setRepeat}}" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,.08);color-scheme:dark;width:100%;box-sizing:border-box"><option value="none">Doesn't repeat</option><option value="daily">Every day</option><option value="weekly">Every week</option></select><div style="{{repeatNote}}">Changing this changes every day it repeats.</div></div><div style="display:flex;flex-direction:column;gap:6px"><label style="font-size:13px;font-weight:600">Notes (optional)</label><textarea value="{{fNotes}}" onChange="{{setNotes}}" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,.08);color-scheme:dark;width:100%;box-sizing:border-box;height:72px;padding:12px 14px;resize:none"></textarea></div><div style="font-size:13px;color:#FF8A80;min-height:16px">{{sheetError}}</div><button onClick="{{saveTask}}" style="height:52px;border-radius:26px;border:0;background:#fff;color:#1B1520;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">Save</button><div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:18px;background:rgba(255,255,255,.06)"><div style="font-size:13px;font-weight:600">Add to my own calendar</div><div style="display:flex;gap:8px"><a href="{{gHref}}" target="_blank" rel="noopener" style="flex:1;height:44px;border-radius:22px;border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600;text-decoration:none">Google Calendar</a><a href="{{icsHref}}" download="{{icsName}}" style="flex:1;height:44px;border-radius:22px;border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600;text-decoration:none">Apple / Outlook</a></div><div style="font-size:11px;color:#B9AEC2">Opens in your own calendar app. Nothing is sent to the church.</div></div><button onClick="{{askDelete}}" style="{{delBtn}}">Delete this task</button><div style="{{confirmBox}}"><div style="font-size:14px;font-weight:600">Delete this task for good?</div><div style="display:flex;gap:8px"><button onClick="{{doDelete}}" style="flex:1;height:48px;border-radius:24px;border:0;background:#C0392B;color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Yes, delete</button><button onClick="{{keepTask}}" style="flex:1;height:48px;border-radius:24px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Keep it</button></div></div><div style="font-size:12px;color:#B9AEC2;text-align:center">Your tasks are saved on this phone only.</div></div></div></sc-if></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    let sel = 185;
+    try {
+      const m = /^lcday:(\d+)$/.exec(window.name || '');
+      if (m) { sel = +m[1]; window.name = ''; } else { const v = localStorage.getItem('lc.day'); if (v !== null) sel = +v; }
+      localStorage.removeItem('lc.day');
+    } catch (e) { /* storage may be blocked */ }
+    let tasks = []; try { tasks = JSON.parse(localStorage.getItem('lc.tasks') || '[]'); } catch (e) { /* storage may be blocked */ }
+    this.state = { sel: Math.max(0, Math.min(552, sel)), tasks, sheet: null, confirm: false };
+  }
+  saveTasks(list) { this.setState({ tasks: list }); try { localStorage.setItem('lc.tasks', JSON.stringify(list)); } catch (e) { /* storage may be blocked */ } }
+  openAdd() { const d = new Date(2026, 9, 12); d.setDate(d.getDate() - 26 * 7 + this.state.sel); const p = (n) => (n < 10 ? '0' : '') + n; this.setState({ confirm: false, sheet: { mode: 'add', id: null, title: '', date: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()), time: '09:00', repeat: 'none', notes: '', err: '' } }); }
+  openEdit(id) { const t = this.state.tasks.find((x) => x.id === id); if (!t) return; const p = (n) => (n < 10 ? '0' : '') + n; this.setState({ confirm: false, sheet: { mode: 'edit', id, title: t.title, date: t.date, time: p(Math.floor(t.min / 60)) + ':' + p(t.min % 60), repeat: t.repeat, notes: t.notes || '', err: '' } }); }
+  renderVals() {
+    const TIDX = 185, TOTAL = 553;
+    const MONF = ['January','February','March','April','May','June','July','August','September','October','November','December'], MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'], DOWS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const BASE = new Date(2026, 9, 12); BASE.setDate(BASE.getDate() - 26 * 7);
+    const dayAt = (i) => { const d = new Date(BASE); d.setDate(BASE.getDate() + i); return d; };
+    const IC = {
+      mic: 'M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
+      verse: 'M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 1-2-2zM12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6',
+      heart: 'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z',
+      cal: 'M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM3 10h18M8 3v4M16 3v4',
+      group: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.5 3-6 6-6s6 2.5 6 6M17 10a2.4 2.4 0 1 0 0-4.8M15 14.5c3 0 6 1.5 6 5',
+      pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+      moon: 'M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z',
+      cross: 'M12 3v18M7.5 8h9'
+    };
+    const T = {
+      dev: { t: 'Morning devotion', sub: 'Ps. Grace · Audio · 5 min', time: '7:15 AM', act: 'Replay', ic: IC.mic },
+      verse: { t: 'Verse of the day', sub: 'Psalm 46:10 · 1 min', time: '7:00 AM', act: 'Read', ic: IC.verse },
+      service: { t: 'Sunday Service', sub: 'Main hall · [Service time]', time: '10:00 AM', act: 'Details', ic: IC.cross },
+      prayer: { t: 'Prayer time', sub: '[Prayer focus]', time: '7:30 AM', act: 'Start', ic: IC.heart },
+      book: { t: 'Empower Room booking', sub: 'Approved · Facilities', time: '2:30 PM', act: 'Details', ic: IC.cal },
+      thanks: { t: 'Gratitude note', sub: 'One thing you are thankful for', time: '6:00 PM', act: 'Write', ic: IC.pencil },
+      cell: { t: 'Cell group', sub: 'Online · Zoom', time: '8:00 PM', act: 'Join', ic: IC.group },
+      refl: { t: 'Evening reflection', sub: '[Reflection prompt]', time: '9:30 PM', act: 'Start', ic: IC.moon }
+    };
+    // same rules as the Home calendar, so both screens always agree
+    const MINS = { verse: 420, dev: 435, prayer: 450, service: 600, book: 870, thanks: 1080, cell: 1200, refl: 1290 };
+    const tasks = this.state.tasks;
+    const pad = (n) => (n < 10 ? '0' : '') + n, keyOf = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const occurs = (t, i) => { const d = dayAt(i), k = keyOf(d); if (k < t.date) return false; if (t.repeat === 'daily') return true; if (t.repeat === 'weekly') return new Date(t.date + 'T00:00:00').getDay() === d.getDay(); return k === t.date; };
+    const fmtMin = (m) => { const h = Math.floor(m / 60), mm = m % 60, h12 = h % 12 === 0 ? 12 : h % 12; return h12 + ':' + pad(mm) + ' ' + (h < 12 ? 'AM' : 'PM'); };
+    const listFor = (i) => { const base = ['verse', 'dev', 'prayer']; let l; if (i === TIDX) l = base.concat(['book']); else { const x = ['service', 'thanks', 'refl', 'cell', null, 'thanks', 'refl'][dayAt(i).getDay()]; l = x ? base.concat([x]) : base; } return l.concat(tasks.filter((t) => occurs(t, i)).map((t) => 'u:' + t.id)); };
+    const taskOf = (id) => tasks.find((t) => 'u:' + t.id === id);
+    const statusFor = (i, id) => {
+      if (id.indexOf('u:') === 0) { const t = taskOf(id), k = keyOf(dayAt(i)); if (t && t.done && t.done[k]) return 'done'; return i < TIDX ? 'missed' : 'later'; }
+      if (i > TIDX) return 'later'; if (i === TIDX) return id === 'book' ? 'next' : 'done';
+      const d = dayAt(i), v = (d.getDate() * 5 + d.getMonth() * 3 + d.getDay()) % 7;
+      if (id === 'prayer' && (v === 5 || v === 6)) return 'missed'; if (id === 'dev' && v === 6) return 'missed';
+      if (id !== 'verse' && id !== 'dev' && id !== 'prayer' && v === 6) return 'missed'; return 'done';
+    };
+    const doneFor = (i) => listFor(i).filter((id) => statusFor(i, id) === 'done').length;
+    const sel = this.state.sel, sd = dayAt(sel), start = sel - ((sd.getDay() + 6) % 7), end = start + 6;
+    const mask = (th) => 'radial-gradient(farthest-side,transparent calc(100% - ' + th + 'px),#000 calc(100% - ' + (th - 1) + 'px))';
+    const days = NAMES.map((nm, j) => {
+      const idx = start + j, d = dayAt(idx), n = listFor(idx).length, done = doneFor(idx), p = done / n, isSel = idx === sel, size = isSel ? 46 : 36, th = isSel ? 4 : 3, deg = Math.round(p * 360);
+      const col = p >= 1 ? '#C7CF3A' : (isSel ? '#F5E64A' : '#C7CF3A');
+      return {
+        dow: nm, label: isSel ? done + '/' + n : String(d.getDate()), sel: isSel, aria: nm + ' ' + d.getDate() + ', ' + done + ' of ' + n + ' done',
+        dowStyle: 'font-size:12px;' + (isSel ? 'font-weight:600;color:#fff' : 'color:#B9AEC2'),
+        halo: 'display:flex;align-items:center;justify-content:center;width:58px;height:58px;border-radius:50%;' + (isSel ? 'background:rgba(255,255,255,.06);box-shadow:0 0 0 1px rgba(255,255,255,.14)' : ''),
+        wrap: 'position:relative;display:block;width:' + size + 'px;height:' + size + 'px',
+        ring: 'position:absolute;inset:0;border-radius:50%;background:conic-gradient(' + col + ' 0deg ' + deg + 'deg,rgba(255,255,255,.16) ' + deg + 'deg 360deg);-webkit-mask:' + mask(th) + ';mask:' + mask(th),
+        num: 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:' + (isSel ? 13 : 12) + 'px;font-weight:600;color:' + (isSel ? '#fff' : (p > 0 ? '#E6EAA0' : '#8E8399')),
+        pick: () => this.setState({ sel: idx })
+      };
+    });
+    const ids = listFor(sel), done = doneFor(sel), today = sel === TIDX, past = sel < TIDX;
+    const rows = ids.map((id, k) => { const personal = id.indexOf('u:') === 0, st = statusFor(sel, id); return { id, k, personal, min: personal ? (taskOf(id) || {}).min : MINS[id], done: st === 'done', next: st === 'next', missed: st === 'missed' }; });
+    rows.sort((a, b) => a.min - b.min);
+    if (today) rows.sort((a, b) => (a.next ? 0 : a.done ? 2 : 1) - (b.next ? 0 : b.done ? 2 : 1) || a.min - b.min);
+    const firstLater = !today && !past ? rows.findIndex((r) => !r.done) : -1;
+    const items = rows.map((r, k) => {
+      const tk = r.personal ? taskOf(r.id) : null, t = r.personal ? { t: tk.title, sub: tk.notes || (tk.repeat === 'daily' ? 'Repeats every day · just for you' : (tk.repeat === 'weekly' ? 'Repeats every week · just for you' : 'Just for you')), time: fmtMin(tk.min), act: 'Edit', ic: IC.group } : T[r.id];
+      const dn = r.done, hot = r.next || k === firstLater, missed = r.missed;
+      const status = dn ? 'Done' : (missed ? 'Missed' : (r.next ? 'Up next' : 'Later'));
+      const dayKey = keyOf(dayAt(sel));
+      return {
+        t: t.t, sub: t.sub, time: t.time, act: t.act, ic: t.ic, status,
+        open: () => { if (r.personal) this.openEdit(tk.id); },
+        toggle: (e) => { if (e && e.stopPropagation) e.stopPropagation(); if (!r.personal) return; const list = this.state.tasks.map((x) => (x.id === tk.id ? { ...x, done: { ...(x.done || {}), [dayKey]: !(x.done && x.done[dayKey]) } } : x)); this.saveTasks(list); },
+        card: 'border-radius:32px;padding:14px 18px 14px 14px;display:flex;flex-direction:column;gap:14px;flex-shrink:0;-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:0 12px 28px rgba(0,0,0,.3);border:1px solid rgba(255,255,255,' + (hot ? .3 : .14) + ');animation-delay:' + (0.1 + k * 0.08) + 's;opacity:' + (missed ? .6 : 1) + ';' + (r.personal ? 'cursor:pointer;' : '') + 'background:' + (hot ? 'linear-gradient(135deg,rgba(224,74,156,.78),rgba(125,44,166,.5)),rgba(255,255,255,.06)' : 'rgba(255,255,255,.07)'),
+        disc: 'width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:' + (hot ? '#fff' : 'rgba(255,255,255,.1)') + ';border:1px solid rgba(255,255,255,' + (hot ? 0 : .16) + ')',
+        icColor: hot ? '#1C1620' : '#fff', subColor: hot ? '#F4DDF0' : '#B9AEC2', stWrap: 'display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:8px 0 8px 8px;margin:-8px 0 -8px -8px;color:' + (dn ? '#fff' : '#CDBFD5') + (r.personal ? ';cursor:pointer' : ''),
+        dot: 'width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#C23F8E;' + (r.personal ? 'cursor:pointer;' : '') + (dn ? 'background:#fff' : 'border:1.5px solid rgba(255,255,255,.45)'),
+        check: dn ? '✓' : ''
+      };
+    });
+    const sm = dayAt(start), em = dayAt(end);
+    const rangeText = sm.getMonth() === em.getMonth() ? sm.getDate() + '–' + em.getDate() : MON[sm.getMonth()] + ' ' + sm.getDate() + ' – ' + MON[em.getMonth()] + ' ' + em.getDate();
+    const go = (k) => this.setState({ sel: Math.max(0, Math.min(TOTAL - 1, this.state.sel + k)) });
+    const sh = this.state.sheet, edit = !!sh && sh.mode === 'edit';
+    const upd = (k) => (e) => this.setState({ sheet: { ...this.state.sheet, [k]: e.target.value, err: '' } });
+    const ymd = (sh && sh.date ? sh.date.replace(/-/g, '') : ''), hm = (sh && sh.time ? sh.time.replace(':', '') : '0900');
+    const endHm = (() => { const h = Math.min(23, (parseInt(hm.slice(0, 2), 10) + 1)); return pad(h) + hm.slice(2); })();
+    const rrule = sh && sh.repeat === 'daily' ? 'FREQ=DAILY' : (sh && sh.repeat === 'weekly' ? 'FREQ=WEEKLY' : '');
+    const ready = !!(sh && sh.title.trim() && sh.date && sh.time);
+    const gHref = ready ? 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(sh.title.trim()) + '&dates=' + ymd + 'T' + hm + '00/' + ymd + 'T' + endHm + '00&details=' + encodeURIComponent(sh.notes || '') + (rrule ? '&recur=' + encodeURIComponent('RRULE:' + rrule) : '') : '#';
+    const ics = ready ? ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Life Centre//Planner//EN', 'BEGIN:VEVENT', 'UID:' + (sh.id || 'new') + '-' + ymd + hm + '@lifecentre.sg', 'DTSTAMP:20261015T000000Z', 'DTSTART:' + ymd + 'T' + hm + '00', 'DTEND:' + ymd + 'T' + endHm + '00', rrule ? 'RRULE:' + rrule : null, 'SUMMARY:' + sh.title.trim().replace(/[,;]/g, ' '), 'DESCRIPTION:' + (sh.notes || '').replace(/\n/g, ' ').replace(/[,;]/g, ' '), 'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).join('\r\n') : '';
+    const sheetVals = {
+      sheetOpen: !!sh, sheetTitle: sh ? (edit ? 'Change your task' : 'Add a task') : '',
+      fTitle: sh ? sh.title : '', fDate: sh ? sh.date : '', fTime: sh ? sh.time : '', fRepeat: sh ? sh.repeat : 'none', fNotes: sh ? sh.notes : '',
+      setTitle: upd('title'), setDate: upd('date'), setTime: upd('time'), setRepeat: upd('repeat'), setNotes: upd('notes'),
+      repeatNote: 'font-size:11px;color:#B9AEC2;display:' + (edit && sh.repeat !== 'none' ? 'block' : 'none'),
+      sheetError: sh ? sh.err || '' : '', gHref, icsHref: ready ? 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics) : '#', icsName: 'my-task.ics',
+      closeSheet: () => this.setState({ sheet: null, confirm: false }),
+      openAdd: () => this.openAdd(),
+      saveTask: () => {
+        const s2 = this.state.sheet; if (!s2) return;
+        if (!s2.title.trim()) return this.setState({ sheet: { ...s2, err: 'Please say what the task is.' } });
+        if (!s2.date || !s2.time) return this.setState({ sheet: { ...s2, err: 'Please choose a date and a time.' } });
+        const rec = { id: s2.id || 't' + Date.now(), title: s2.title.trim(), date: s2.date, min: parseInt(s2.time.slice(0, 2), 10) * 60 + parseInt(s2.time.slice(3, 5), 10), repeat: s2.repeat, notes: s2.notes.trim(), done: s2.id ? ((this.state.tasks.find((x) => x.id === s2.id) || {}).done || {}) : {} };
+        const list = s2.mode === 'edit' ? this.state.tasks.map((x) => (x.id === s2.id ? rec : x)) : this.state.tasks.concat([rec]);
+        this.saveTasks(list); this.setState({ sheet: null, confirm: false });
+      },
+      delBtn: 'height:44px;border:0;background:none;font-family:inherit;font-size:14px;font-weight:600;color:#FF8A80;cursor:pointer;display:' + (edit && !this.state.confirm ? 'block' : 'none'),
+      confirmBox: 'display:' + (edit && this.state.confirm ? 'flex' : 'none') + ';flex-direction:column;gap:10px;padding:12px;border-radius:18px;background:rgba(192,57,43,.18)',
+      askDelete: () => this.setState({ confirm: true }), keepTask: () => this.setState({ confirm: false }),
+      doDelete: () => { const id = (this.state.sheet || {}).id; this.saveTasks(this.state.tasks.filter((x) => x.id !== id)); this.setState({ sheet: null, confirm: false }); }
+    };
+    return {
+      ...sheetVals, days, items, monthName: MONF[sd.getMonth()] + (sd.getFullYear() !== 2026 ? ' ' + sd.getFullYear() : ''), rangeText,
+      scheduleLabel: today ? 'Today, ' + sd.getDate() + ' ' + MON[sd.getMonth()] : DOWS[sd.getDay()] + ', ' + sd.getDate() + ' ' + MON[sd.getMonth()],
+      progressLabel: done + ' of ' + ids.length + ' done',
+      prevWeek: () => go(-7), nextWeek: () => go(7)
+    };
+  }
+}
+
+</script>
+</body>
+</html>
