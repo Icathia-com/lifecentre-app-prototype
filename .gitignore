@@ -1,0 +1,6 @@
+BACKEND-BRIEF.md
+node_modules/
+.env
+.env.*
+*.local
+*-debug.log

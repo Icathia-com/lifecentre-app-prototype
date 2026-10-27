@@ -1,0 +1,126 @@
+rules_version = '2';
+
+// Life Centre app: Firestore security rules.
+// Public: read published announcements and events, read verses.
+// Staff (an email in /staff, signed in with a verified Google account): write them.
+// Admin: also manage /staff. Everything not listed here (stories, videos for now) is denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function staffPath() {
+      return /databases/$(database)/documents/staff/$(userEmail());
+    }
+
+    function isStaff() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && exists(staffPath());
+    }
+
+    function isAdmin() {
+      return isStaff() && get(staffPath()).data.role == 'admin';
+    }
+
+    // Who may post announcements, verses and events. Any listed staff member for now.
+    function canPublish() {
+      return isStaff();
+    }
+
+    function isText(v, max) {
+      return v is string && v.size() > 0 && v.size() <= max;
+    }
+
+    function optionalText(d, key, max) {
+      return !(key in d) || (d[key] is string && d[key].size() <= max);
+    }
+
+    function validAnnouncement(d) {
+      return d.keys().hasOnly(['title', 'body', 'pinned', 'published', 'publishedAt', 'expiresAt',
+                               'linkUrl', 'linkLabel', 'sample', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['title', 'body', 'pinned', 'published', 'publishedAt', 'updatedBy'])
+        && isText(d.title, 120)
+        && d.body is string && d.body.size() <= 4000
+        && d.pinned is bool
+        && d.published is bool
+        && d.publishedAt is timestamp
+        && (!('expiresAt' in d) || d.expiresAt is timestamp)
+        && (!('linkUrl' in d) || (d.linkUrl is string && d.linkUrl.matches('^https://.{1,490}$')))
+        && optionalText(d, 'linkLabel', 40)
+        && (!('sample' in d) || d.sample is bool)
+        && d.updatedBy == userEmail();
+    }
+
+    function validVerse(d) {
+      return d.keys().hasOnly(['reference', 'text', 'translation', 'sample', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['reference', 'text', 'translation', 'updatedBy'])
+        && isText(d.reference, 60)
+        && isText(d.text, 1000)
+        && d.translation in ['KJV', 'WEB']
+        && (!('sample' in d) || d.sample is bool)
+        && d.updatedBy == userEmail();
+    }
+
+    function validEvent(d) {
+      return d.keys().hasOnly(['title', 'start', 'end', 'allDay', 'location', 'description', 'published',
+                               'sample', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['title', 'start', 'published', 'updatedBy'])
+        && isText(d.title, 120)
+        && d.start is timestamp
+        && (!('end' in d) || (d.end is timestamp && d.end >= d.start))
+        && (!('allDay' in d) || d.allDay is bool)
+        && optionalText(d, 'location', 120)
+        && optionalText(d, 'description', 2000)
+        && d.published is bool
+        && (!('sample' in d) || d.sample is bool)
+        && d.updatedBy == userEmail();
+    }
+
+    function validStaff(d) {
+      return d.keys().hasOnly(['role', 'name', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['role', 'updatedBy'])
+        && d.role in ['admin', 'leader', 'staff']
+        && optionalText(d, 'name', 80)
+        && d.updatedBy == userEmail();
+    }
+
+    // Public queries must filter on published == true, or the read is refused.
+    match /announcements/{id} {
+      allow read: if resource.data.published == true || isStaff();
+      allow create, update: if canPublish() && validAnnouncement(request.resource.data);
+      allow delete: if canPublish();
+    }
+
+    // The document id is the date, e.g. 2026-10-27.
+    match /verses/{date} {
+      allow read: if true;
+      allow create, update: if canPublish()
+        && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && validVerse(request.resource.data);
+      allow delete: if canPublish();
+    }
+
+    match /events/{id} {
+      allow read: if resource.data.published == true || isStaff();
+      allow create, update: if canPublish() && validEvent(request.resource.data);
+      allow delete: if canPublish();
+    }
+
+    // The document id is the lower-case email address.
+    match /staff/{email} {
+      allow get: if isAdmin() || (signedIn() && email == userEmail());
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && email == email.lower()
+        && validStaff(request.resource.data);
+      allow delete: if isAdmin() && email != userEmail();
+    }
+  }
+}

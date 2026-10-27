@@ -1,0 +1,166 @@
+// Security rules tests. Run with: npm test (starts the Firestore emulator, needs Java 21+).
+import { readFileSync } from 'node:fs';
+import { before, after, beforeEach, describe, it } from 'node:test';
+import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
+import {
+  doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, orderBy, Timestamp,
+} from 'firebase/firestore';
+import { seedDocs } from '../seed/seed.mjs';
+
+const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+const T = (iso) => Timestamp.fromDate(new Date(iso));
+
+let env;
+before(async () => {
+  env = await initializeTestEnvironment({ projectId: 'lifecentre-app', firestore: { rules } });
+});
+after(async () => { await env.cleanup(); });
+
+const ADMIN = 'admin@lifecentre.sg';
+const STAFF = 'staff@lifecentre.sg';
+
+beforeEach(async () => {
+  await env.clearFirestore();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'staff', ADMIN), { role: 'admin', updatedBy: ADMIN });
+    await setDoc(doc(db, 'staff', STAFF), { role: 'staff', updatedBy: ADMIN });
+    await setDoc(doc(db, 'announcements', 'pub'), { title: 'Public', body: 'b', pinned: false, published: true, publishedAt: T('2026-10-27T00:00:00Z'), updatedBy: STAFF });
+    await setDoc(doc(db, 'announcements', 'draft'), { title: 'Draft', body: 'b', pinned: false, published: false, publishedAt: T('2026-10-27T00:00:00Z'), updatedBy: STAFF });
+    await setDoc(doc(db, 'verses', '2026-10-27'), { reference: 'Psalm 46:10', text: 'Be still, and know that I am God.', translation: 'KJV', updatedBy: STAFF });
+    await setDoc(doc(db, 'events', 'pub'), { title: 'Cell group', start: T('2026-10-30T11:30:00Z'), published: true, updatedBy: STAFF });
+    await setDoc(doc(db, 'events', 'draft'), { title: 'Draft event', start: T('2026-10-31T11:30:00Z'), published: false, updatedBy: STAFF });
+  });
+});
+
+const anon = () => env.unauthenticatedContext().firestore();
+const user = (email, verified = true) => env.authenticatedContext(`u-${email}`, { email, email_verified: verified }).firestore();
+
+const announcement = (email, extra = {}) => ({ title: 'New', body: 'Body', pinned: false, published: true, publishedAt: T('2026-10-28T00:00:00Z'), updatedBy: email, ...extra });
+const verse = (email, extra = {}) => ({ reference: 'John 3:16', text: 'For God so loved the world…', translation: 'WEB', updatedBy: email, ...extra });
+const event = (email, extra = {}) => ({ title: 'Prayer', start: T('2026-11-04T11:30:00Z'), published: true, updatedBy: email, ...extra });
+
+describe('public (signed out)', () => {
+  it('reads a published announcement', () => assertSucceeds(getDoc(doc(anon(), 'announcements', 'pub'))));
+  it('lists published announcements with the published filter', () =>
+    assertSucceeds(getDocs(query(collection(anon(), 'announcements'), where('published', '==', true), orderBy('publishedAt', 'desc')))));
+  it('cannot list announcements without the published filter', () => assertFails(getDocs(collection(anon(), 'announcements'))));
+  it('cannot read a draft announcement', () => assertFails(getDoc(doc(anon(), 'announcements', 'draft'))));
+  it('reads a verse', () => assertSucceeds(getDoc(doc(anon(), 'verses', '2026-10-27'))));
+  it('reads a published event, not a draft', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'events', 'pub')));
+    await assertFails(getDoc(doc(anon(), 'events', 'draft')));
+  });
+  it('cannot write anything', async () => {
+    await assertFails(setDoc(doc(anon(), 'announcements', 'x'), announcement(STAFF)));
+    await assertFails(setDoc(doc(anon(), 'verses', '2026-11-01'), verse(STAFF)));
+    await assertFails(setDoc(doc(anon(), 'events', 'x'), event(STAFF)));
+    await assertFails(deleteDoc(doc(anon(), 'announcements', 'pub')));
+  });
+  it('cannot read the staff list', () => assertFails(getDocs(collection(anon(), 'staff'))));
+});
+
+describe('signed in but not on the staff list', () => {
+  it('cannot write', async () => {
+    const db = user('visitor@example.com');
+    await assertFails(setDoc(doc(db, 'announcements', 'x'), announcement('visitor@example.com')));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-01'), verse('visitor@example.com')));
+  });
+  it('cannot add themselves to the staff list', () =>
+    assertFails(setDoc(doc(user('visitor@example.com'), 'staff', 'visitor@example.com'), { role: 'admin', updatedBy: 'visitor@example.com' })));
+  it('cannot read a draft', () => assertFails(getDoc(doc(user('visitor@example.com'), 'announcements', 'draft'))));
+  it('can read their own (missing) staff entry, which tells the app they are not staff', async () => {
+    const snap = await assertSucceeds(getDoc(doc(user('visitor@example.com'), 'staff', 'visitor@example.com')));
+    if (snap.exists()) throw new Error('should not exist');
+  });
+});
+
+describe('staff', () => {
+  it('can create, edit and delete an announcement', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(setDoc(doc(db, 'announcements', 'new'), announcement(STAFF)));
+    await assertSucceeds(setDoc(doc(db, 'announcements', 'new'), announcement(STAFF, { title: 'Edited', pinned: true, linkUrl: 'https://example.org/register', linkLabel: 'Register' })));
+    await assertSucceeds(deleteDoc(doc(db, 'announcements', 'new')));
+  });
+  it('can read drafts and list everything', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(getDoc(doc(db, 'announcements', 'draft')));
+    await assertSucceeds(getDocs(collection(db, 'announcements')));
+    await assertSucceeds(getDocs(collection(db, 'events')));
+  });
+  it('is matched case-insensitively and needs a verified email', async () => {
+    await assertSucceeds(setDoc(doc(user('Staff@LifeCentre.SG'), 'announcements', 'c'), announcement('staff@lifecentre.sg')));
+    await assertFails(setDoc(doc(user(STAFF, false), 'announcements', 'c2'), announcement(STAFF)));
+  });
+  it('cannot write an announcement with bad data', async () => {
+    const db = user(STAFF);
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(STAFF, { title: '' })));
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(STAFF, { title: 'x'.repeat(121) })));
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(STAFF, { extra: 1 })));
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(STAFF, { published: 'yes' })));
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(STAFF, { linkUrl: 'javascript:alert(1)' })));
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(STAFF, { linkUrl: 'http://example.org' })));
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), announcement(ADMIN)));
+    const { title, ...noTitle } = announcement(STAFF);
+    await assertFails(setDoc(doc(db, 'announcements', 'a'), noTitle));
+  });
+  it('can schedule a verse for a date, only with a date id and KJV or WEB', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-01'), verse(STAFF)));
+    await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-02'), verse(STAFF, { translation: 'KJV', sample: true })));
+    await assertFails(setDoc(doc(db, 'verses', 'tomorrow'), verse(STAFF)));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { translation: 'NIV' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { text: '' })));
+  });
+  it('can post an event, and the end cannot be before the start', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(setDoc(doc(db, 'events', 'n1'), event(STAFF, { end: T('2026-11-04T13:00:00Z'), location: 'Main hall', description: 'All welcome' })));
+    await assertFails(setDoc(doc(db, 'events', 'n2'), event(STAFF, { end: T('2026-11-04T10:00:00Z') })));
+    await assertFails(setDoc(doc(db, 'events', 'n3'), event(STAFF, { published: 'yes' })));
+  });
+  it('cannot change the staff list, and can read only their own entry', async () => {
+    const db = user(STAFF);
+    await assertFails(setDoc(doc(db, 'staff', 'new@lifecentre.sg'), { role: 'staff', updatedBy: STAFF }));
+    await assertFails(setDoc(doc(db, 'staff', STAFF), { role: 'admin', updatedBy: STAFF }));
+    await assertSucceeds(getDoc(doc(db, 'staff', STAFF)));
+    await assertFails(getDoc(doc(db, 'staff', ADMIN)));
+    await assertFails(getDocs(collection(db, 'staff')));
+  });
+});
+
+describe('admin', () => {
+  it('can add, change and remove staff', async () => {
+    const db = user(ADMIN);
+    await assertSucceeds(setDoc(doc(db, 'staff', 'new@lifecentre.sg'), { role: 'leader', name: 'New Leader', updatedBy: ADMIN }));
+    await assertSucceeds(setDoc(doc(db, 'staff', 'new@lifecentre.sg'), { role: 'staff', updatedBy: ADMIN }));
+    await assertSucceeds(getDocs(collection(db, 'staff')));
+    await assertSucceeds(deleteDoc(doc(db, 'staff', 'new@lifecentre.sg')));
+  });
+  it('cannot add an unknown role, a mixed-case id, or delete themselves', async () => {
+    const db = user(ADMIN);
+    await assertFails(setDoc(doc(db, 'staff', 'new@lifecentre.sg'), { role: 'owner', updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(db, 'staff', 'New@lifecentre.sg'), { role: 'staff', updatedBy: ADMIN }));
+    await assertFails(deleteDoc(doc(db, 'staff', ADMIN)));
+  });
+});
+
+describe('sample data', () => {
+  it('every seed document passes the rules when staff writes it, and is marked as sample', async () => {
+    const db = user(STAFF);
+    const docs = seedDocs(STAFF);
+    if (docs.length === 0) throw new Error('no seed data');
+    for (const [col, id, data] of docs) {
+      if (data.sample !== true) throw new Error(`${col}/${id} is not marked sample`);
+      await assertSucceeds(setDoc(doc(db, col, id), data));
+    }
+  });
+});
+
+describe('collections without rules yet', () => {
+  it('stories and videos are denied to everyone, including admin', async () => {
+    for (const db of [anon(), user(STAFF), user(ADMIN)]) {
+      await assertFails(getDoc(doc(db, 'stories', 's')));
+      await assertFails(setDoc(doc(db, 'videos', 'v'), { title: 'x' }));
+    }
+  });
+});

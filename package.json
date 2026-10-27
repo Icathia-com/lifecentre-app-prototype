@@ -1,0 +1,25 @@
+{
+  "name": "lifecentre-app-prototype",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Life Centre church app: back end and front end (prototype pages kept at the repo root).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Icathia-com/lifecentre-app-prototype.git"
+  },
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore,auth --project lifecentre-app \"node --test --test-concurrency=1 firebase/tests/rules.test.mjs app/tests/util.test.mjs app/tests/data.test.mjs\"",
+    "test:browser": "firebase emulators:exec --only firestore,auth --project lifecentre-app \"node --test --test-concurrency=1 app/tests/browser.test.mjs\"",
+    "emulators": "firebase emulators:start --project lifecentre-app",
+    "seed:emulator": "node firebase/seed/seed-emulator.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "axe-core": "4.14.0",
+    "firebase": "13.1.0",
+    "firebase-tools": "15.34.1",
+    "puppeteer-core": "25.16.0"
+  }
+}

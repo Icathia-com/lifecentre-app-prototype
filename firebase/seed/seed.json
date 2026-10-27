@@ -1,0 +1,66 @@
+{
+  "announcements": {
+    "sample-conference": {
+      "title": "Empower Conference 2027: registration is open",
+      "body": "[A short message from the church team about the conference]",
+      "pinned": true,
+      "published": true,
+      "publishedAt": "2026-10-27T08:00:00+08:00",
+      "sample": true
+    },
+    "sample-cell-groups": {
+      "title": "Cell groups are open for sign-up",
+      "body": "Sample announcement. Find a cell group near you and join this month.",
+      "pinned": false,
+      "published": true,
+      "publishedAt": "2026-10-26T18:00:00+08:00",
+      "sample": true
+    },
+    "sample-volunteers": {
+      "title": "Thank you, volunteers",
+      "body": "Sample announcement. Thank you to everyone who served at last weekend's services.",
+      "pinned": false,
+      "published": true,
+      "publishedAt": "2026-10-25T20:00:00+08:00",
+      "sample": true
+    }
+  },
+  "verses": {
+    "2026-10-27": { "reference": "Psalm 46:10", "text": "Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth.", "translation": "KJV", "sample": true },
+    "2026-10-28": { "reference": "Proverbs 3:5", "text": "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", "translation": "KJV", "sample": true },
+    "2026-10-29": { "reference": "Philippians 4:13", "text": "I can do all things through Christ which strengtheneth me.", "translation": "KJV", "sample": true },
+    "2026-10-30": { "reference": "Psalm 23:1", "text": "The LORD is my shepherd; I shall not want.", "translation": "KJV", "sample": true },
+    "2026-10-31": { "reference": "Joshua 1:9", "text": "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", "translation": "KJV", "sample": true },
+    "2026-11-01": { "reference": "Isaiah 41:10", "text": "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee; yea, I will uphold thee with the right hand of my righteousness.", "translation": "KJV", "sample": true },
+    "2026-11-02": { "reference": "Matthew 11:28", "text": "Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "translation": "KJV", "sample": true }
+  },
+  "events": {
+    "sample-cell-group": {
+      "title": "Cell group night",
+      "start": "2026-10-30T19:30:00+08:00",
+      "end": "2026-10-30T21:00:00+08:00",
+      "location": "[Venue]",
+      "description": "Sample event.",
+      "published": true,
+      "sample": true
+    },
+    "sample-prayer": {
+      "title": "Prayer and worship evening",
+      "start": "2026-11-04T19:30:00+08:00",
+      "end": "2026-11-04T21:00:00+08:00",
+      "location": "[Venue]",
+      "description": "Sample event.",
+      "published": true,
+      "sample": true
+    },
+    "sample-lunch": {
+      "title": "Community lunch",
+      "start": "2026-11-08T12:30:00+08:00",
+      "end": "2026-11-08T14:00:00+08:00",
+      "location": "[Venue]",
+      "description": "Sample event.",
+      "published": true,
+      "sample": true
+    }
+  }
+}
