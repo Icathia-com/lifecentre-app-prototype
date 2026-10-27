@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { Timestamp } from 'firebase/firestore';
 
-const TIMESTAMP_FIELDS = ['publishedAt', 'expiresAt', 'start', 'end'];
+const TIMESTAMP_FIELDS = ['publishedAt', 'expiresAt', 'start', 'end', 'createdAt'];
 
 // Returns [[collection, id, data], ...] with ISO strings turned into Timestamps.
 // `updatedBy` is set to the email that writes the data, as the security rules require.

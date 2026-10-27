@@ -12,7 +12,9 @@ import { dateKey, addDays, dayStart } from '../js/util.js';
 const NOW = Date.parse('2026-10-27T02:00:00Z'); // 10:00 on 27 Oct in Singapore
 const TODAY = dateKey(NOW);
 const T = (iso) => Timestamp.fromDate(new Date(iso));
+const at = (days, hour, minute = 0) => Timestamp.fromMillis(dayStart(addDays(TODAY, days)) + (hour * 60 + minute) * 60000);
 const STAFF = 'staff@lifecentre.sg';
+const LEADER = 'leader@lifecentre.sg';
 
 // A stand-in for the phone's saved storage.
 const store = new Map();
@@ -33,11 +35,16 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'staff', STAFF), { role: 'staff', updatedBy: STAFF });
+    await setDoc(doc(db, 'staff', LEADER), { role: 'leader', updatedBy: STAFF });
     for (const [col, id, data] of seedDocs('sample-data')) await setDoc(doc(db, col, id), data);
     await setDoc(doc(db, 'announcements', 'draft'), { title: 'Draft', body: '', pinned: false, published: false, publishedAt: T('2026-10-27T00:00:00Z'), updatedBy: STAFF });
     await setDoc(doc(db, 'announcements', 'expired'), { title: 'Expired', body: '', pinned: false, published: true, publishedAt: T('2026-10-01T00:00:00Z'), expiresAt: T('2026-10-20T00:00:00Z'), updatedBy: STAFF });
-    await setDoc(doc(db, 'events', 'draft'), { title: 'Draft event', start: T('2026-10-31T11:30:00Z'), published: false, updatedBy: STAFF });
-    await setDoc(doc(db, 'events', 'far'), { title: 'Far away', start: T('2027-03-01T11:30:00Z'), published: true, updatedBy: STAFF });
+    const ev = { location: 'yishun', type: 'cell', published: true, updatedBy: STAFF };
+    await setDoc(doc(db, 'events', 'e-cell'), { ...ev, title: 'Cell group night', start: at(3, 19, 30), end: at(3, 21), host: 'Discipleship Team', cover: { from: '#14532D', to: '#4ADE80', label: 'CELL\nGROUP' } });
+    await setDoc(doc(db, 'events', 'e-prayer'), { ...ev, type: 'prayer', title: 'Prayer evening', start: at(8, 19, 30), end: at(8, 21) });
+    await setDoc(doc(db, 'events', 'e-lunch'), { ...ev, type: 'special', location: 'other', place: 'Park', title: 'Community lunch', start: at(12, 12, 30), end: at(12, 14) });
+    await setDoc(doc(db, 'events', 'draft'), { ...ev, title: 'Draft event', start: at(2, 10), published: false, pinned: true });
+    await setDoc(doc(db, 'events', 'far'), { ...ev, title: 'Far away', start: T('2027-09-01T11:30:00Z') });
   });
 });
 
@@ -69,12 +76,27 @@ describe('reading as the public', () => {
   it('gets published events in the range, soonest first', async () => {
     const { value, source } = await publicData().getEvents({ from: dayStart(TODAY), to: dayStart(addDays(TODAY, 14)) });
     assert.equal(source, 'live');
-    assert.deepEqual(value.map((e) => e.id), ['sample-cell-group', 'sample-prayer', 'sample-lunch']);
-    assert.ok(value.every((e) => typeof e.start === 'number' && e.start < e.end));
+    assert.deepEqual(value.map((e) => e.id), ['e-cell', 'e-prayer', 'e-lunch']);
+    assert.ok(value.every((e) => typeof e.start === 'number' && e.start < e.end && e.location && e.type));
+    assert.deepEqual(value[0].cover, { from: '#14532D', to: '#4ADE80', label: 'CELL\nGROUP' });
+    assert.equal(value[2].place, 'Park');
   });
   it('leaves out events outside the range', async () => {
     const { value } = await publicData().getEvents({ from: dayStart(TODAY), to: dayStart(addDays(TODAY, 5)) });
-    assert.deepEqual(value.map((e) => e.id), ['sample-cell-group']);
+    assert.deepEqual(value.map((e) => e.id), ['e-cell']);
+  });
+  it('gets one event by id, and nothing for a draft or an unknown id', async () => {
+    const { value, source } = await publicData().getEvent('e-prayer');
+    assert.equal(source, 'live');
+    assert.deepEqual([value.id, value.type, value.location, value.published], ['e-prayer', 'prayer', 'yishun', true]);
+    assert.equal((await publicData().getEvent('draft')).value, null); // a draft is not public
+    assert.equal((await publicData().getEvent('nope')).value, null);
+  });
+  it('gets the pinned event: published and not finished', async () => {
+    const { value, source } = await publicData().getPinnedEvent();
+    assert.equal(source, 'live');
+    assert.equal(value.id, 'conf'); // the draft that is also pinned is not public
+    assert.equal(value.pinned, true);
   });
 });
 
@@ -130,12 +152,42 @@ describe('staff writes', () => {
     const { value } = await publicData().getAnnouncements();
     assert.equal(value.find((a) => a.id === 'sample-conference').sample, undefined);
   });
-  it('schedules a verse by date and an event with optional fields left out', async () => {
+  it('schedules a verse by date', async () => {
     const data = staffData();
     await data.admin.save('verses', STAFF, { date: '2026-12-25', reference: 'Luke 2:11', text: 'For unto you is born this day in the city of David a Saviour, which is Christ the Lord.', translation: 'KJV' }, '2026-12-25');
     assert.equal((await publicData().getVerse('2026-12-25')).value.reference, 'Luke 2:11');
-    const id = await data.admin.save('events', STAFF, { title: 'Carols', start: dayStart('2026-12-24') + 19 * 3600000, published: true });
-    assert.equal((await data.admin.list('events')).find((e) => e.id === id).end, undefined);
+  });
+  it('creates an event with only the required fields, and leaves the optional ones out', async () => {
+    const data = staffData();
+    const id = await data.admin.save('events', STAFF, { title: 'Carols', start: dayStart('2026-12-24') + 19 * 3600000, location: 'yishun', type: 'special', published: true });
+    const saved = (await data.admin.list('events')).find((e) => e.id === id);
+    assert.deepEqual([saved.end, saved.price, saved.cover, saved.pinned, saved.registerUrl], [undefined, undefined, undefined, undefined, undefined]);
+    assert.equal(typeof saved.createdAt, 'number'); // the server time, set on creation
+  });
+  it('saves every create-event option and reads it back', async () => {
+    const data = staffData();
+    const values = {
+      title: 'Youth night', start: at(5, 19).toMillis(), end: at(5, 21).toMillis(), location: 'other', place: 'Pasir Ris Park', type: 'youth', host: 'Teens & Youth',
+      description: 'Games and worship', cover: { from: '#FF6A3D', to: '#E5326B', label: 'YOUTH\nNIGHT' }, registerUrl: 'https://example.org/youth', requireApproval: true,
+      price: 10, capacity: 50, notifyFollowers: true, pinned: true, published: true,
+    };
+    const id = await data.admin.save('events', STAFF, values);
+    const { value } = await publicData().getEvent(id);
+    for (const [key, expected] of Object.entries(values)) assert.deepEqual(value[key], expected, key);
+  });
+  it('keeps the creation time when an event is edited, and drops the sample label', async () => {
+    const data = staffData();
+    const id = await data.admin.save('events', STAFF, { title: 'First', start: at(5, 19).toMillis(), location: 'tuas', type: 'service', published: true });
+    const first = (await publicData().getEvent(id)).value;
+    await data.admin.save('events', STAFF, { title: 'Second', start: at(5, 19).toMillis(), location: 'tuas', type: 'service', published: true, createdAt: first.createdAt }, id);
+    const second = (await publicData().getEvent(id)).value;
+    assert.deepEqual([second.title, second.createdAt], ['Second', first.createdAt]);
+    await data.admin.save('events', STAFF, { title: 'Real conference', start: at(80, 9).toMillis(), location: 'yishun', type: 'special', pinned: true, published: true }, 'conf');
+    assert.equal((await publicData().getPinnedEvent()).value.sample, undefined);
+  });
+  it('is refused an event with a location or type outside the design lists', async () => {
+    await assert.rejects(() => staffData().admin.save('events', STAFF, { title: 'Bad', start: at(5, 19).toMillis(), location: 'Main hall', type: 'special', published: true }), { code: 'permission-denied' });
+    await assert.rejects(() => staffData().admin.save('events', STAFF, { title: 'Bad', start: at(5, 19).toMillis(), location: 'yishun', type: 'party', published: true }), { code: 'permission-denied' });
   });
   it('reads the signed-in account\'s staff entry', async () => {
     assert.equal((await staffData().admin.getStaffEntry(STAFF)).role, 'staff');
@@ -149,5 +201,20 @@ describe('staff writes', () => {
   });
   it('is refused for staff managing the staff list', async () => {
     await assert.rejects(() => staffData().admin.save('staff', STAFF, { role: 'admin' }, 'x@lifecentre.sg'), { code: 'permission-denied' });
+  });
+});
+
+describe('a leader', () => {
+  const leaderData = () => createData(env.authenticatedContext('l', { email: LEADER, email_verified: true }).firestore(), { now: () => NOW });
+  it('is recognised by the app through their staff entry', async () => {
+    const entry = await leaderData().admin.getStaffEntry(LEADER);
+    assert.equal(entry.role, 'leader');
+  });
+  it('cannot post notices or events, and cannot list drafts', async () => {
+    const data = leaderData();
+    await assert.rejects(() => data.admin.save('announcements', LEADER, { title: 'Nope', body: '', pinned: false, published: true, publishedAt: NOW }), { code: 'permission-denied' });
+    await assert.rejects(() => data.admin.save('events', LEADER, { title: 'Nope', start: at(5, 19).toMillis(), location: 'yishun', type: 'special', published: true }), { code: 'permission-denied' });
+    await assert.rejects(() => data.admin.list('announcements'), { code: 'permission-denied' });
+    await assert.rejects(() => data.admin.list('events'), { code: 'permission-denied' });
   });
 });

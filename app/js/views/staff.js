@@ -1,26 +1,30 @@
-// Staff page: Google sign-in, then add, edit or delete announcements, scheduled verses and events.
+// Staff page: Google sign-in, then add, edit or delete church notices and scheduled verses, and manage events.
+// Events are created and edited in the app itself (#/events/new); this page lists them so they can be found and deleted.
 // Admins can also manage the staff list. The security rules decide what each account may do.
 import { data, getAuthTools } from '../firebase.js';
-import { h, dateKey, addDays, formatDay, formatTimeRange, msToSgInput, sgInputToMs } from '../util.js';
+import { h, dateKey, addDays, formatDay, msToSgInput, sgInputToMs } from '../util.js';
+import { TYPES, siteName } from '../sites.js';
+
+// Admins and staff post content; leaders are on the staff list but cannot (the security rules enforce this too).
+const POSTERS = ['admin', 'staff'];
 
 // What each section needs: its form fields, a blank item, and how to describe an item in the list.
 const PANELS = {
   announcements: {
-    label: 'Announcements', noun: 'announcement',
+    label: 'Notices', noun: 'notice', roles: POSTERS, // church notices appear in Notifications
     fields: [
       { name: 'title', label: 'Title', type: 'text', required: true, max: 120 },
       { name: 'body', label: 'Message', type: 'textarea', max: 4000 },
       { name: 'publishedAt', label: 'Date shown (Singapore time)', type: 'datetime', required: true },
       { name: 'linkUrl', label: 'Link (https://)', type: 'url', max: 500, pattern: 'https://.+' },
       { name: 'linkLabel', label: 'Link label', type: 'text', max: 40 },
-      { name: 'pinned', label: 'Pinned to the top', type: 'checkbox' },
       { name: 'published', label: 'Published (visible to everyone)', type: 'checkbox' },
     ],
     blank: () => ({ publishedAt: Date.now(), pinned: false, published: true }),
-    show: (a) => [a.title, [formatDay(a.publishedAt), a.pinned && 'Pinned', !a.published && 'Draft']],
+    show: (a) => [a.title, [formatDay(a.publishedAt), !a.published && 'Draft']],
   },
   verses: {
-    label: 'Verses', noun: 'verse', idField: 'date',
+    label: 'Verses', noun: 'verse', idField: 'date', roles: POSTERS,
     fields: [
       { name: 'date', label: 'Date', type: 'date', required: true, lockWhenEditing: true },
       { name: 'reference', label: 'Reference', type: 'text', required: true, max: 60 },
@@ -32,20 +36,13 @@ const PANELS = {
     show: (v) => [`${v.id} · ${v.reference}`, [v.translation]],
   },
   events: {
-    label: 'Events', noun: 'event',
-    fields: [
-      { name: 'title', label: 'Title', type: 'text', required: true, max: 120 },
-      { name: 'start', label: 'Starts (Singapore time)', type: 'datetime', required: true },
-      { name: 'end', label: 'Ends (Singapore time)', type: 'datetime' },
-      { name: 'location', label: 'Location', type: 'text', max: 120 },
-      { name: 'description', label: 'Details', type: 'textarea', max: 2000 },
-      { name: 'published', label: 'Published (visible to everyone)', type: 'checkbox' },
-    ],
-    blank: () => ({ start: Math.ceil(Date.now() / 3600000) * 3600000, published: true }),
-    show: (e) => [e.title, [formatDay(e.start), formatTimeRange(e.start, e.end), !e.published && 'Draft']],
+    label: 'Events', noun: 'event', roles: POSTERS, external: true, // created and edited in the app (#/events/new)
+    fields: [],
+    blank: () => ({}),
+    show: (e) => [e.title, [formatDay(e.start), siteName(e.location, e.place), TYPES[e.type], !e.published && 'Draft']],
   },
   staff: {
-    label: 'Staff', noun: 'staff member', idField: 'email', adminOnly: true,
+    label: 'Staff', noun: 'staff member', idField: 'email', roles: ['admin'],
     fields: [
       { name: 'email', label: 'Google account email', type: 'email', required: true, max: 120, lockWhenEditing: true },
       { name: 'name', label: 'Name', type: 'text', max: 80 },
@@ -102,6 +99,7 @@ function panel(col, spec, user) {
   };
 
   function drawForm() {
+    if (spec.external) { formBox.replaceChildren(h('a', { class: 'btn primary', href: '#/events/new' }, 'Create event')); return; }
     const start = editing ? (spec.fromItem ? spec.fromItem(editing) : editing) : spec.blank();
     const form = h('form', { class: 'form' },
       h('h2', {}, editing ? `Edit ${spec.noun}` : `New ${spec.noun}`),
@@ -150,10 +148,12 @@ function panel(col, spec, user) {
           h('span', { class: 'name' }, title), ' ', item.sample ? h('span', { class: 'badge' }, 'Sample') : null,
           h('span', { class: 'meta' }, meta.filter(Boolean).join(' · '))),
         h('div', { class: 'actions' },
-          h('button', {
-            type: 'button', class: 'btn', 'aria-label': `Edit ${title}`,
-            onclick: () => { editing = item; say(''); drawForm(); formBox.querySelector('input:not([readonly]),textarea,select')?.focus(); },
-          }, 'Edit'),
+          spec.external
+            ? h('a', { class: 'btn', href: `#/events/${encodeURIComponent(item.id)}/edit`, 'aria-label': `Edit ${title}` }, 'Edit')
+            : h('button', {
+              type: 'button', class: 'btn', 'aria-label': `Edit ${title}`,
+              onclick: () => { editing = item; say(''); drawForm(); formBox.querySelector('input:not([readonly]),textarea,select')?.focus(); },
+            }, 'Edit'),
           h('button', { type: 'button', class: 'btn danger', 'aria-label': `Delete ${title}`, disabled: isSelf, onclick: () => remove(item, title) }, 'Delete')));
     }));
   }
@@ -207,7 +207,12 @@ export async function render(root) {
   }
 
   function dashboard(user, entry) {
-    const names = Object.keys(PANELS).filter((k) => !PANELS[k].adminOnly || entry.role === 'admin');
+    const names = Object.keys(PANELS).filter((k) => PANELS[k].roles.includes(entry.role));
+    if (!names.length) {
+      return h('section', { class: 'card' },
+        h('p', { class: 'who' }, h('span', {}, 'Signed in as ', h('strong', {}, user.email), ` (${entry.role})`), signOutButton()),
+        h('p', { class: 'note' }, `Your role (${entry.role}) can't post notices, verses or events.`));
+    }
     let current = names[0];
     const switcher = h('div', { class: 'switch', role: 'group', 'aria-label': 'Sections' });
     const holder = h('div', { class: 'stack' });

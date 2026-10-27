@@ -26,41 +26,179 @@
     }
   },
   "verses": {
-    "2026-10-27": { "reference": "Psalm 46:10", "text": "Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth.", "translation": "KJV", "sample": true },
-    "2026-10-28": { "reference": "Proverbs 3:5", "text": "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", "translation": "KJV", "sample": true },
-    "2026-10-29": { "reference": "Philippians 4:13", "text": "I can do all things through Christ which strengtheneth me.", "translation": "KJV", "sample": true },
-    "2026-10-30": { "reference": "Psalm 23:1", "text": "The LORD is my shepherd; I shall not want.", "translation": "KJV", "sample": true },
-    "2026-10-31": { "reference": "Joshua 1:9", "text": "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", "translation": "KJV", "sample": true },
-    "2026-11-01": { "reference": "Isaiah 41:10", "text": "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee; yea, I will uphold thee with the right hand of my righteousness.", "translation": "KJV", "sample": true },
-    "2026-11-02": { "reference": "Matthew 11:28", "text": "Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "translation": "KJV", "sample": true }
+    "2026-10-27": {
+      "reference": "Psalm 46:10",
+      "text": "Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth.",
+      "translation": "KJV",
+      "sample": true
+    },
+    "2026-10-28": {
+      "reference": "Proverbs 3:5",
+      "text": "Trust in the LORD with all thine heart; and lean not unto thine own understanding.",
+      "translation": "KJV",
+      "sample": true
+    },
+    "2026-10-29": {
+      "reference": "Philippians 4:13",
+      "text": "I can do all things through Christ which strengtheneth me.",
+      "translation": "KJV",
+      "sample": true
+    },
+    "2026-10-30": {
+      "reference": "Psalm 23:1",
+      "text": "The LORD is my shepherd; I shall not want.",
+      "translation": "KJV",
+      "sample": true
+    },
+    "2026-10-31": {
+      "reference": "Joshua 1:9",
+      "text": "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.",
+      "translation": "KJV",
+      "sample": true
+    },
+    "2026-11-01": {
+      "reference": "Isaiah 41:10",
+      "text": "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee; yea, I will uphold thee with the right hand of my righteousness.",
+      "translation": "KJV",
+      "sample": true
+    },
+    "2026-11-02": {
+      "reference": "Matthew 11:28",
+      "text": "Come unto me, all ye that labour and are heavy laden, and I will give you rest.",
+      "translation": "KJV",
+      "sample": true
+    }
   },
   "events": {
-    "sample-cell-group": {
-      "title": "Cell group night",
-      "start": "2026-10-30T19:30:00+08:00",
-      "end": "2026-10-30T21:00:00+08:00",
-      "location": "[Venue]",
-      "description": "Sample event.",
+    "conf": {
       "published": true,
-      "sample": true
+      "sample": true,
+      "title": "Empower Conference 2027",
+      "start": "2027-01-16T09:00:00+08:00",
+      "end": "2027-01-16T17:00:00+08:00",
+      "location": "yishun",
+      "type": "special",
+      "host": "Life Centre",
+      "pinned": true,
+      "cover": {
+        "from": "#1B1740",
+        "to": "#3558C8",
+        "label": "EMPOWER\n2027"
+      },
+      "description": "[A short message from the church team about the conference]",
+      "registerUrl": "https://example.org/register",
+      "going": 120,
+      "createdAt": "2026-10-01T09:00:00+08:00"
     },
-    "sample-prayer": {
-      "title": "Prayer and worship evening",
-      "start": "2026-11-04T19:30:00+08:00",
-      "end": "2026-11-04T21:00:00+08:00",
-      "location": "[Venue]",
-      "description": "Sample event.",
+    "prayer": {
       "published": true,
-      "sample": true
+      "sample": true,
+      "title": "Prayer & Worship Night",
+      "start": "2026-10-16T20:00:00+08:00",
+      "end": "2026-10-16T21:30:00+08:00",
+      "location": "yishun",
+      "type": "prayer",
+      "host": "Prayer Ministry",
+      "cover": {
+        "from": "#2A1B6B",
+        "to": "#7A3FD6",
+        "label": "PRAYER &\nWORSHIP"
+      },
+      "description": "An evening of worship and prayer for the church and the nation. Everyone is welcome.",
+      "going": 24,
+      "createdAt": "2026-10-10T09:00:00+08:00"
     },
-    "sample-lunch": {
-      "title": "Community lunch",
-      "start": "2026-11-08T12:30:00+08:00",
-      "end": "2026-11-08T14:00:00+08:00",
-      "location": "[Venue]",
-      "description": "Sample event.",
+    "kidsday": {
       "published": true,
-      "sample": true
+      "sample": true,
+      "title": "Kids Fun Day",
+      "start": "2026-10-17T10:00:00+08:00",
+      "end": "2026-10-17T13:00:00+08:00",
+      "location": "pasir",
+      "type": "kids",
+      "host": "Children’s Ministry",
+      "registerUrl": "https://example.org/kids",
+      "cover": {
+        "from": "#F5B700",
+        "to": "#38B26B",
+        "label": "KIDS\nFUN DAY"
+      },
+      "description": "Crafts, Bible stories and lunch for children aged 4 to 12. Parents, please register so we can plan food.",
+      "going": 24,
+      "createdAt": "2026-10-11T09:00:00+08:00"
+    },
+    "youth": {
+      "published": true,
+      "sample": true,
+      "title": "Youth Connect: Faith on Fire",
+      "start": "2026-10-17T15:00:00+08:00",
+      "end": "2026-10-17T17:00:00+08:00",
+      "location": "yishun",
+      "type": "youth",
+      "host": "Teens & Youth",
+      "cover": {
+        "from": "#FF6A3D",
+        "to": "#E5326B",
+        "label": "YOUTH\nCONNECT"
+      },
+      "description": "Games, worship and a short message for ages 17 to 24. Bring a friend.",
+      "going": 24,
+      "createdAt": "2026-10-15T08:30:00+08:00"
+    },
+    "communion": {
+      "published": true,
+      "sample": true,
+      "title": "English Service: Communion Sunday",
+      "start": "2026-10-18T10:30:00+08:00",
+      "end": "2026-10-18T12:30:00+08:00",
+      "location": "yishun",
+      "type": "service",
+      "host": "Rev. Samuel Gift",
+      "cover": {
+        "from": "#1E3A8A",
+        "to": "#3B82F6",
+        "label": "SUNDAY\nSERVICE"
+      },
+      "description": "Our monthly communion service. Holy Communion will be served.",
+      "going": 24,
+      "createdAt": "2026-10-05T09:00:00+08:00"
+    },
+    "tuasvc": {
+      "published": true,
+      "sample": true,
+      "title": "Tamil & Telugu Service",
+      "start": "2026-10-18T19:00:00+08:00",
+      "end": "2026-10-18T20:30:00+08:00",
+      "location": "tuas",
+      "type": "service",
+      "host": "Pastor Joel Daniel",
+      "cover": {
+        "from": "#0F766E",
+        "to": "#22B8A6",
+        "label": "TAMIL &\nTELUGU"
+      },
+      "description": "Our weekly service in Tamil and Telugu.",
+      "going": 24,
+      "createdAt": "2026-10-05T09:00:00+08:00"
+    },
+    "cell": {
+      "published": true,
+      "sample": true,
+      "title": "Cell Group Leaders Training",
+      "start": "2026-10-21T19:30:00+08:00",
+      "end": "2026-10-21T21:30:00+08:00",
+      "location": "kranji",
+      "type": "cell",
+      "host": "Discipleship Team",
+      "registerUrl": "https://example.org/cell",
+      "cover": {
+        "from": "#14532D",
+        "to": "#4ADE80",
+        "label": "LEADERS\nTRAINING"
+      },
+      "description": "Training for current and new cell group leaders.",
+      "going": 24,
+      "createdAt": "2026-10-12T09:00:00+08:00"
     }
   }
 }

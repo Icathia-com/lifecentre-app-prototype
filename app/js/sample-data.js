@@ -37,11 +37,25 @@ export function sampleAnnouncements(now = Date.now()) {
   ];
 }
 
+// The design's sample events, placed relative to today so they are always in the near future. Ids and titles match
+// firebase/seed/seed.json (a test checks this).
 export function sampleEvents(now = Date.now()) {
   const at = (days, hours, minutes = 0) => dayStart(addDays(dateKey(now), days)) + hours * HOUR + minutes * 60000;
+  const ev = (o) => ({ published: true, sample: true, ...o });
   return [
-    { id: 'sample-cell-group', title: 'Cell group night', start: at(3, 19, 30), end: at(3, 21), location: '[Venue]', description: 'Sample event.', published: true, sample: true },
-    { id: 'sample-prayer', title: 'Prayer and worship evening', start: at(8, 19, 30), end: at(8, 21), location: '[Venue]', description: 'Sample event.', published: true, sample: true },
-    { id: 'sample-lunch', title: 'Community lunch', start: at(12, 12, 30), end: at(12, 14), location: '[Venue]', description: 'Sample event.', published: true, sample: true },
+    ev({ id: 'conf', title: 'Empower Conference 2027', start: at(80, 9), end: at(80, 17), location: 'yishun', type: 'special', host: 'Life Centre', pinned: true,
+      cover: { from: '#1B1740', to: '#3558C8', label: 'EMPOWER\n2027' }, description: '[A short message from the church team about the conference]', registerUrl: 'https://example.org/register', going: 120, createdAt: now - 14 * 24 * HOUR }),
+    ev({ id: 'prayer', title: 'Prayer & Worship Night', start: at(1, 20), end: at(1, 21, 30), location: 'yishun', type: 'prayer', host: 'Prayer Ministry',
+      cover: { from: '#2A1B6B', to: '#7A3FD6', label: 'PRAYER &\nWORSHIP' }, description: 'An evening of worship and prayer for the church and the nation. Everyone is welcome.', going: 24, createdAt: now - 5 * 24 * HOUR }),
+    ev({ id: 'kidsday', title: 'Kids Fun Day', start: at(2, 10), end: at(2, 13), location: 'pasir', type: 'kids', host: 'Children’s Ministry', registerUrl: 'https://example.org/kids',
+      cover: { from: '#F5B700', to: '#38B26B', label: 'KIDS\nFUN DAY' }, description: 'Crafts, Bible stories and lunch for children aged 4 to 12. Parents, please register so we can plan food.', going: 24, createdAt: now - 4 * 24 * HOUR }),
+    ev({ id: 'youth', title: 'Youth Connect: Faith on Fire', start: at(2, 15), end: at(2, 17), location: 'yishun', type: 'youth', host: 'Teens & Youth',
+      cover: { from: '#FF6A3D', to: '#E5326B', label: 'YOUTH\nCONNECT' }, description: 'Games, worship and a short message for ages 17 to 24. Bring a friend.', going: 24, createdAt: now - 3 * HOUR }),
+    ev({ id: 'communion', title: 'English Service: Communion Sunday', start: at(3, 10, 30), end: at(3, 12, 30), location: 'yishun', type: 'service', host: 'Rev. Samuel Gift',
+      cover: { from: '#1E3A8A', to: '#3B82F6', label: 'SUNDAY\nSERVICE' }, description: 'Our monthly communion service. Holy Communion will be served.', going: 24, createdAt: now - 10 * 24 * HOUR }),
+    ev({ id: 'tuasvc', title: 'Tamil & Telugu Service', start: at(3, 19), end: at(3, 20, 30), location: 'tuas', type: 'service', host: 'Pastor Joel Daniel',
+      cover: { from: '#0F766E', to: '#22B8A6', label: 'TAMIL &\nTELUGU' }, description: 'Our weekly service in Tamil and Telugu.', going: 24, createdAt: now - 10 * 24 * HOUR }),
+    ev({ id: 'cell', title: 'Cell Group Leaders Training', start: at(6, 19, 30), end: at(6, 21, 30), location: 'kranji', type: 'cell', host: 'Discipleship Team', registerUrl: 'https://example.org/cell',
+      cover: { from: '#14532D', to: '#4ADE80', label: 'LEADERS\nTRAINING' }, description: 'Training for current and new cell group leaders.', going: 24, createdAt: now - 6 * 24 * HOUR }),
   ];
 }

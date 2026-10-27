@@ -2,7 +2,8 @@ rules_version = '2';
 
 // Life Centre app: Firestore security rules.
 // Public: read published announcements and events, read verses.
-// Staff (an email in /staff, signed in with a verified Google account): write them.
+// Staff and admin (an email in /staff with that role, signed in with a verified Google account): write them.
+// Leader (also in /staff): can be recognised by the app, but cannot post or read drafts.
 // Admin: also manage /staff. Everything not listed here (stories, videos for now) is denied.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -25,13 +26,18 @@ service cloud.firestore {
         && exists(staffPath());
     }
 
-    function isAdmin() {
-      return isStaff() && get(staffPath()).data.role == 'admin';
+    function role() {
+      return get(staffPath()).data.role;
     }
 
-    // Who may post announcements, verses and events. Any listed staff member for now.
+    function isAdmin() {
+      return isStaff() && role() == 'admin';
+    }
+
+    // Who may post announcements, verses and events, and read unpublished drafts: admins and staff.
+    // Leaders are on the staff list (they get the Facilities Booking tab) but cannot post.
     function canPublish() {
-      return isStaff();
+      return isStaff() && role() in ['admin', 'staff'];
     }
 
     function isText(v, max) {
@@ -68,18 +74,44 @@ service cloud.firestore {
         && d.updatedBy == userEmail();
     }
 
+    // An event cover: two colours and a short label, and optionally a small JPEG photo kept inside the event.
+    function validCover(c) {
+      return c is map
+        && c.keys().hasOnly(['from', 'to', 'label', 'photo'])
+        && c.keys().hasAll(['from', 'to', 'label'])
+        && c.from is string && c.from.matches('^#[0-9A-Fa-f]{6}$')
+        && c.to is string && c.to.matches('^#[0-9A-Fa-f]{6}$')
+        && c.label is string && c.label.size() <= 40
+        && (!('photo' in c) || (c.photo is string && c.photo.size() > 23 && c.photo.size() <= 140000
+                                 && c.photo[0:23] == 'data:image/jpeg;base64,'));
+    }
+
+    // `location` is one of the four sites (or "other", with the venue in `place`); `type` is one of the six event types.
     function validEvent(d) {
-      return d.keys().hasOnly(['title', 'start', 'end', 'allDay', 'location', 'description', 'published',
-                               'sample', 'updatedBy', 'updatedAt'])
-        && d.keys().hasAll(['title', 'start', 'published', 'updatedBy'])
+      return d.keys().hasOnly(['title', 'start', 'end', 'allDay', 'location', 'place', 'type', 'host', 'description',
+                               'cover', 'pinned', 'registerUrl', 'requireApproval', 'price', 'capacity', 'notifyFollowers',
+                               'going', 'published', 'sample', 'createdAt', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['title', 'start', 'location', 'type', 'published', 'updatedBy'])
         && isText(d.title, 120)
         && d.start is timestamp
         && (!('end' in d) || (d.end is timestamp && d.end >= d.start))
         && (!('allDay' in d) || d.allDay is bool)
-        && optionalText(d, 'location', 120)
+        && d.location in ['yishun', 'tuas', 'kranji', 'pasir', 'other']
+        && optionalText(d, 'place', 120)
+        && d.type in ['service', 'kids', 'youth', 'cell', 'prayer', 'special']
+        && optionalText(d, 'host', 80)
         && optionalText(d, 'description', 2000)
+        && (!('cover' in d) || validCover(d.cover))
+        && (!('pinned' in d) || d.pinned is bool)
+        && (!('registerUrl' in d) || (d.registerUrl is string && d.registerUrl.matches('^https://.{1,490}$')))
+        && (!('requireApproval' in d) || d.requireApproval is bool)
+        && (!('price' in d) || (d.price is int && d.price > 0 && d.price <= 100000))
+        && (!('capacity' in d) || (d.capacity is int && d.capacity > 0 && d.capacity <= 100000))
+        && (!('notifyFollowers' in d) || d.notifyFollowers is bool)
+        && (!('going' in d) || (d.going is int && d.going >= 0))
         && d.published is bool
         && (!('sample' in d) || d.sample is bool)
+        && (!('createdAt' in d) || d.createdAt is timestamp)
         && d.updatedBy == userEmail();
     }
 
@@ -93,7 +125,7 @@ service cloud.firestore {
 
     // Public queries must filter on published == true, or the read is refused.
     match /announcements/{id} {
-      allow read: if resource.data.published == true || isStaff();
+      allow read: if resource.data.published == true || canPublish();
       allow create, update: if canPublish() && validAnnouncement(request.resource.data);
       allow delete: if canPublish();
     }
@@ -108,7 +140,7 @@ service cloud.firestore {
     }
 
     match /events/{id} {
-      allow read: if resource.data.published == true || isStaff();
+      allow read: if resource.data.published == true || canPublish();
       allow create, update: if canPublish() && validEvent(request.resource.data);
       allow delete: if canPublish();
     }

@@ -4,3 +4,8 @@ node_modules/
 .env.*
 *.local
 *-debug.log
+apps-script/
+.clasp.json
+.clasprc.json
+visual-check/
+scripts/_*

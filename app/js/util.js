@@ -5,6 +5,8 @@ const SG_OFFSET = '+08:00'; // Singapore has no daylight saving
 
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
+  // Links are not dragged around by the browser: pressing the mouse on one and moving scrolls instead.
+  if (tag === 'a') el.setAttribute('draggable', 'false');
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v == null || v === false) continue;
     if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
@@ -15,6 +17,16 @@ export function h(tag, attrs, ...children) {
     el.append(c.nodeType ? c : document.createTextNode(String(c)));
   }
   return el;
+}
+
+// Replaces a parent's children, skipping empty entries (the DOM's own replaceChildren would print "null").
+export const fill = (parent, ...nodes) => parent.replaceChildren(...nodes.flat().filter((n) => n != null && n !== false));
+
+// Builds an element from fixed markup (used for the icons, never for data from the database).
+export function icon(markup) {
+  const t = document.createElement('template');
+  t.innerHTML = markup.trim();
+  return t.content.firstElementChild;
 }
 
 // Only https links from the database are ever put into an href.
@@ -38,8 +50,19 @@ export function addDays(key, n) {
 
 export const dayStart = (key) => Date.parse(`${key}T00:00:00${SG_OFFSET}`);
 
-export const formatDay = (ms, opts = { weekday: 'short', day: 'numeric', month: 'short' }) =>
-  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, ...opts }).format(ms);
+export const formatDay = (ms, opts = { weekday: 'short', day: 'numeric', month: 'short' }, locale = 'en-GB') =>
+  new Intl.DateTimeFormat(locale, { timeZone: TZ, ...opts }).format(ms);
+
+// Minutes since midnight in Singapore, and "7:30 PM" style labels for them (as in the calendar's time column).
+export function minutesOfDay(ms) {
+  const p = parts({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }, ms);
+  return Number(p.hour) * 60 + Number(p.minute);
+}
+export function formatClock(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
 
 export const formatTime = (ms) =>
   new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true })
