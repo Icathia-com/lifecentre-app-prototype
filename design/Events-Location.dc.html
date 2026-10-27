@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Life Centre · Events at a location</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;color:inherit}
+.hide-sb{scrollbar-width:none}.hide-sb::-webkit-scrollbar{display:none}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tab{position:relative;width:62px;height:56px;display:flex;align-items:center;justify-content:center;color:#55627A;border-radius:28px;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:color .25s ease}.tab .lens{position:absolute;inset:3px 4px;border-radius:26px;background:rgba(255,255,255,0);border:1px solid rgba(255,255,255,0);box-shadow:none;transition:background .25s ease,border-color .25s ease,box-shadow .25s ease,transform .25s ease}.tab svg{position:relative;z-index:1}.tab:hover .lens,.tab:focus-visible .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.5);border-color:rgba(255,255,255,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 6px 16px rgba(40,60,90,.14)}.tab:hover,.tab:focus-visible{color:#0B1220}.tab[aria-current=page]{color:#0B1220}.tab[aria-current=page] .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.82);border-color:#fff;box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(40,60,90,.2)}.tab:active .lens{transform:scale(.93)}.tab-off{cursor:not-allowed;opacity:.4}
+
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: linear-gradient(180deg, #5A7999 0px, #6B89A8 120px, #A9BCCF 280px, #D8E0E8 480px, #EEF0F3 760px, #F3F3F5 100%); font-family: Manrope, 'Segoe UI', system-ui, sans-serif; color: #0B1220; overflow: hidden">
+<div id="locs" class="hide-sb" style="position: absolute; inset: 0; overflow-y: auto; box-sizing: border-box; padding: 52px 20px 132px; display: flex; flex-direction: column; gap: 14px; cursor: grab; user-select: none; -webkit-user-select: none" onMouseDown="{{vDown}}" onMouseMove="{{dMove}}" onMouseUp="{{dUp}}" onMouseLeave="{{dUp}}" onClickCapture="{{guard}}">
+<div style="display: flex; align-items: center; justify-content: space-between; padding-top: 8px; flex-shrink: 0"><a href="Events.dc.html" draggable="false" aria-label="Back to Events" style="width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; color: #FFFFFF"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a><button onClick="{{toggleFollow}}" aria-pressed="{{followText}}" style="{{followBtn}}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/></svg>{{followLabel}}</button></div>
+<div style="{{hero}}"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; opacity: 0.85">LIFE CENTRE @</span><span style="font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1">{{name}}</span><span style="font-size: 13px; line-height: 1.4; opacity: 0.9">{{address}}</span><a href="{{mapUrl}}" target="_blank" rel="noopener" draggable="false" style="align-self: flex-start; margin-top: 4px; height: 34px; padding: 0 14px; border-radius: 17px; background: rgba(255,255,255,0.92); color: #0B1220; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8z"/></svg>Directions</a></div>
+<div id="sitechips" class="hide-sb" style="display: flex; gap: 8px; overflow-x: auto; margin: 0 -20px; padding: 0 20px; flex-shrink: 0" onMouseDown="{{cDown}}"><sc-for list="{{siteChips}}" as="c" hint-placeholder-count="4"><button onClick="{{c.pick}}" aria-pressed="{{c.on}}" style="{{c.style}}">{{c.label}}</button></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0"><sc-for list="{{typeChips}}" as="t" hint-placeholder-count="4"><button onClick="{{t.pick}}" aria-pressed="{{t.on}}" style="{{t.style}}">{{t.label}}</button></sc-for></div>
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="3"><div style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0"><div style="display: flex; align-items: baseline; justify-content: space-between; padding: 6px 4px 0"><span style="font-size: 19px; font-weight: 600; letter-spacing: -0.01em">{{sec.title}}</span><span style="font-size: 12px; color: #55627A">{{sec.count}}</span></div><div style="border-radius: 24px; background: rgba(255,255,255,0.62); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); padding: 2px 14px"><sc-for list="{{sec.items}}" as="it" hint-placeholder-count="2"><sc-if value="{{it.weekly}}" hint-placeholder-val="{{ true }}"><div style="{{it.row}}"><span style="{{it.av}}">{{it.ini}}</span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1"><span style="font-size: 15px; font-weight: 700">{{it.name}}</span><span style="font-size: 12.5px; color: #55627A">{{it.person}} · {{it.role}}</span></span><span style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex-shrink: 0"><span style="font-size: 11.5px; color: #55627A">{{it.when}}</span><span style="font-size: 14px; font-weight: 700">{{it.time}}</span></span></div></sc-if><sc-if value="{{it.event}}" hint-placeholder-val="{{ false }}"><a href="Event-Detail.dc.html" draggable="false" onClick="{{it.go}}" style="{{it.row}}"><span style="{{it.cover}}">{{it.coverText}}</span><span style="display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1"><span class="clamp2" style="font-size: 15px; font-weight: 700; line-height: 1.25; color: #0B1220">{{it.title}}</span><span style="display: flex; align-items: center; gap: 4px; font-size: 12.5px; color: #3A4558"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#55627A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{{it.when}}</span></span></a></sc-if></sc-for></div></div></sc-for>
+<div style="font-size: 11px; color: #55627A; text-align: center; padding: 2px 0 6px; flex-shrink: 0">Weekly times from lifecentre.sg. Events are sample.</div>
+</div>
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 20px; height: 68px; background: rgba(255,255,255,0.72); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); border-radius: 34px; display: flex; align-items: center; justify-content: space-around; padding: 0 6px; box-sizing: border-box; z-index: 40">
+<a href="Main.dc.html" class="tab" title="Home" aria-label="Home"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></a>
+<a href="Events.dc.html" class="tab" title="Events" aria-label="Events" aria-current="page"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V7a1 1 0 0 1 1-1z"/><path d="M14.5 6.5v2M14.5 11v2M14.5 15.5v2"/></svg></a>
+<a href="Giving.dc.html" class="tab" title="Giving" aria-label="Giving"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M12 8c-1-3-5-3.5-5-1s3 1 5 1zM12 8c1-3 5-3.5 5-1s-3 1-5 1z"/></svg></a>
+<a href="Watch.dc.html" class="tab" title="Watch" aria-label="Watch"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></svg></a>
+<a href="Contact.dc.html" class="tab" title="Contact" aria-label="Contact"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); let l = 'yishun', f = []; try { l = localStorage.getItem('lc.loc') || 'yishun'; f = JSON.parse(localStorage.getItem('lc.followLoc') || '[]'); } catch (e) {} this.state = { loc: l, type: 'all', follow: Array.isArray(f) ? f : [] }; }
+
+  dragDown(id, axis) { return (e) => { if (e.button !== 0) return; if (this._dragId) return; const t = e.target; if (t && t.closest && t.closest('input,textarea,select,label')) return; const el = document.getElementById(id); if (!el) return; this._dragId = id; this._ax = axis; this._p0 = axis === 'x' ? e.clientX : e.clientY; this._s0 = axis === 'x' ? el.scrollLeft : el.scrollTop; this._moved = false; }; }
+  dragMove() { return (e) => { if (!this._dragId) return; const el = document.getElementById(this._dragId); if (!el) return; const p = this._ax === 'x' ? e.clientX : e.clientY, d = p - this._p0; if (Math.abs(d) > 5) this._moved = true; if (!this._moved) return; if (this._ax === 'x') el.scrollLeft = this._s0 - d; else el.scrollTop = this._s0 - d; }; }
+  dragUp() { return () => { if (!this._dragId) return; this._dragId = null; setTimeout(() => { this._moved = false; }, 0); }; }
+  clickGuard() { return (e) => { if (this._moved) { e.preventDefault(); e.stopPropagation(); } }; }
+  renderVals() {
+
+const SITES = {
+  yishun: { id: 'yishun', name: 'Yishun', venue: 'Life Centre @ Yishun', address: '3 Yishun Street 11, Singapore 768645', grad: ['#2F6BFF', '#6B4FA8'],
+    services: [
+      { name: 'Tamil Service', when: 'Every Sunday', time: '8.00am & 7.00pm', person: 'Pas Grace Deborah', role: 'Senior Pastor' },
+      { name: 'English Service', when: 'Every Sunday', time: '10.30am', person: 'Rev. Samuel Gift', role: 'Senior Overseer' },
+      { name: 'Thai Service', when: 'Every Sunday', time: '1.00pm', person: 'Pas. Kittiya Darakam', role: 'Thai Pastor' },
+      { name: 'Mandarin Service', when: 'Every Sunday', time: '4.00pm', person: 'Sis Amanda', role: 'Mandarin Ministry Leader' },
+      { name: 'Malayalam Service', when: 'Every 3rd Saturday', time: '7.00pm', person: 'Pas. Rajesh Menon', role: 'Malayalam Service Pastor' }
+    ],
+    kids: [ { name: 'Sunday School', when: 'Every Sunday', time: '8.30am', person: 'Pas Aarathi Ramchand', role: 'Children & Youth Pastor' } ],
+    youth: [
+      { name: 'Youth Connect (17 to 24)', when: 'Every Saturday', time: '3.00pm', person: 'Bro. Andrew & Sis. Sharon', role: 'Youth Leaders' },
+      { name: 'Teens Connect (12 to 17)', when: 'Every Saturday', time: '3.00pm', person: 'Pas. Aarathi & Bro. Ryan', role: 'Youth Leaders' }
+    ] },
+  tuas: { id: 'tuas', name: 'Tuas', venue: 'Life Centre @ Tuas', address: 'Tuas South Recreation Center, 12 Tuas South Street 13, Singapore 636937', grad: ['#0F766E', '#22B8A6'],
+    services: [ { name: 'Tamil & Telugu Service', when: 'Every Sunday', time: '7.00pm', person: 'Pastor Joel Daniel', role: 'Church Elder' } ] },
+  kranji: { id: 'kranji', name: 'Kranji', venue: 'Life Centre @ Kranji', address: 'Kranji Recreation Center, 11 Kranji Cl, Singapore 737673', grad: ['#15803D', '#84CC16'],
+    services: [ { name: 'Tamil Service', when: 'Every Sunday', time: '8.00pm', person: 'Bro. Selvaraj', role: 'Ministry Leader (Kranji)' } ] },
+  pasir: { id: 'pasir', name: 'Pasir Ris', venue: 'Life Centre @ Pasir Ris', address: 'Pentecost Methodist Church, 4 Pasir Ris Drive 6, Singapore 519420', grad: ['#C2410C', '#F59E0B'],
+    services: [ { name: 'Tamil / English Service', when: 'Every Sunday', time: '5.00pm', person: 'Rev P Kunam', role: 'Lead Pastor' } ] }
+};
+const SITE_IDS = ['yishun', 'tuas', 'kranji', 'pasir'];
+const TYPES = { service: 'Services', kids: 'Kids', youth: 'Youth', cell: 'Cell groups', prayer: 'Prayer', special: 'Special events' };
+const BASE_EVENTS = [
+  { id: 'conf', featured: true, day: '2027-01-01', time: '[Time]', end: '', title: 'Empower Conference 2027', org: 'Life Centre', loc: 'yishun', type: 'special', cover: ['#1B1740', '#3558C8', 'EMPOWER\n2027'], desc: '[A short message from the church team about the conference]', reg: true, dates: '[Dates]' },
+  { id: 'prayer', day: '2026-10-16', time: '8:00 PM', end: '9:30 PM', title: 'Prayer & Worship Night', org: 'Prayer Ministry', loc: 'yishun', type: 'prayer', cover: ['#2A1B6B', '#7A3FD6', 'PRAYER &\nWORSHIP'], desc: 'An evening of worship and prayer for the church and the nation. Everyone is welcome.', pop: 2 },
+  { id: 'kidsday', day: '2026-10-17', time: '10:00 AM', end: '1:00 PM', title: 'Kids Fun Day', org: "Children’s Ministry", loc: 'pasir', type: 'kids', cover: ['#F5B700', '#38B26B', 'KIDS\nFUN DAY'], desc: 'Crafts, Bible stories and lunch for children aged 4 to 12. Parents, please register so we can plan food.', pop: 3, reg: true },
+  { id: 'youth', day: '2026-10-17', time: '3:00 PM', end: '5:00 PM', title: 'Youth Connect: Faith on Fire', org: 'Teens & Youth', loc: 'yishun', type: 'youth', cover: ['#FF6A3D', '#E5326B', 'YOUTH\nCONNECT'], desc: 'Games, worship and a short message for ages 17 to 24. Bring a friend.', pop: 1 },
+  { id: 'communion', day: '2026-10-18', time: '10:30 AM', end: '12:30 PM', title: 'English Service: Communion Sunday', org: 'Rev. Samuel Gift', loc: 'yishun', type: 'service', cover: ['#1E3A8A', '#3B82F6', 'SUNDAY\nSERVICE'], desc: 'Our monthly communion service. Holy Communion will be served.' },
+  { id: 'tuasvc', day: '2026-10-18', time: '7:00 PM', end: '8:30 PM', title: 'Tamil & Telugu Service', org: 'Pastor Joel Daniel', loc: 'tuas', type: 'service', cover: ['#0F766E', '#22B8A6', 'TAMIL &\nTELUGU'], desc: 'Our weekly service in Tamil and Telugu.' },
+  { id: 'cell', day: '2026-10-21', time: '7:30 PM', end: '9:30 PM', title: 'Cell Group Leaders Training', org: 'Discipleship Team', loc: 'kranji', type: 'cell', cover: ['#14532D', '#4ADE80', 'LEADERS\nTRAINING'], desc: 'Training for current and new cell group leaders.', pop: 4, reg: true }
+];
+const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const TODAY = '2026-10-15';
+const parseDay = (d) => { const p = String(d || '').split('-').map(Number); return new Date(p[0] || 2026, (p[1] || 1) - 1, p[2] || 1); };
+const dayHead = (d) => { const dt = parseDay(d), t = parseDay(TODAY), diff = Math.round((dt - t) / 86400000); const a = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : dt.getDate() + ' ' + MON[dt.getMonth()]; return [a, DOW[dt.getDay()]]; };
+const longDate = (d) => { const dt = parseDay(d); return DOW[dt.getDay()] + ', ' + dt.getDate() + ' ' + MON[dt.getMonth()]; };
+const shortMon = (d) => MON[parseDay(d).getMonth()].slice(0, 3).toUpperCase();
+const dayNum = (d) => String(parseDay(d).getDate());
+const loadNew = () => { try { const v = JSON.parse(localStorage.getItem('lc.newEvents') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+const allEvents = () => BASE_EVENTS.concat(loadNew());
+const coverStyle = (c, w, h, r, fs) => 'width:' + w + ';height:' + h + 'px;border-radius:' + r + 'px;flex-shrink:0;box-sizing:border-box;padding:' + Math.round(h / 9) + 'px;display:flex;align-items:flex-end;background:' + (c[3] ? 'center/cover no-repeat url(' + c[3] + ')' : 'linear-gradient(135deg,' + c[0] + ' 0%,' + c[1] + ' 100%)') + ';color:#FFFFFF;font-size:' + fs + 'px;font-weight:800;letter-spacing:.02em;line-height:1.05;white-space:pre-line;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)';
+const go = (key, val) => () => { try { localStorage.setItem(key, val); } catch (e) {} };
+
+    const loc = SITES[this.state.loc] ? this.state.loc : 'yishun';
+    const s = SITES[loc];
+    const PAL = ['#E5322D', '#2F6BFF', '#2E7D5B', '#B4472A', '#6B4FA8', '#C98A00'];
+    const TITLES = /^(pas|pastor|rev|bro|sis)\.?$/i;
+    const initials = (full) => { const w = String(full).split('&')[0].trim().split(/\s+/).filter((x) => x && !TITLES.test(x)); const a = w[0] || '?', b = w.length > 1 ? w[w.length - 1] : ''; return (a[0] + (b ? b[0] : '')).toUpperCase(); };
+    const rowStyle = (i) => 'display:flex;gap:12px;align-items:center;padding:12px 0;color:inherit;text-decoration:none;' + (i ? 'border-top:1px solid rgba(11,18,32,.07)' : '');
+    const weekly = (list) => (list || []).map((w, i) => ({ weekly: true, event: false, name: w.name, person: w.person, role: w.role, when: w.when, time: w.time, ini: initials(w.person), row: rowStyle(i),
+      av: 'width:42px;height:42px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;background:' + PAL[i % PAL.length] }));
+    const evs = allEvents().filter((e) => e.vis !== 'draft' && e.loc === loc && (e.featured || e.day >= TODAY)).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+    const evItems = (type, start) => evs.filter((e) => e.type === type).map((e, i) => ({ weekly: false, event: true, title: e.title, when: (e.featured ? (e.dates || '[Dates]') : longDate(e.day) + ', ' + e.time), cover: coverStyle(e.cover, '60px', 60, 14, 9.5), coverText: e.cover[2], go: go('lc.ev', e.id), row: rowStyle(start + i) }));
+    const all = [];
+    Object.keys(TYPES).forEach((k) => { const w = k === 'service' ? weekly(s.services) : k === 'kids' ? weekly(s.kids) : k === 'youth' ? weekly(s.youth) : []; const items = w.concat(evItems(k, w.length)); if (items.length) all.push({ key: k, title: TYPES[k], count: items.length + (items.length === 1 ? ' item' : ' items'), items: items }); });
+    const type = all.some((x) => x.key === this.state.type) ? this.state.type : 'all';
+    const sections = all.filter((x) => type === 'all' || x.key === type);
+    const chip = (on) => 'height:36px;padding:0 15px;border-radius:18px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;transition:background .25s ease,color .25s ease;border:1px solid ' + (on ? '#0B1220' : 'rgba(255,255,255,.9)') + ';background:' + (on ? '#0B1220' : 'rgba(255,255,255,.62)') + ';color:' + (on ? '#FFFFFF' : '#0B1220');
+    const typeChips = [{ key: 'all', title: 'All' }].concat(all).map((t) => ({ label: t.title, on: String(t.key === type), style: chip(t.key === type), pick: () => this.setState({ type: t.key }) }));
+    const siteChips = SITE_IDS.map((id) => ({ label: SITES[id].name, on: String(id === loc), style: chip(id === loc), pick: () => { try { localStorage.setItem('lc.loc', id); } catch (e) {} this.setState({ loc: id, type: 'all' }); } }));
+    const followed = this.state.follow.indexOf(loc) >= 0;
+    return {
+      name: s.name, address: s.address, mapUrl: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(s.address),
+      hero: 'border-radius:28px;padding:20px;display:flex;flex-direction:column;gap:6px;color:#FFFFFF;flex-shrink:0;box-shadow:0 14px 34px rgba(30,40,110,.22);background:linear-gradient(135deg,' + s.grad[0] + ' 0%,' + s.grad[1] + ' 100%)',
+      siteChips: siteChips, typeChips: typeChips, sections: sections,
+      followLabel: followed ? 'Following' : 'Follow', followText: String(followed),
+      followBtn: 'height:40px;padding:0 16px 0 12px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.6);background:' + (followed ? 'rgba(255,255,255,.92)' : 'rgba(255,255,255,.22)') + ';color:' + (followed ? '#0B1220' : '#FFFFFF'),
+      toggleFollow: () => { const f = followed ? this.state.follow.filter((x) => x !== loc) : this.state.follow.concat([loc]); try { localStorage.setItem('lc.followLoc', JSON.stringify(f)); } catch (e) {} this.setState({ follow: f }); },
+      vDown: this.dragDown('locs', 'y'), cDown: this.dragDown('sitechips', 'x'), dMove: this.dragMove(), dUp: this.dragUp(), guard: this.clickGuard()
+    };
+  }
+}
+</script>
+</body>
+</html>

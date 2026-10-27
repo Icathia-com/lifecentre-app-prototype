@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Life Centre · Notifications</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;color:inherit}
+.hide-sb{scrollbar-width:none}.hide-sb::-webkit-scrollbar{display:none}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tab{position:relative;width:62px;height:56px;display:flex;align-items:center;justify-content:center;color:#55627A;border-radius:28px;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:color .25s ease}.tab .lens{position:absolute;inset:3px 4px;border-radius:26px;background:rgba(255,255,255,0);border:1px solid rgba(255,255,255,0);box-shadow:none;transition:background .25s ease,border-color .25s ease,box-shadow .25s ease,transform .25s ease}.tab svg{position:relative;z-index:1}.tab:hover .lens,.tab:focus-visible .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.5);border-color:rgba(255,255,255,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 6px 16px rgba(40,60,90,.14)}.tab:hover,.tab:focus-visible{color:#0B1220}.tab[aria-current=page]{color:#0B1220}.tab[aria-current=page] .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.82);border-color:#fff;box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(40,60,90,.2)}.tab:active .lens{transform:scale(.93)}.tab-off{cursor:not-allowed;opacity:.4}
+
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: linear-gradient(180deg, #5A7999 0px, #6B89A8 120px, #A9BCCF 280px, #D8E0E8 480px, #EEF0F3 760px, #F3F3F5 100%); font-family: Manrope, 'Segoe UI', system-ui, sans-serif; color: #0B1220; overflow: hidden">
+<div id="nts" class="hide-sb" style="position: absolute; inset: 0; overflow-y: auto; box-sizing: border-box; padding: 52px 20px 48px; display: flex; flex-direction: column; gap: 14px; cursor: grab; user-select: none; -webkit-user-select: none" onMouseDown="{{vDown}}" onMouseMove="{{dMove}}" onMouseUp="{{dUp}}" onMouseLeave="{{dUp}}" onClickCapture="{{guard}}">
+<div style="padding-top: 8px; flex-shrink: 0"><a href="Main.dc.html" draggable="false" aria-label="Back to Home" style="width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; color: #FFFFFF"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a></div>
+<div style="display: flex; align-items: flex-end; justify-content: space-between; flex-shrink: 0"><div style="font-size: 33px; font-weight: 500; line-height: 1.15; color: #FFFFFF">Notifications</div><sc-if value="{{canMark}}" hint-placeholder-val="{{ true }}"><button onClick="{{markAll}}" style="border: 0; background: none; padding: 6px 0; font-size: 13px; font-weight: 700; color: #FFFFFF; cursor: pointer">Mark all read</button></sc-if></div>
+<div role="tablist" aria-label="Notifications view" style="display: flex; gap: 4px; padding: 4px; border-radius: 22px; background: rgba(255,255,255,0.62); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); flex-shrink: 0"><button role="tab" aria-selected="{{actSel}}" onClick="{{showAct}}" style="{{segAct}}">Activity</button><button role="tab" aria-selected="{{setSel}}" onClick="{{showSet}}" style="{{segSet}}">Settings</button></div>
+<sc-if value="{{isAct}}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 14px"><sc-for list="{{groups}}" as="g" hint-placeholder-count="2"><div style="display: flex; flex-direction: column; gap: 4px"><div style="font-size: 15px; font-weight: 700; padding: 6px 4px 2px">{{g.label}}</div><div style="border-radius: 24px; background: rgba(255,255,255,0.62); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); padding: 2px 14px"><sc-for list="{{g.items}}" as="n" hint-placeholder-count="3"><a href="{{n.href}}" draggable="false" onClick="{{n.go}}" style="{{n.row}}"><span style="{{n.ic}}"><sc-if value="{{n.is_reminder}}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg></sc-if><sc-if value="{{n.is_event}}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V7a1 1 0 0 1 1-1z"/><path d="M14.5 6.5v2M14.5 11v2M14.5 15.5v2"/></svg></sc-if><sc-if value="{{n.is_notice}}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4a1 1 0 0 0 1 1h2.4L16.5 19.5V4.5L6.4 9H4a1 1 0 0 0-1 1z"/></svg></sc-if><sc-if value="{{n.is_booking}}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg></sc-if><sc-if value="{{n.is_story}}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z"/></svg></sc-if></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1"><span style="font-size: 14.5px; font-weight: 700; line-height: 1.3; color: #0B1220">{{n.title}}</span><span style="font-size: 12.5px; color: #3A4558; line-height: 1.4">{{n.body}}</span></span><span style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0"><span style="font-size: 11.5px; color: #55627A">{{n.time}}</span><span style="{{n.dot}}"></span></span></a></sc-for></div></div></sc-for><div style="font-size: 11px; color: #55627A; text-align: center; padding: 2px 0 6px">Sample notifications</div></div></sc-if>
+<sc-if value="{{isSet}}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 14px"><sc-for list="{{sections}}" as="s" hint-placeholder-count="3"><div style="display: flex; flex-direction: column; gap: 4px"><div style="font-size: 13px; font-weight: 700; letter-spacing: 0.04em; color: #55627A; padding: 6px 4px 2px">{{s.label}}</div><div style="border-radius: 22px; background: rgba(255,255,255,0.62); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); padding: 2px 14px"><sc-for list="{{s.rows}}" as="r" hint-placeholder-count="2"><div style="{{r.row}}"><span style="font-size: 14.5px; font-weight: 600">{{r.label}}</span><button role="switch" aria-checked="{{r.on}}" aria-label="{{r.label}}" onClick="{{r.toggle}}" style="{{r.track}}"><span style="{{r.knob}}"></span></button></div></sc-for></div></div></sc-for></div></sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"asStaff":{"editor":"boolean","default":true},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); let t = {}; try { t = JSON.parse(localStorage.getItem('lc.notif') || '{}') || {}; } catch (e) {} this.state = { view: 'act', read: false, t: t }; }
+
+  dragDown(id, axis) { return (e) => { if (e.button !== 0) return; if (this._dragId) return; const t = e.target; if (t && t.closest && t.closest('input,textarea,select,label')) return; const el = document.getElementById(id); if (!el) return; this._dragId = id; this._ax = axis; this._p0 = axis === 'x' ? e.clientX : e.clientY; this._s0 = axis === 'x' ? el.scrollLeft : el.scrollTop; this._moved = false; }; }
+  dragMove() { return (e) => { if (!this._dragId) return; const el = document.getElementById(this._dragId); if (!el) return; const p = this._ax === 'x' ? e.clientX : e.clientY, d = p - this._p0; if (Math.abs(d) > 5) this._moved = true; if (!this._moved) return; if (this._ax === 'x') el.scrollLeft = this._s0 - d; else el.scrollTop = this._s0 - d; }; }
+  dragUp() { return () => { if (!this._dragId) return; this._dragId = null; setTimeout(() => { this._moved = false; }, 0); }; }
+  clickGuard() { return (e) => { if (this._moved) { e.preventDefault(); e.stopPropagation(); } }; }
+
+  renderVals() {
+    const staff = this.props.asStaff ?? true;
+    const go = (key, val) => () => { try { if (key) localStorage.setItem(key, val); } catch (e) {} };
+    const N = [
+      { g: 'Today', kind: 'reminder', title: 'Prayer & Worship Night is tomorrow', body: 'Friday, 8:00 PM · Yishun', time: '9:00 AM', href: 'Event-Detail.dc.html', key: 'lc.ev', val: 'prayer', unread: true },
+      { g: 'Today', kind: 'event', title: 'New at Yishun: Youth Connect: Faith on Fire', body: 'Saturday 17 October, 3:00 PM. You follow Teens & Youth.', time: '8:30 AM', href: 'Event-Detail.dc.html', key: 'lc.ev', val: 'youth', unread: true },
+      { g: 'Today', kind: 'story', title: 'Ps. Sam posted today’s devotion', body: 'Morning devotion, 4 minutes', time: '7:00 AM', href: 'Story-Devotion.dc.html', unread: true },
+      { g: 'This week', kind: 'notice', title: 'Thank you, volunteers', body: 'Thank you to everyone who served at last weekend’s services. From Life Centre.', time: 'Mon', href: 'Events.dc.html' },
+      { g: 'This week', kind: 'booking', title: 'Empower Room booking approved', body: 'Saturday 17 October, 2:00 PM to 4:00 PM', time: 'Sun', href: 'Booking.dc.html', staff: true },
+      { g: 'This week', kind: 'event', title: 'Kids Fun Day: registration is open', body: 'Pasir Ris · Saturday 17 October, 10:00 AM', time: 'Sat', href: 'Event-Detail.dc.html', key: 'lc.ev', val: 'kidsday' }
+    ].filter((n) => staff || !n.staff);
+    const COL = { reminder: '#C98A00', event: '#2F6BFF', story: '#6B4FA8', notice: '#E5322D', booking: '#2E7D5B' };
+    const groups = [];
+    N.forEach((n) => { let g = groups[groups.length - 1]; if (!g || g.label !== n.g) { g = { label: n.g, items: [] }; groups.push(g); } const i = g.items.length; const unread = n.unread && !this.state.read;
+      g.items.push({ title: n.title, body: n.body, time: n.time, href: n.href, go: go(n.key, n.val),
+        is_reminder: n.kind === 'reminder', is_event: n.kind === 'event', is_notice: n.kind === 'notice', is_booking: n.kind === 'booking', is_story: n.kind === 'story',
+        ic: 'width:40px;height:40px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:' + COL[n.kind],
+        dot: 'width:8px;height:8px;border-radius:50%;background:' + (unread ? '#2F6BFF' : 'transparent'),
+        row: 'display:flex;gap:12px;align-items:center;padding:12px 0;color:inherit;text-decoration:none;' + (i ? 'border-top:1px solid rgba(11,18,32,.07)' : '') }); });
+    const DEF = { rem: true, chg: true, newev: true, notice: true, verse: false, story: true, book: true };
+    const t = Object.assign({}, DEF, this.state.t);
+    const flip = (k) => () => { const n = Object.assign({}, t); n[k] = !t[k]; try { localStorage.setItem('lc.notif', JSON.stringify(n)); } catch (e) {} this.setState({ t: n }); };
+    const track = (on) => 'position:relative;width:48px;height:28px;border-radius:14px;border:0;padding:0;cursor:pointer;flex-shrink:0;transition:background .25s ease;background:' + (on ? '#0B1220' : 'rgba(11,18,32,.18)');
+    const knob = (on) => 'position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s ease;transform:translateX(' + (on ? 20 : 0) + 'px)';
+    const S = [
+      { label: 'EVENTS YOU’RE GOING TO', rows: [['rem', 'Reminders'], ['chg', 'Changes and cancellations']] },
+      { label: 'PLACES AND MINISTRIES YOU FOLLOW', rows: [['newev', 'New events']] },
+      { label: 'FROM THE CHURCH', rows: [['notice', 'Church notices'], ['story', 'Stories and devotions'], ['verse', 'Verse of the day']] }
+    ].concat(staff ? [{ label: 'STAFF', rows: [['book', 'Booking requests']] }] : []);
+    const sections = S.map((s) => ({ label: s.label, rows: s.rows.map((r, i) => ({ label: r[1], on: String(!!t[r[0]]), track: track(!!t[r[0]]), knob: knob(!!t[r[0]]), toggle: flip(r[0]),
+      row: 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;' + (i ? 'border-top:1px solid rgba(11,18,32,.07)' : '') })) }));
+    const seg = (on) => 'flex:1;height:38px;border:0;border-radius:18px;font-size:14px;font-weight:700;cursor:pointer;transition:background .25s ease,color .25s ease;background:' + (on ? '#0B1220' : 'transparent') + ';color:' + (on ? '#FFFFFF' : '#0B1220');
+    const isAct = this.state.view === 'act';
+    return {
+      isAct: isAct, isSet: !isAct, actSel: String(isAct), setSel: String(!isAct), segAct: seg(isAct), segSet: seg(!isAct),
+      showAct: () => this.setState({ view: 'act' }), showSet: () => this.setState({ view: 'set' }),
+      canMark: isAct && !this.state.read, markAll: () => this.setState({ read: true }),
+      groups: groups, sections: sections,
+      vDown: this.dragDown('nts', 'y'), dMove: this.dragMove(), dUp: this.dragUp(), guard: this.clickGuard()
+    };
+  }
+}
+</script>
+</body>
+</html>

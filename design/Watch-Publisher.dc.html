@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Watch: publisher view (adding a video)</title>
+<script src="./support.js"></script>
+</head>
+
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0B1220;text-decoration:none}a:hover{color:#3F5675}
+summary::-webkit-details-marker{display:none}
+.tab{position:relative;width:62px;height:56px;display:flex;align-items:center;justify-content:center;color:#55627A;border-radius:28px;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:color .25s ease}.tab .lens{position:absolute;inset:3px 4px;border-radius:26px;background:rgba(255,255,255,0);border:1px solid rgba(255,255,255,0);box-shadow:none;transition:background .25s ease,border-color .25s ease,box-shadow .25s ease,transform .25s ease}.tab svg{position:relative;z-index:1}.tab:hover .lens,.tab:focus-visible .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.5);border-color:rgba(255,255,255,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 6px 16px rgba(40,60,90,.14)}.tab:hover,.tab:focus-visible{color:#0B1220}.tab[aria-current=page]{color:#0B1220}.tab[aria-current=page] .lens{-webkit-backdrop-filter:blur(10px) saturate(1.5);backdrop-filter:blur(10px) saturate(1.5);background:rgba(255,255,255,.82);border-color:#fff;box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(40,60,90,.2)}.tab:active .lens{transform:scale(.93)}.tab-off{cursor:not-allowed;opacity:.4}
+
+.hide-sb{scrollbar-width:none}.hide-sb::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: #0A0D14; font-family: Manrope, 'Segoe UI', system-ui, sans-serif; color: #FFFFFF; overflow: hidden">
+<div id="feed" class="hide-sb" onScroll="{{onScroll}}" onMouseDown="{{wd}}" onMouseMove="{{wm}}" onMouseUp="{{we}}" onMouseLeave="{{we}}" onClick="{{tap}}" role="group" aria-label="Videos. Swipe up for the next one." style="position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; cursor: pointer; user-select: none; -webkit-user-select: none">
+<sc-for list="{{items}}" as="v" hint-placeholder-count="4"><div style="{{v.style}}"><span style="{{v.mono}}">{{v.initial}}</span></div></sc-for>
+</div>
+<div style="{{pauseStyle}}"><svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M8 5.5v13l11-6.5z"/></svg></div>
+<div style="position: absolute; left: 0; right: 0; top: 0; height: 170px; background: linear-gradient(180deg, rgba(0,0,0,0.5), rgba(0,0,0,0)); pointer-events: none"></div>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; height: 330px; background: linear-gradient(0deg, rgba(0,0,0,0.78), rgba(0,0,0,0)); pointer-events: none"></div>
+<div style="position: absolute; left: 16px; right: 16px; top: 54px; display: flex; align-items: center; justify-content: space-between; z-index: 20">
+<span></span><button onClick="{{openAdd}}" aria-label="Add a video" style="{{addStyle}}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+</div>
+<div style="{{resumeStyle}}">{{resumeText}}</div>
+<div style="position: absolute; right: 14px; bottom: 214px; z-index: 20"><button onClick="{{toggleSound}}" aria-label="{{soundLabel}}" style="width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; background: rgba(255,255,255,0.16); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,0.28)"><span style="{{spkOn}}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></span><span style="{{spkOff}}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M17 9l5 6M22 9l-5 6"/></svg></span></button></div>
+<div style="position: absolute; left: 18px; right: 78px; bottom: 112px; z-index: 20; display: flex; flex-direction: column; gap: 8px; pointer-events: none">
+<div style="display: flex; align-items: center; gap: 10px"><span style="{{avStyle}}">{{avText}}</span><span style="font-size: 15px; font-weight: 700">Life Centre</span><span style="padding: 3px 9px; border-radius: 10px; background: rgba(255,255,255,0.18); font-size: 11px; font-weight: 700">{{curSrc}}</span></div>
+<div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25">{{curTitle}}</div>
+<div style="font-size: 13.5px; line-height: 1.4; opacity: 0.88">{{curDesc}}</div>
+</div>
+<div style="position: absolute; left: 18px; right: 18px; bottom: 98px; z-index: 20; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.28); pointer-events: none"><div style="{{barStyle}}"></div></div>
+<div style="font-size: 11px; position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; color: rgba(255,255,255,0.4); z-index: 20">Sample videos</div>
+<sc-if value="{{sheetOpen}}" hint-placeholder-val="{{ false }}"><div style="position: absolute; inset: 0; z-index: 60; display: flex; align-items: flex-end; background: rgba(0,0,0,0.55)"><div onClick="{{closeSheet}}" style="position: absolute; inset: 0"></div><div role="dialog" aria-label="Add a video" style="position: relative; width: 100%; box-sizing: border-box; max-height: 92%; overflow-y: auto; background: #1B1520; border-radius: 34px 34px 0 0; padding: 22px 20px 28px; display: flex; flex-direction: column; gap: 12px; color: #fff; border-top: 1px solid rgba(255,255,255,0.14); cursor: default">
+<div style="display: flex; align-items: center; justify-content: space-between"><div style="font-size: 22px; font-weight: 500; letter-spacing: -0.03em">Add a video</div><button onClick="{{closeSheet}}" aria-label="Close" style="width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.1); font-size: 18px; cursor: pointer; color: #fff">✕</button></div>
+<div style="font-size: 12px; color: #B9AEC2">Only admins and organization leaders see this.</div>
+<div style="display: flex; flex-direction: column; gap: 6px"><label style="font-size: 13px; font-weight: 600">Title</label><input value="{{fTitle}}" onChange="{{setTitle}}" placeholder="What is the video about?" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,0.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,0.08);color-scheme:dark;width:100%;box-sizing:border-box"></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><label style="font-size: 13px; font-weight: 600">Where is the video?</label>
+<span style="display: flex; gap: 3px; padding: 3px; border-radius: 22px; background: rgba(255,255,255,0.08)"><button onClick="{{modeYt}}" style="{{ytTab}}">YouTube link</button><button onClick="{{modeFile}}" style="{{fileTab}}">Upload a video</button></span></div>
+<div style="{{ytField}}"><input value="{{fLink}}" onChange="{{setLink}}" placeholder="Paste a YouTube or YouTube Shorts link" style="height:48px;border-radius:16px;border:1px solid rgba(255,255,255,0.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,0.08);color-scheme:dark;width:100%;box-sizing:border-box"></div>
+<div style="{{fileField}}"><input type="file" accept="video/*" onChange="{{setFile}}" style="font-size: 13px; color: #fff"><div style="font-size: 12px; color: #B9AEC2">{{fileNote}}</div></div>
+<div style="font-size: 12px; color: #B9AEC2; line-height: 1.4">Short vertical videos work best, up to 90 seconds. Longer ones can be posted as a YouTube link.</div>
+<div style="font-size: 13px; color: #FF8A80; min-height: 16px">{{sheetError}}</div>
+<button onClick="{{publish}}" style="height: 52px; border-radius: 26px; border: 0; background: #fff; color: #1B1520; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer">Publish</button>
+</div></div></sc-if>
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 20px; height: 68px; background: rgba(255,255,255,0.72); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 12px 32px rgba(40,60,90,0.10); border-radius: 34px; display: flex; align-items: center; justify-content: space-around; padding: 0 6px; box-sizing: border-box; z-index: 40">
+<a href="Main.dc.html" class="tab" title="Home" aria-label="Home"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></a>
+<a href="Events.dc.html" class="tab" title="Events" aria-label="Events"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V7a1 1 0 0 1 1-1z"/><path d="M14.5 6.5v2M14.5 11v2M14.5 15.5v2"/></svg></a>
+<a href="Giving.dc.html" class="tab" title="Giving" aria-label="Giving"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M12 8c-1-3-5-3.5-5-1s3 1 5 1zM12 8c1-3 5-3.5 5-1s-3 1-5 1z"/></svg></a>
+<a href="Watch.dc.html" class="tab" title="Watch" aria-label="Watch" aria-current="page"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></svg></a>
+<a href="Contact.dc.html" class="tab" title="Contact" aria-label="Contact"><span class="lens"></span><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+const PUBLISHER = true;
+const H = 844;
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    let saved = null; try { saved = JSON.parse(localStorage.getItem('lc.watch') || 'null'); } catch (e) { /* storage may be blocked */ }
+    this.state = { org: 'All', orgsOpen: false, idx: 0, t: 0, playing: true, muted: true, added: [], resume: '', sheet: PUBLISHER ? { org: 'Yishun', title: '', mode: 'yt', link: '', file: '', err: '' } : null };
+    const base = this.videos(); const k = saved ? base.findIndex((v) => v.id === saved.id) : -1;
+    if (k >= 0 && !PUBLISHER) { this.state.idx = k; this.state.t = Math.min(saved.t || 0, base[k].dur - 1); if (this.state.t > 2) { this.state.resume = 'Continue where you left off · ' + this.fmt(this.state.t); setTimeout(() => this.setState({ resume: '' }), 3600); } }
+    setTimeout(() => this.jump(this.state.idx, false), 80); setTimeout(() => this.jump(this.state.idx, false), 600);
+    this._timer = setInterval(() => { const st = this.state; if (!st.playing || st.sheet) return; const feed = this.feed(); const v = feed[st.idx]; if (!v) return; let t = st.t + 1; if (t >= v.dur) t = 0; this.setState({ t }); this.keep(v.id, t); }, 1000);
+    this._drag = false; this._moved = false; this._dy = 0; this._st = 0;
+  }
+  fmt(s) { return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }
+  keep(id, t) { try { localStorage.setItem('lc.watch', JSON.stringify({ id, t })); } catch (e) { /* ignore */ } }
+  videos() {
+    return (this.state ? this.state.added : []).concat([
+      { id: 'v1', org: 'Yishun', title: 'Sunday message in 60 seconds', desc: 'A short word from this week’s service.', src: 'YouTube', dur: 58, c: ['#5B2A86', '#1B1740'] },
+      { id: 'v2', org: 'Kids', title: 'Memory verse of the week', desc: 'Say it along with us!', src: 'Uploaded', dur: 42, c: ['#C2185B', '#4A148C'] },
+      { id: 'v3', org: 'Pasir Ris', title: 'Testimony: an answered prayer', desc: 'A member shares what God did.', src: 'YouTube', dur: 75, c: ['#00796B', '#0D2B3E'] },
+      { id: 'v4', org: 'Youth', title: 'Youth Connect highlights', desc: 'Moments from last Saturday.', src: 'YouTube', dur: 50, c: ['#E65100', '#4E1B00'] },
+      { id: 'v5', org: 'Tuas', title: 'Welcome to Life Centre @ Tuas', desc: 'Come and visit us on Sunday.', src: 'Uploaded', dur: 35, c: ['#1565C0', '#0B1F3A'] },
+      { id: 'v6', org: 'Kranji', title: 'A word from Bro. Selvaraj', desc: 'Encouragement for the week ahead.', src: 'YouTube', dur: 55, c: ['#6A1B9A', '#1A237E'] }
+    ]);
+  }
+  feed() { return this.videos(); }
+  jump(i, smooth) { const el = document.getElementById('feed'); if (el) el.scrollTo({ top: i * H, behavior: smooth ? 'smooth' : 'auto' }); }
+  renderVals() {
+    const st = this.state, feed = this.feed(), cur = feed[Math.min(st.idx, feed.length - 1)] || feed[0], ORGS = ['All', 'Yishun', 'Tuas', 'Kranji', 'Pasir Ris', 'Kids', 'Youth'];
+    const sh = st.sheet, upd = (k) => (e) => this.setState({ sheet: { ...this.state.sheet, [k]: e.target.value, err: '' } });
+    const FIELD = 'height:48px;border-radius:16px;border:1px solid rgba(255,255,255,.18);padding:0 14px;font-family:inherit;font-size:16px;color:#fff;background:rgba(255,255,255,.08);color-scheme:dark;width:100%;box-sizing:border-box';
+    const tab = (on) => 'flex:1;height:38px;border:0;border-radius:19px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .25s ease,color .25s ease;background:' + (on ? '#fff' : 'transparent') + ';color:' + (on ? '#1B1520' : '#fff');
+    return {
+      items: feed.map((v) => ({ initial: 'LC', style: 'height:' + H + 'px;position:relative;scroll-snap-align:start;scroll-snap-stop:always;display:flex;align-items:center;justify-content:center;background:radial-gradient(120% 70% at 50% 30%,' + v.c[0] + ' 0%,' + v.c[1] + ' 70%,#05070C 100%)', mono: 'font-size:190px;font-weight:800;letter-spacing:-.06em;color:rgba(255,255,255,.08);line-height:1;pointer-events:none' })),
+      onScroll: (e) => { const i = Math.max(0, Math.min(feed.length - 1, Math.round(e.target.scrollTop / H))); if (i !== this.state.idx) { this.setState({ idx: i, t: 0, playing: true, resume: '' }); if (feed[i]) this.keep(feed[i].id, 0); } },
+      wd: (e) => { const el = document.getElementById('feed'); if (!el) return; this._dy = e.clientY; this._ly = e.clientY; this._st = el.scrollTop; this._i0 = Math.round(el.scrollTop / H); this._drag = true; this._moved = false; el.style.scrollSnapType = 'none'; },
+      wm: (e) => { if (!this._drag) return; const el = document.getElementById('feed'); const dy = e.clientY - this._dy; if (Math.abs(dy) > 5) this._moved = true; this._ly = e.clientY; el.scrollTop = this._st - dy; },
+      we: () => { if (!this._drag) return; this._drag = false; const el = document.getElementById('feed'); el.style.scrollSnapType = 'y mandatory'; const d = this._ly - this._dy, i = Math.max(0, Math.min(feed.length - 1, this._i0 + (d < -70 ? 1 : (d > 70 ? -1 : 0)))); el.scrollTo({ top: i * H, behavior: 'smooth' }); },
+      tap: () => { if (this._moved) { this._moved = false; return; } this.setState({ playing: !this.state.playing }); },
+      pauseStyle: 'position:absolute;left:50%;top:44%;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.3);pointer-events:none;z-index:15;transition:opacity .25s ease,transform .25s ease;opacity:' + (st.playing ? 0 : 1) + ';transform:scale(' + (st.playing ? 0.8 : 1) + ')',
+      
+      addStyle: 'width:40px;height:40px;border-radius:50%;align-items:center;justify-content:center;cursor:pointer;padding:0;background:rgba(255,255,255,0.16);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,0.28);display:' + (PUBLISHER ? 'flex' : 'none'),
+      resumeStyle: 'position:absolute;left:50%;top:104px;transform:translateX(-50%);z-index:25;padding:8px 16px;border-radius:18px;font-size:12.5px;font-weight:600;white-space:nowrap;background:rgba(255,255,255,.2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.3);pointer-events:none;transition:opacity .4s ease;opacity:' + (st.resume ? 1 : 0), resumeText: st.resume || ' ',
+      toggleSound: () => this.setState({ muted: !this.state.muted }), soundLabel: st.muted ? 'Turn sound on' : 'Mute', spkOn: 'display:' + (st.muted ? 'none' : 'flex'), spkOff: 'display:' + (st.muted ? 'flex' : 'none'),
+      avText: 'LC', avStyle: 'width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;background:linear-gradient(135deg,' + (cur ? cur.c[0] : '#555') + ',' + (cur ? cur.c[1] : '#222') + ');border:2px solid #fff',
+      curOrg: cur ? cur.org : '', curSrc: cur ? cur.src : '', curTitle: cur ? cur.title : '', curDesc: cur ? cur.desc : '',
+      barStyle: 'height:3px;border-radius:2px;background:#fff;transition:width 1s linear;width:' + (cur ? Math.min(100, st.t / cur.dur * 100) : 0) + '%',
+      sheetOpen: !!sh, fTitle: sh ? sh.title : '', fLink: sh ? sh.link : '', setTitle: upd('title'), setLink: upd('link'),
+      ytTab: tab(!sh || sh.mode === 'yt'), fileTab: tab(!!sh && sh.mode === 'file'), modeYt: () => this.setState({ sheet: { ...this.state.sheet, mode: 'yt', err: '' } }), modeFile: () => this.setState({ sheet: { ...this.state.sheet, mode: 'file', err: '' } }),
+      ytField: 'display:' + (!sh || sh.mode === 'yt' ? 'flex' : 'none') + ';flex-direction:column', fileField: 'display:' + (sh && sh.mode === 'file' ? 'flex' : 'none') + ';flex-direction:column;gap:8px',
+      setFile: (e) => { const f = e.target.files && e.target.files[0]; this.setState({ sheet: { ...this.state.sheet, file: f ? f.name : '', err: '' } }); }, fileNote: sh && sh.file ? sh.file : 'Choose a video file from your phone or computer.',
+      sheetError: sh ? sh.err || '' : '', closeSheet: () => this.setState({ sheet: null }), openAdd: () => this.setState({ sheet: { org: 'Yishun', title: '', mode: 'yt', link: '', file: '', err: '' } }),
+      publish: () => {
+        const s2 = this.state.sheet; if (!s2) return;
+        if (!s2.title.trim()) return this.setState({ sheet: { ...s2, err: 'Please give the video a title.' } });
+        if (s2.mode === 'yt' && !/youtu/i.test(s2.link)) return this.setState({ sheet: { ...s2, err: 'Please paste a YouTube or YouTube Shorts link.' } });
+        if (s2.mode === 'file' && !s2.file) return this.setState({ sheet: { ...s2, err: 'Please choose a video file.' } });
+        const PAL = [['#AD1457', '#311B92'], ['#00838F', '#102A43'], ['#EF6C00', '#3E1F00'], ['#283593', '#0B1020']];
+        const v = { id: 'u' + Date.now(), org: s2.org, title: s2.title.trim(), desc: 'Added just now', src: s2.mode === 'yt' ? 'YouTube' : 'Uploaded', dur: 45, c: PAL[this.state.added.length % PAL.length] };
+        this.setState({ added: [v].concat(this.state.added), sheet: null, org: 'All', idx: 0, t: 0, playing: true }); setTimeout(() => this.jump(0, false), 30);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
