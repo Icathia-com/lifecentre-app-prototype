@@ -254,3 +254,27 @@ body[data-route='notifications'] .screen { padding-bottom: 48px; }
 
 /* White cover text on the lighter covers (yellow, green) gets a soft shadow so it stays readable. */
 .cover { text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28); }
+
+/* Facilities booking */
+.cr-head h1 .light { font-weight: 300; color: #E6EEF7; }
+.bk-card { gap: 14px; }
+.bk-form { display: flex; flex-direction: column; gap: 14px; }
+.bk-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.bk-field input, .bk-field select, .bk-field textarea { font-size: 15px; font-weight: 400; min-height: 48px; }
+.bk-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.bk-links { display: flex; justify-content: space-between; gap: 12px; }
+.bk-links .link { border: 0; background: none; padding: 6px 0; cursor: pointer; }
+.bk-contact { display: flex; gap: 8px; padding: 4px 8px; font-size: 14px; color: #fff; }
+.bk-contact b { font-weight: 700; }
+.bk-error { color: #8F1D14; font-weight: 600; }
+.bk-rooms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.bk-room { min-height: 64px; padding: 12px 14px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.95); background: rgba(255, 255, 255, 0.8); color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
+.bk-room[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: #fff; }
+.bk-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; }
+.bk-item + .bk-item { border-top: 1px solid rgba(11, 18, 32, 0.08); }
+.bk-what { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bk-what b { font-size: 15px; font-weight: 600; }
+.bk-what small { font-size: 13px; color: var(--muted); }
+.bk-status { display: flex; align-items: center; flex-shrink: 0; gap: 6px; font-size: 12px; font-weight: 600; color: #26324A; }
+.bk-dot { width: 8px; height: 8px; border-radius: 50%; }
+.bk-signed { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; }

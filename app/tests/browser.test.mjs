@@ -189,6 +189,7 @@ describe('Home', () => {
   });
   it('lists Facilities Booking Request in the + menu', async () => {
     const { page, context } = await open();
+    await page.waitForSelector('.tile'); // let the calendar finish drawing first
     await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the calendar card
     await page.click('.fab');
     assert.match(await text(page, '#fab-menu a'), /Facilities Booking Request/);
@@ -200,6 +201,7 @@ describe('Home', () => {
     await waitText(page, 'Psalm 23:1');
     await page.waitForSelector('.tile');
     await page.waitForSelector('.banner');
+    await page.waitForFunction(() => document.getAnimations().filter((a) => a instanceof CSSTransition).every((a) => a.playState !== 'running')); // colours are checked after the transitions end
     await checkAccessibility(page, 'Home');
     await context.close();
   });
@@ -856,6 +858,171 @@ describe('mouse drag scrolling', () => {
     await new Promise((r) => setTimeout(r, 900));
     assert.ok(await firstColumn() >= 2, `days did not scroll (first column ${await firstColumn()})`);
     await context.close();
+  });
+});
+
+// A stand-in for the church's booking system: it answers the app's calls the way the real one does, and records them.
+function fakeBooking({ blocks = [], failure = null } = {}) {
+  const TOKEN = 'a'.repeat(64);
+  const state = { calls: [], bookings: [], blocks, failure };
+  const reply = (body) => {
+    const { action, token } = body;
+    if (state.failure?.[action]) return state.failure[action];
+    if (action === 'requestCode') return { ok: true, message: 'If this email is on our member list, a 6-digit code is on its way. It expires in 10 minutes.' };
+    if (action === 'verifyCode') {
+      return body.code === '123456'
+        ? { ok: true, token: TOKEN, user: { name: 'Test Member', email: body.email } }
+        : { ok: false, code: 'error', error: 'That code is not right. Check the email and try again.' };
+    }
+    if (token !== TOKEN) return { ok: false, code: 'signin', error: 'Please sign in again.' };
+    if (action === 'config') return { ok: true, rooms: ['Whole Church', 'Main Sanctuary', 'Empower Room', 'Foyer', 'Dining Area', 'Cry Room', 'Carpark'], today: TODAY, maxDate: addDays(TODAY, 365), dayStart: '07:00', dayEnd: '23:00' };
+    if (action === 'availability') return { ok: true, facility: body.facility, date: body.date, blocks: state.blocks };
+    if (action === 'myBookings') return { ok: true, upcoming: state.bookings, past: [] };
+    if (action === 'signOut') return { ok: true };
+    if (action === 'book') {
+      const entry = { id: 'LCC-E-ABC234', status: 'Approved', facility: body.facility, date: body.date, start: body.start, end: body.end, org: body.org, purpose: body.purpose, canCancel: false };
+      state.bookings.push(entry);
+      return { ok: true, bookingId: entry.id, status: 'Approved', facility: body.facility, date: body.date, start: body.start, end: body.end };
+    }
+    return { ok: false, code: 'input', error: 'Unknown action.' };
+  };
+  state.install = async (page, { signedIn = false, token = TOKEN } = {}) => {
+    if (signedIn) await page.evaluateOnNewDocument((t) => localStorage.setItem('lc:v1:booking-session', JSON.stringify({ token: t, name: 'Test Member', email: 'member@example.org' })), token);
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (!req.url().startsWith('https://script.google.com/')) return req.continue();
+      const body = JSON.parse(req.postData() || '{}');
+      state.calls.push(body);
+      req.respond({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply(body)) });
+    });
+  };
+  return state;
+}
+const setField = (page, name, value) => page.$eval(`[name="${name}"]`, (el, v) => {
+  el.value = v;
+  el.dispatchEvent(new Event(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', { bubbles: true }));
+}, value);
+
+describe('Facilities booking', () => {
+  it('asks a visitor to sign in with an emailed code, then shows the code step, and passes the accessibility check', async () => {
+    const fake = fakeBooking();
+    const { page, errors, context } = await open('#/booking', { setup: (p) => fake.install(p) });
+    assert.equal(await pageTitle(page), 'Facilities Booking Request');
+    await waitText(page, 'Sign in to book a room', '#main');
+    assert.match(await text(page, '#main'), /We’ll email you a 6‑digit code\. No password needed\./);
+    assert.match(await text(page, '#main'), /Not a member yet\?\s*Contact us/);
+    await shot(page, 'booking-signed-out');
+    await checkAccessibility(page, 'Booking sign-in');
+    await page.type('#bk-email', 'not an email');
+    await page.click('.cr-submit');
+    await waitText(page, 'Enter a valid email address.', '#main');
+    assert.deepEqual(fake.calls, []);
+    await page.$eval('#bk-email', (el) => { el.value = ''; });
+    await page.type('#bk-email', 'member@example.org');
+    await page.click('.cr-submit');
+    await page.waitForSelector('#bk-code');
+    assert.deepEqual(fake.calls.map((c) => [c.action, c.email, c.token]), [['requestCode', 'member@example.org', undefined]]);
+    assert.equal(await page.$eval('#bk-email', (el) => el.readOnly), true);
+    await checkAccessibility(page, 'Booking code step');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('signs in with the right code, keeps the session, and signs out', async () => {
+    const fake = fakeBooking();
+    const { page, context } = await open('#/booking', { setup: (p) => fake.install(p) });
+    await page.type('#bk-email', 'member@example.org');
+    await page.click('.cr-submit');
+    await page.waitForSelector('#bk-code');
+    await page.type('#bk-code', '000000');
+    await page.click('.cr-submit');
+    await waitText(page, 'That code is not right', '#main');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
+    await page.$eval('#bk-code', (el) => { el.value = ''; });
+    await page.type('#bk-code', '123456');
+    await page.click('.cr-submit');
+    await waitText(page, 'Choose a room', '#main');
+    assert.equal((await page.$$('.bk-room')).length, 7);
+    assert.match(await text(page, '#main'), /No upcoming bookings\./);
+    assert.match(await text(page, '#main'), /Signed in as member@example\.org/);
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session'))).token.length, 64);
+    await shot(page, 'booking-home');
+    await checkAccessibility(page, 'Booking home');
+    await page.reload();
+    await waitText(page, 'Choose a room', '#main'); // still signed in
+    await page.click('.bk-signed .btn');
+    await waitText(page, 'Sign in to book a room', '#main');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
+    assert.ok(fake.calls.some((c) => c.action === 'signOut' && c.token.length === 64));
+    await context.close();
+  });
+
+  it('books a room: shows what is already booked, blocks a clash, sends only the form fields, and lists the booking', async () => {
+    const fake = fakeBooking({ blocks: [{ start: '14:00', end: '16:00', kind: 'booked', wholeChurch: false }, { start: '18:00', end: '19:00', kind: 'pending', wholeChurch: false }] });
+    const { page, errors, context } = await open('#/booking', { setup: (p) => fake.install(p, { signedIn: true }) });
+    await waitText(page, 'Choose a room', '#main');
+    await page.click('.bk-room:nth-child(3)'); // Empower Room
+    await page.click('.cr-submit');
+    await page.waitForSelector('[name="org"]');
+    assert.equal(await pageTitle(page), 'New booking');
+    assert.equal(await page.$eval('[name="room"]', (el) => el.value), 'Empower Room');
+    await waitText(page, 'Already booked: 14:00–16:00', '#main');
+    assert.match(await text(page, '#main'), /Requested: 18:00–19:00/);
+    assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), true);
+    await setField(page, 'org', 'TEST, please ignore');
+    await setField(page, 'purpose', 'TEST, please ignore');
+    await setField(page, 'attendance', '12');
+    assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), false);
+    await page.select('[name="start"]', '15:00');
+    await page.select('[name="end"]', '17:00');
+    await waitText(page, 'That time is already booked for this room.', '#main');
+    assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), true);
+    await shot(page, 'booking-form-clash');
+    await page.select('[name="start"]', '16:00');
+    await page.select('[name="end"]', '17:00');
+    await waitText(page, 'Already booked: 14:00–16:00', '#main');
+    assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), false);
+    await checkAccessibility(page, 'Booking form');
+    await page.click('#bk-submit');
+    await waitText(page, 'Reference LCC-E-ABC234', '#main');
+    assert.equal(await pageTitle(page), 'Booked');
+    const sent = fake.calls.find((c) => c.action === 'book');
+    assert.deepEqual(Object.keys(sent).sort(), ['action', 'attendance', 'date', 'end', 'facility', 'org', 'purpose', 'setupNeeds', 'start', 'token']);
+    assert.deepEqual([sent.facility, sent.start, sent.end, sent.org, sent.attendance], ['Empower Room', '16:00', '17:00', 'TEST, please ignore', '12']);
+    await shot(page, 'booking-done');
+    await checkAccessibility(page, 'Booking confirmation');
+    await page.click('.card.done .btn.primary');
+    await waitText(page, 'TEST, please ignore', '#main');
+    assert.match(await text(page, '.bk-item'), /Empower Room/);
+    assert.match(await text(page, '.bk-item'), /16:00–17:00/);
+    assert.match(await text(page, '.bk-status'), /Approved/);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('goes back to sign-in when the session has ended, and shows a message when the booking system is unwell', async () => {
+    const fake = fakeBooking();
+    const { page, context } = await open('#/booking', { setup: (p) => fake.install(p, { signedIn: true, token: 'b'.repeat(64) }) });
+    await waitText(page, 'Sign in to book a room', '#main');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
+    await context.close();
+
+    const down = fakeBooking({ failure: { config: { ok: false, code: 'error', error: 'The booking system is busy. Try again in a moment.' } } });
+    const second = await open('#/booking', { setup: (p) => down.install(p, { signedIn: true }) });
+    await waitText(second.page, 'The booking system is busy. Try again in a moment.', '#main');
+    assert.equal((await second.page.$$('#main .btn')).length, 1); // Try again
+    await second.context.close();
+  });
+
+  it('is reached from the Home + menu, and from the fifth tab for staff', async () => {
+    const fake = fakeBooking();
+    const { page, context } = await open('#/', { setup: (p) => fake.install(p) });
+    assert.equal(await page.$eval('#fab-menu a', (a) => a.getAttribute('href')), '#/booking');
+    await context.close();
+    const staff = await openAsStaff('/booking');
+    await waitText(staff.page, 'Sign in to book a room', '#main');
+    assert.equal((await fifthTab(staff.page)).label, 'Facilities Booking');
+    await staff.context.close();
   });
 });
 
