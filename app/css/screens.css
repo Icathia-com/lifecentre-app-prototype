@@ -289,3 +289,84 @@ body[data-route='notifications'] .screen { padding-bottom: 48px; }
 .bk-frame .bk-contact { color: var(--muted); padding: 14px 12px 16px; }
 .bk-frame .bk-contact b { color: var(--ink); }
 .bk-label { padding: 0 6px; font-size: 13px; font-weight: 600; color: #26324A; }
+
+.bk-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.bk-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; padding: 6px 4px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.95); background: rgba(255, 255, 255, 0.8); color: var(--ink); font: inherit; cursor: pointer; }
+.bk-slot b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bk-slot small { font-size: 11px; font-weight: 600; color: #26324A; }
+.bk-slot[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: #fff; }
+.bk-slot.is-booked { background: rgba(11, 18, 32, 0.07); border-color: transparent; color: #4A5568; cursor: default; }
+.bk-slot.is-booked b { font-weight: 500; }
+
+/* ---- Task sheet (Home and Day plan) ---- */
+.task-sheet .sheet { max-height: 92%; overflow-y: auto; gap: 12px; }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; }
+.sheet-x { width: 40px; height: 40px; background: rgba(11, 18, 32, 0.08); border-color: transparent; color: var(--ink); }
+.sheet-cal { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 18px; background: rgba(11, 18, 32, 0.04); font-size: 13px; }
+.sheet-cal small, .sheet-foot { font-size: 12px; color: #3A4558; }
+.sheet-foot { text-align: center; }
+.sheet-confirm-row { display: flex; gap: 8px; }
+.sheet-confirm-row .btn { flex: 1; }
+.sheet-delete { height: 44px; border: 0; background: none; font-size: 14px; font-weight: 700; color: var(--danger); }
+.sheet-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 18px; background: rgba(192, 57, 43, 0.1); }
+.sheet-confirm[hidden] { display: none; }
+.btn[aria-disabled] { opacity: 0.5; pointer-events: none; }
+
+/* ---- Day plan (design: Day-Plan.dc.html, a dark page) ---- */
+body[data-route='day'] .app { background: radial-gradient(300px 300px at 400px 330px, rgba(208, 64, 154, 0.7), transparent), radial-gradient(200px 200px at 395px 620px, rgba(240, 120, 12, 0.5), transparent), radial-gradient(220px 220px at -20px 120px, rgba(90, 46, 134, 0.5), transparent), #0D0A11; }
+body[data-route='day'] .tabbar { display: none; }
+body[data-route='day'] .screen { color: #fff; gap: 14px; padding-bottom: 24px; }
+.dp-back { align-self: flex-start; flex-shrink: 0; }
+.dp-head { display: flex; align-items: center; justify-content: center; gap: 10px; flex-shrink: 0; margin-top: 4px; }
+.dp-step { width: 40px; height: 40px; padding: 0; border: 0; background: none; color: #fff; display: flex; align-items: center; justify-content: center; }
+.dp-range { display: flex; gap: 10px; font-size: 22px; letter-spacing: -0.04em; }
+.dp-month { font-weight: 500; }
+.dp-dates { font-weight: 300; color: #B9AEC2; }
+.dp-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: start; flex-shrink: 0; }
+.dp-day { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: #fff; }
+.dp-day .dow { font-size: 12px; color: #B9AEC2; }
+.dp-day.on .dow { font-weight: 600; color: #fff; }
+.dp-day .halo { display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; border-radius: 50%; }
+.dp-day.on .halo { background: rgba(255, 255, 255, 0.06); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14); }
+.dp-day .ring-box { width: 36px; height: 36px; }
+.dp-day.on .ring-box { width: 46px; height: 46px; }
+.dp-day .ring { background: conic-gradient(#C7CF3A 0deg var(--deg), rgba(255, 255, 255, 0.16) var(--deg) 360deg); }
+.dp-day.on .ring { background: conic-gradient(#F5E64A 0deg var(--deg), rgba(255, 255, 255, 0.16) var(--deg) 360deg); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); }
+.dp-day .ring.full { background: #C7CF3A; }
+.dp-day .num { font-weight: 600; color: #A99FB4; }
+.dp-day .num.some { color: #E6EAA0; }
+.dp-day.on .num { color: #fff; font-size: 13px; }
+.dp-label { display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; font-size: 13px; }
+.dp-label b { font-weight: 600; }
+.dp-label span { color: #B9AEC2; }
+.dp-list { display: flex; flex-direction: column; gap: 14px; }
+.dp-card { display: flex; flex-direction: column; gap: 14px; flex-shrink: 0; padding: 14px 18px 14px 14px; border-radius: 32px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.14); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3); }
+.dp-card.hot { border-color: rgba(255, 255, 255, 0.3); background: linear-gradient(135deg, rgba(224, 74, 156, 0.78), rgba(125, 44, 166, 0.5)), rgba(255, 255, 255, 0.06); }
+.dp-card .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dp-card .row:first-child { justify-content: flex-start; }
+.dp-card .disc { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16); }
+.dp-card.hot .disc { background: #fff; border-color: transparent; color: #1C1620; }
+.dp-card .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dp-card .what b { font-size: 15px; font-weight: 600; }
+.dp-card .what small { font-size: 12px; color: #B9AEC2; }
+.dp-card.hot .what small { color: #F4DDF0; }
+.dp-card .st { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; font-size: 12px; font-weight: 600; color: #CDBFD5; }
+button.st { padding: 12px 0 12px 12px; margin: -12px 0 -12px -12px; }
+.dp-card .st.done { color: #fff; }
+.dp-card .st.missed { color: #FFC470; }
+.dp-card .st .dot { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.55); }
+.dp-card .st.done .dot { background: #fff; border-color: #fff; color: #C23F8E; }
+.dp-card .time { padding: 6px 12px; border-radius: 16px; background: rgba(13, 10, 17, 0.45); border: 1px solid rgba(255, 255, 255, 0.2); font-size: 12px; font-weight: 600; }
+.dp-card .dp-act { display: flex; align-items: center; gap: 4px; padding: 10px 0 10px 10px; margin: -10px 0; border: 0; background: none; color: #fff; font-size: 12px; font-weight: 600; }
+.dp-addbar { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: center; margin-top: auto; padding: 14px 0 6px; flex-shrink: 0; }
+.dp-add { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 24px 0 18px; border-radius: 27px; background: rgba(255, 255, 255, 0.14); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.25); color: #fff; font-size: 15px; font-weight: 600; }
+body[data-route='day'] .sheet { background: #1B1520; color: #fff; border-top: 1px solid rgba(255, 255, 255, 0.14); }
+body[data-route='day'] .sheet small, body[data-route='day'] .sheet-foot { color: #C9BDD2; }
+body[data-route='day'] .sheet-x { background: rgba(255, 255, 255, 0.1); color: #fff; }
+body[data-route='day'] .sheet-cal, body[data-route='day'] .sheet .cr-area { background: rgba(255, 255, 255, 0.06); }
+body[data-route='day'] .sheet input, body[data-route='day'] .sheet select, body[data-route='day'] .sheet textarea { color: #fff; background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); color-scheme: dark; }
+body[data-route='day'] .sheet .sheet-done { background: #fff; color: #1B1520; }
+body[data-route='day'] .sheet .btn { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.35); }
+body[data-route='day'] .sheet .btn.danger { background: #C0392B; border-color: #C0392B; }
+body[data-route='day'] .sheet-delete { color: #FF9C92; }
+body[data-route='day'] .sheet .bk-error { color: #FF9C92; }

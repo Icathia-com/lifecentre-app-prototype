@@ -78,6 +78,7 @@ async function open(hash = '#/', { width = 390, height = 844, setup } = {}) {
 }
 
 const shot = (page, name) => SHOTS && page.screenshot({ path: `${SHOTS}/${name}.png` });
+const shotEl = async (page, selector, name) => { if (!SHOTS) return; await (await page.$(selector)).screenshot({ path: `${SHOTS}/${name}.png` }); };
 const text = (page, selector) => page.$eval(selector, (el) => el.textContent);
 // innerText follows the page's CSS (a badge shown in capitals reads as capitals), so compare ignoring case.
 const waitText = (page, needle, selector = 'body') => page.waitForFunction((n, s) => document.querySelector(s)?.innerText.toLowerCase().includes(n.toLowerCase()), { timeout: 15000 }, needle, selector);
@@ -130,8 +131,9 @@ describe('Home', () => {
     assert.match(await text(page, '.banner'), /Coming up.*Empower Conference 2027/s);
     assert.equal(await page.$eval('.banner a.pill', (a) => a.href), 'https://example.org/register');
     assert.equal(await page.$eval('.banner h2 a', (a) => a.getAttribute('href')), '#/events/conf');
-    assert.equal((await page.$$('.days .col')).length, 15);
-    assert.equal((await page.$$('.tile')).length, 3); // the draft and the far-off conference are not in the next two weeks
+    await page.waitForSelector('.tile.card');
+    assert.ok((await page.$$('.days .col')).length >= 21, 'the days around today are drawn');
+    assert.equal((await page.$$('.tile.card')).length, 3); // the draft and the far-off conference are not in the days drawn
     assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Secret/);
     await shot(page, 'home');
     assert.deepEqual(errors, []);
@@ -144,35 +146,48 @@ describe('Home', () => {
     await waitTitle(page, 'Notifications');
     await context.close();
   });
-  it('gives each calendar tile a Done, Up next or Later state, with times on the left', async () => {
+  it('gives each calendar block a Done, Up next, Later or Missed state, with times on the left', async () => {
     const { page, context } = await open();
-    await page.waitForSelector('.tile');
+    await page.waitForSelector('.tile.card');
     assert.match(await text(page, '.month'), /^[A-Z][a-z]+/);
-    assert.deepEqual(await page.$$eval('.rail-row span', (els) => els.map((e) => e.textContent)), ['12:30 PM', '7:00 PM', '7:30 PM']);
-    assert.deepEqual(await page.$$eval('.tile', (els) => els.map((e) => e.className.replace('tile ', ''))), ['next', 'later', 'later']);
+    const shown = () => page.$$eval('.rail-row', (els) => els.filter((e) => e.offsetHeight > 0).map((e) => e.textContent));
+    await page.waitForFunction(() => [...document.querySelectorAll('.rail-row')].filter((e) => e.offsetHeight > 0).length === 3);
+    assert.deepEqual(await shown(), ['7:00 AM', '7:15 AM', '7:30 AM']); // the daily verse, devotion and prayer
+    assert.deepEqual(await page.$$eval('.tile.card', (els) => els.map((e) => e.className.replace('tile ', ''))), ['later card', 'later card', 'later card']); // events still to come
+    assert.deepEqual(await page.$$eval('.col-head.today', (heads) => [...heads[0].parentElement.querySelectorAll('.tile.line')].map((e) => e.className.replace('tile ', ''))), ['next line', 'later line', 'later line']);
+    assert.deepEqual(await page.$$eval('.col-head.today', (heads) => [...heads[0].parentElement.querySelectorAll('.tile.line .t')].map((e) => e.textContent)), ['Verse', 'Devotion', 'Prayer']);
+    assert.ok(await page.$('.tile.missed'), 'yesterday\'s unticked daily items are Missed');
     assert.equal(await page.$eval('.col-head.today .ring', (r) => r.style.getPropertyValue('--c')), '#E59A00');
+    assert.match(await text(page, '.col-head.today .sr'), /0 of 3 done/);
     await context.close();
   });
-  it('only gives a time row room when something is on it in the three visible days', async () => {
+  it('only gives a time row room when something is on it in the days on screen', async () => {
     const { page, context } = await open();
-    await page.waitForSelector('.tile');
-    await page.waitForFunction(() => [...document.querySelectorAll('.rail-row')].every((e) => e.offsetHeight === 0)); // yesterday, today, tomorrow: nothing
-    await page.$eval('.days', (d) => { d.style.scrollSnapType = 'none'; d.scrollLeft = d.clientWidth / 3 * 2; });
+    await page.waitForSelector('.tile.card');
+    await page.waitForFunction(() => document.querySelector('.days').scrollLeft === 18100);
+    await page.waitForFunction(() => [...document.querySelectorAll('.rail-row')].filter((e) => e.offsetHeight === 32).length === 3 && [...document.querySelectorAll('.rail-row')].every((e) => e.offsetHeight === 0 || e.offsetHeight === 32)); // yesterday, today, tomorrow: only the slim daily lines
+    await shotEl(page, '.cal', 'home-calendar-today');
+    await page.$eval('.days', (d) => { d.scrollLeft += 200; });
     await page.waitForFunction(() => [...document.querySelectorAll('.rail-row')].some((e) => e.offsetHeight === 64));
+    await new Promise((r) => setTimeout(r, 600));
+    await shotEl(page, '.cal', 'home-calendar-events');
     await context.close();
   });
-  it('opens the event page when a tile is chosen', async () => {
+  it('opens the event page when an event is chosen', async () => {
     const { page, context } = await open();
-    await page.waitForSelector('.tile');
-    await page.$$eval('.tile', (tiles) => tiles[0].click());
+    await page.waitForSelector('.tile.card');
+    await page.$$eval('.tile.card', (tiles) => tiles[0].click());
     await waitTitle(page, 'Cell group night');
     assert.equal(await page.$eval('.tab[aria-current="page"]', (a) => a.dataset.route), 'events');
     await context.close();
   });
-  it('says so plainly when nothing is scheduled', async () => {
+  it('still shows the daily verse, devotion and prayer when no event is coming up', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => { for (const id of ['e1', 'e2', 'e4']) await setDoc(doc(ctx.firestore(), 'events', id), { title: 'x', start: at(40, 9), location: 'yishun', type: 'special', published: true, updatedBy: STAFF }); });
     const { page, context } = await open();
-    await waitText(page, 'Nothing scheduled');
+    await page.waitForSelector('.tile.line');
+    await waitText(page, 'Psalm 23:1');
+    assert.equal((await page.$$('.tile.card')).length, 0);
+    assert.ok((await page.$$('.tile.line')).length >= 21 * 3);
     await context.close();
   });
   it('has a profile menu with a small "Contact us" link', async () => {
@@ -189,17 +204,20 @@ describe('Home', () => {
   });
   it('lists Facilities Booking Request in the + menu', async () => {
     const { page, context } = await open();
-    await page.waitForSelector('.tile'); // let the calendar finish drawing first
+    await page.waitForSelector('.tile.card'); // let the calendar finish drawing first
+    await page.waitForSelector('.banner');
     await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the calendar card
     await page.click('.fab');
+    assert.deepEqual(await page.$$eval('#fab-menu > *', (els) => els.map((e) => e.textContent.trim())), ['Add a task', 'Facilities Booking Request']);
     assert.match(await text(page, '#fab-menu a'), /Facilities Booking Request/);
     assert.equal(await page.$eval('#fab-menu a', (a) => a.getAttribute('href')), '#/booking');
+    await shotEl(page, '.cal', 'home-plus-menu');
     await context.close();
   });
   it('has no accessibility violations', async () => {
     const { page, context } = await open();
     await waitText(page, 'Psalm 23:1');
-    await page.waitForSelector('.tile');
+    await page.waitForSelector('.tile.card');
     await page.waitForSelector('.banner');
     await page.waitForFunction(() => document.getAnimations().filter((a) => a instanceof CSSTransition).every((a) => a.playState !== 'running')); // colours are checked after the transitions end
     await checkAccessibility(page, 'Home');
@@ -800,11 +818,11 @@ describe('when the database cannot be reached', () => {
     // Visit the screens online first, so their code and content are loaded and saved.
     const { page, context } = await open('#/');
     await waitText(page, 'Psalm 23:1');
-    await page.waitForSelector('.tile');
+    await page.waitForSelector('.tile.card');
     await page.click('.tab[data-route="events"]');
     await page.waitForSelector('.ev-row');
     await page.click('.tab[data-route="home"]');
-    await page.waitForSelector('.tile');
+    await page.waitForSelector('.tile.card');
     await page.setOfflineMode(true);
     await page.click('.tab[data-route="events"]');
     await page.waitForSelector('.ev-row', { timeout: 20000 });
@@ -812,10 +830,10 @@ describe('when the database cannot be reached', () => {
     assert.deepEqual(await page.$$eval('.ev-row .ev-title', (els) => els.map((e) => e.textContent)), ['Cell group night', 'Sample lunch', 'Youth night']);
     await page.click('.tab[data-route="home"]');
     await page.waitForSelector('.verse-card blockquote', { timeout: 20000 });
-    await page.waitForSelector('.tile');
+    await page.waitForSelector('.tile.card', { timeout: 20000 });
     await waitText(page, 'saved on this phone');
     assert.match(await text(page, '.verse-card blockquote'), /The LORD is my shepherd/);
-    assert.equal((await page.$$('.tile')).length, 3);
+    assert.equal((await page.$$('.tile.card')).length, 3);
     await context.close();
   });
   it('falls back to labelled sample content on a first visit', async () => {
@@ -837,9 +855,10 @@ describe('when the database cannot be reached', () => {
 describe('mouse drag scrolling', () => {
   it('scrolls the screen and the calendar days, and does not click what was dragged', async () => {
     const { page, context } = await open('#/', { width: 390, height: 560 });
-    await page.waitForSelector('.tile');
+    await page.waitForSelector('.tile.card');
     await waitText(page, 'Psalm 23:1');
     await page.waitForSelector('.banner'); // it pushes the calendar down when it arrives, so wait before measuring
+    await page.waitForFunction(() => document.querySelector('.days').scrollLeft === 18100);
     const drag = async (from, to) => {
       await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(...to, { steps: 8 }); await page.mouse.up();
     };
@@ -847,16 +866,18 @@ describe('mouse drag scrolling', () => {
     await drag([8, 500], [8, 200]); // from the empty gutter beside the cards
     assert.ok(await page.$eval('#main', (m) => m.scrollTop) > 100, 'screen did not scroll');
 
-    await page.evaluate(() => document.querySelector('.col-head:not(.today)').scrollIntoView({ block: 'center' })); // clear of the tab bar
+    await page.evaluate(() => { const tomorrow = document.querySelector('.col-head.today').parentElement.nextElementSibling.querySelector('.col-head'); tomorrow.id = 'tomorrow-head'; tomorrow.scrollIntoView({ block: 'center', inline: 'nearest' }); }); // clear of the tab bar
     await new Promise((r) => setTimeout(r, 300));
-    const head = await (await page.$('.col-head:not(.today)')).boundingBox();
+    const head = await (await page.$('#tomorrow-head')).boundingBox();
     assert.ok(head.y > 80 && head.y < 400, `calendar header is not clear of the tab bar (y=${head.y})`);
-    const firstColumn = () => page.$eval('.days', (d) => Math.round(d.scrollLeft / (d.clientWidth / 3)));
-    assert.equal(await firstColumn(), 0);
-    // Drag left by about two columns, starting on a day header. A click there would scroll back instead.
+    const firstColumn = () => page.$eval('.days', (d) => Math.round(d.scrollLeft / 100));
+    const start = await firstColumn();
+    // Drag left by about two columns, starting on a day header. The click that ends a drag must not open that day.
     await drag([head.x + 80, head.y + 20], [head.x - 100, head.y + 20]);
     await new Promise((r) => setTimeout(r, 900));
-    assert.ok(await firstColumn() >= 2, `days did not scroll (first column ${await firstColumn()})`);
+    assert.ok(await firstColumn() >= start + 2, `days did not scroll (first column ${await firstColumn()})`);
+    assert.ok(await page.$eval('.days', (d) => d.scrollLeft % 100 === 0), 'the days settle on a whole day');
+    assert.equal(await page.evaluate(() => location.hash), '#/');
     await context.close();
   });
 });
@@ -967,8 +988,19 @@ describe('Facilities booking', () => {
     await page.waitForSelector('[name="org"]');
     assert.equal(await pageTitle(page), 'New booking');
     assert.equal(await page.$eval('[name="room"]', (el) => el.value), 'Empower Room');
-    await waitText(page, 'Already booked: 14:00–16:00', '#main');
-    assert.match(await text(page, '#main'), /Requested: 18:00–19:00/);
+    await page.waitForSelector('.bk-slot');
+    const slotState = () => page.$$eval('.bk-slot', (els) => els.map((el) => ({ t: el.dataset.slot, booked: el.disabled, on: el.getAttribute('aria-pressed') === 'true', label: el.querySelector('small')?.textContent ?? '' })));
+    let slots = await slotState();
+    assert.equal(slots.length, 16); // 07:00 to 22:00, one-hour slots
+    assert.deepEqual(slots.filter((s) => s.booked).map((s) => [s.t, s.label]), [['14:00', 'Booked'], ['15:00', 'Booked']]); // only the word Booked, no details
+    assert.equal(slots.find((s) => s.t === '18:00').label, 'Requested');
+    assert.deepEqual(slots.filter((s) => s.on).map((s) => s.t), ['09:00']); // the default hour
+    await page.click('[data-slot="10:00"]'); // adjoining: 09:00-11:00
+    await page.click('[data-slot="11:00"]'); // adjoining: 09:00-12:00
+    assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['09:00', '12:00']);
+    await page.click('[data-slot="17:00"]'); // not adjoining: starts again
+    assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['17:00', '18:00']);
+    assert.equal(await page.$eval('.bk-slot[data-slot="14:00"]', (el) => el.disabled), true); // booked hours cannot be tapped
     assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), true);
     await setField(page, 'org', 'TEST, please ignore');
     await setField(page, 'purpose', 'TEST, please ignore');
@@ -979,10 +1011,11 @@ describe('Facilities booking', () => {
     await waitText(page, 'That time is already booked for this room.', '#main');
     assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), true);
     await shot(page, 'booking-form-clash');
-    await page.select('[name="start"]', '16:00');
-    await page.select('[name="end"]', '17:00');
-    await waitText(page, 'Already booked: 14:00–16:00', '#main');
+    await page.click('[data-slot="16:00"]');
+    assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['16:00', '17:00']);
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.slot), '16:00'); // focus stays on the tapped hour
     assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), false);
+    await shot(page, 'booking-form-slots');
     await checkAccessibility(page, 'Booking form');
     await page.click('#bk-submit');
     await waitText(page, 'Reference LCC-E-ABC234', '#main');
@@ -1024,6 +1057,243 @@ describe('Facilities booking', () => {
     await waitText(staff.page, 'Sign in to book a room', '#main');
     assert.equal((await fifthTab(staff.page)).label, 'Facilities Booking');
     await staff.context.close();
+  });
+});
+
+describe('Home calendar: days, months and tasks', () => {
+  it('draws 100px day columns, one day at a time, and jumps by month and back to today', async () => {
+    const { page, context } = await open();
+    await page.waitForSelector('.tile.card');
+    await page.waitForFunction(() => document.querySelector('.days').scrollLeft === 18100);
+    assert.equal(await page.$eval('.col', (c) => c.getBoundingClientRect().width), 100);
+    assert.equal(await page.$eval('.today-badge', (b) => b.classList.contains('on')), true);
+    await page.$eval('.days', (d) => { d.scrollLeft += 330; }); // part way between two days
+    await page.waitForFunction(() => document.querySelector('.days').scrollLeft % 100 === 0, { timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector('.today-badge:not(.on)'));
+    const before = await text(page, '.month');
+    await page.waitForSelector('.banner');
+    await page.$eval('.month-btn', (b) => b.scrollIntoView({ block: 'center' }));
+    await page.click('.month-btn');
+    assert.equal(await page.$eval('.month-btn', (b) => b.getAttribute('aria-expanded')), 'true');
+    assert.equal((await page.$$('#months .month-pick')).length, 19); // six months back, this month, a year ahead
+    await shotEl(page, '.cal', 'home-months');
+    await page.$$eval('#months .month-pick', (els) => els[els.length - 1].click());
+    await page.waitForFunction((was) => document.querySelector('.month').textContent !== was, { timeout: 5000 }, before);
+    assert.equal(await page.$eval('#months', (m) => m.hidden), true);
+    await page.waitForFunction(() => document.querySelector('.days').scrollLeft > 18100 + 300 * 100 / 3);
+    await page.$eval('.today-badge', (b) => b.click());
+    await page.waitForFunction(() => document.querySelector('.days').scrollLeft === 18100, { timeout: 5000 });
+    assert.equal(await page.$eval('.today-badge', (b) => b.classList.contains('on')), true);
+    await context.close();
+  });
+  it('opens the Day plan when a day, or one of its daily items, is tapped', async () => {
+    const { page, context } = await open();
+    await page.waitForSelector('.tile.card');
+    await page.$eval('.col-head.today', (a) => a.click());
+    await page.waitForSelector('.dp-card');
+    assert.equal(await page.evaluate(() => location.hash), `#/day/${TODAY}`);
+    await page.goBack();
+    await page.waitForSelector('.tile.card');
+    await page.$eval('.col-head.today', (a) => a.parentElement.querySelector('.tile.line').click());
+    await page.waitForSelector('.dp-card');
+    assert.equal(await page.evaluate(() => location.hash), `#/day/${TODAY}`);
+    await context.close();
+  });
+  it('stacks slim blocks when two or three things share a time, and shows "+N more" for four or more', async () => {
+    const day = addDays(TODAY, 1);
+    const task = (id, title, repeat = 'none') => ({ id, title, date: day, min: 420, repeat, notes: '', done: {} }); // all at 7:00 AM, with the daily verse
+    const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument((list) => { if (!localStorage.getItem('lc.tasks')) localStorage.setItem('lc.tasks', JSON.stringify(list)); }, [task('a', 'Task A'), task('b', 'Task B')]) });
+    await page.waitForSelector('.tile.card');
+    const col = () => page.$$eval('.col-head', (heads, key) => { const c = heads.find((a) => a.getAttribute('href') === '#/day/' + key).parentElement; return { stack: c.querySelectorAll('.tile.stack').length, more: [...c.querySelectorAll('.tile.more')].map((e) => e.textContent) }; }, day);
+    assert.deepEqual(await col(), { stack: 3, more: [] }); // verse + two tasks: three slim blocks, no "more"
+    await page.evaluate((d) => { const l = JSON.parse(localStorage.getItem('lc.tasks')); l.push({ id: 'c', title: 'Task C', date: d, min: 420, repeat: 'none', notes: '', done: {} }); localStorage.setItem('lc.tasks', JSON.stringify(l)); }, day);
+    await page.reload();
+    await page.waitForSelector('.tile.card');
+    assert.deepEqual(await col(), { stack: 2, more: ['+2 more'] }); // four things: two blocks and "+2 more"
+    await context.close();
+  });
+  it('adds a task from the + menu and shows it on the calendar and in the Day plan', async () => {
+    const { page, context } = await open();
+    await page.waitForSelector('.tile.card');
+    await page.waitForSelector('.banner');
+    await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' }));
+    await page.click('.fab');
+    await page.click('.fab-item');
+    await page.waitForSelector('.task-sheet [role="dialog"]');
+    assert.equal(await page.$eval('.task-sheet [role="dialog"]', (d) => d.getAttribute('aria-label')), 'Add a task');
+    assert.equal(await page.evaluate(() => document.activeElement.name), 'task-title');
+    await shot(page, 'home-task-sheet');
+    await page.click('.task-sheet .sheet-done');
+    await waitText(page, 'Please say what the task is.', '.task-sheet');
+    await setField(page, 'task-title', 'Call a friend');
+    await setField(page, 'task-date', TODAY);
+    await setField(page, 'task-time', '10:15');
+    await setField(page, 'task-repeat', 'weekly');
+    await setField(page, 'task-notes', 'Ask how the move went');
+    assert.match(await page.$eval('.task-sheet a[href^="https://calendar.google.com"]', (a) => decodeURIComponent(a.href)), /text=Call a friend.*dates=\d{8}T101500\/\d{8}T111500.*recur=RRULE:FREQ=WEEKLY/);
+    assert.match(await page.$eval('.task-sheet a[download]', (a) => decodeURIComponent(a.href)), /RRULE:FREQ=WEEKLY[\s\S]*SUMMARY:Call a friend/);
+    await page.click('.task-sheet .sheet-done');
+    await page.waitForFunction(() => !document.querySelector('.task-sheet'));
+    const saved = JSON.parse(await page.evaluate(() => localStorage.getItem('lc.tasks')));
+    assert.equal(saved.length, 1);
+    assert.deepEqual({ ...saved[0], id: undefined }, { id: undefined, title: 'Call a friend', date: TODAY, min: 615, repeat: 'weekly', notes: 'Ask how the move went', done: {} });
+    await page.waitForFunction(() => [...document.querySelectorAll('.tile.card .t')].some((e) => e.textContent === 'Call a friend'));
+    assert.ok((await page.$$eval('.rail-row', (els) => els.map((e) => e.textContent))).includes('10:15 AM'));
+    await shotEl(page, '.cal', 'home-calendar-task');
+    await context.close();
+  });
+});
+
+describe('Day plan', () => {
+  const titles = (page) => page.$$eval('.dp-card .what b', (els) => els.map((e) => e.textContent));
+  const progressText = (page) => text(page, '.dp-label');
+  const settled = (page) => page.waitForFunction(() => document.querySelector('.dp-list')?.dataset.events === 'loaded' && document.querySelector('.dp-card'));
+
+  it('lists the day in time order, ticks the daily items, and counts what is done', async () => {
+    const day = addDays(TODAY, 2);
+    const { page, errors, context } = await open(`#/day/${day}`);
+    await settled(page);
+    await page.waitForFunction(() => document.querySelectorAll('.dp-card').length === 4);
+    assert.deepEqual(await titles(page), ['Verse of the day', 'Morning devotion', 'Prayer time', 'Cell group night']);
+    assert.match(await progressText(page), /Schedule.*0 of 4 done/s);
+    assert.equal((await page.$$('.dp-day')).length, 7);
+    assert.equal(await page.$eval('.dp-day.on', (b) => b.getAttribute('aria-pressed')), 'true');
+    assert.match(await text(page, '.dp-day.on .sr'), /0 of 4 done/);
+    assert.equal(await page.$eval('.dp-card:nth-child(4) .dp-act', (a) => a.getAttribute('href')), '#/events/e1');
+    await shot(page, 'day-plan');
+    await page.click('.dp-card:nth-child(1) button.st');
+    await waitText(page, '1 of 4 done', '.dp-label');
+    assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('lc.daily'))), { [day]: ['verse'] });
+    assert.equal(await page.evaluate(() => document.activeElement.closest('.dp-card')?.querySelector('.what b').textContent), 'Verse of the day'); // focus stays on the tick
+    await page.click('.dp-card:nth-child(1) button.st');
+    await waitText(page, '0 of 4 done', '.dp-label');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc.daily')), '{}');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('moves between weeks and days, and shows today first with "Up next"', async () => {
+    const { page, context } = await open(`#/day/${TODAY}`);
+    await settled(page);
+    await page.waitForSelector('.dp-card');
+    assert.match(await progressText(page), /Today, /);
+    assert.equal(await page.$eval('.dp-card.hot .st', (s) => s.textContent.replace(/,.*/, '')), 'Up next');
+    const month = await text(page, '.dp-range');
+    await page.click('[aria-label="Next week"]');
+    await page.waitForFunction((d) => location.hash !== `#/day/${d}`, {}, TODAY);
+    assert.equal(await page.evaluate(() => location.hash), `#/day/${addDays(TODAY, 7)}`);
+    assert.ok((await text(page, '.dp-label')).length > 0);
+    await page.click('.dp-day:nth-child(1)');
+    assert.match(await page.evaluate(() => location.hash), /^#\/day\/\d{4}-\d{2}-\d{2}$/);
+    assert.ok(month.length > 0);
+    await context.close();
+  });
+
+  it('opens a day that is not a real date as today', async () => {
+    const { page, context } = await open('#/day/not-a-date');
+    await page.waitForSelector('.dp-card');
+    assert.match(await progressText(page), /Today, /);
+    await context.close();
+  });
+
+  it('adds, ticks, changes and deletes a task, and a daily task shows on the next day too', async () => {
+    const day = addDays(TODAY, 1);
+    const { page, context } = await open(`#/day/${day}`);
+    await settled(page);
+    await page.waitForSelector('.dp-card');
+    await page.click('.dp-add');
+    await page.waitForSelector('.task-sheet [role="dialog"]');
+    assert.equal(await page.$eval('[name="task-date"]', (el) => el.value), day);
+    await setField(page, 'task-title', 'Walk in the park');
+    await setField(page, 'task-time', '06:30');
+    await setField(page, 'task-repeat', 'daily');
+    await page.click('.task-sheet .sheet-done');
+    await page.waitForFunction(() => !document.querySelector('.task-sheet'));
+    assert.deepEqual((await titles(page)).slice(0, 2), ['Walk in the park', 'Verse of the day']);
+    assert.match(await text(page, '.dp-card:nth-child(1) .what small'), /Repeats every day/);
+    await goto(page, `/day/${addDays(day, 1)}`);
+    await page.waitForFunction(() => document.querySelector('.dp-card .what b')?.textContent === 'Walk in the park');
+    await page.click('.dp-card:nth-child(1) button.st');
+    await waitText(page, 'Done', '.dp-card:nth-child(1)');
+    const saved = JSON.parse(await page.evaluate(() => localStorage.getItem('lc.tasks')));
+    assert.deepEqual(saved[0].done, { [addDays(day, 1)]: true });
+    await page.click('.dp-card:nth-child(1) .dp-act');
+    await page.waitForSelector('.task-sheet [role="dialog"]');
+    assert.equal(await page.$eval('.task-sheet [role="dialog"]', (d) => d.getAttribute('aria-label')), 'Change your task');
+    assert.match(await text(page, '.task-sheet'), /Changing this changes every day it repeats/);
+    await setField(page, 'task-title', 'Walk by the river');
+    await page.click('.task-sheet .sheet-done');
+    await page.waitForFunction(() => document.querySelector('.dp-card .what b')?.textContent === 'Walk by the river');
+    assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('lc.tasks')))[0].done, { [addDays(day, 1)]: true }); // ticks survive a change
+    await page.click('.dp-card:nth-child(1) .dp-act');
+    await page.waitForSelector('.task-sheet [role="dialog"]');
+    await page.click('.sheet-delete');
+    assert.equal(await page.$eval('.sheet-confirm', (c) => c.hidden), false);
+    await page.click('.sheet-confirm .btn:nth-child(2)'); // Keep it
+    assert.equal(await page.$eval('.sheet-delete', (b) => b.hidden), false);
+    await page.click('.sheet-delete');
+    await page.click('.sheet-confirm .btn.danger');
+    await page.waitForFunction(() => !document.querySelector('.task-sheet'));
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc.tasks')), '[]');
+    assert.ok(!(await titles(page)).includes('Walk by the river'));
+    await context.close();
+  });
+
+  it('closes the task sheet with Escape and gives focus back', async () => {
+    const { page, context } = await open(`#/day/${TODAY}`);
+    await settled(page);
+    await page.waitForSelector('.dp-card');
+    await page.focus('.dp-add');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.task-sheet');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.task-sheet'));
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'dp-add');
+    await context.close();
+  });
+
+  it('shows the signed-in member\'s own room bookings, and asks for nobody else\'s', async () => {
+    const day = addDays(TODAY, 1);
+    const fake = fakeBooking();
+    fake.bookings.push({ id: 'LCC-E-MINE01', status: 'Approved', facility: 'Empower Room', date: day, start: '14:30', end: '16:00', org: 'Youth', canCancel: false });
+    fake.bookings.push({ id: 'LCC-E-OLD001', status: 'Cancelled', facility: 'Foyer', date: day, start: '09:00', end: '10:00', org: 'Youth', canCancel: false });
+    const { page, context } = await open(`#/day/${day}`, { setup: (p) => fake.install(p, { signedIn: true }) });
+    await page.waitForFunction(() => [...document.querySelectorAll('.dp-card .what b')].some((e) => e.textContent === 'Empower Room booking'));
+    assert.equal((await titles(page)).filter((t) => t.includes('booking')).length, 1); // a cancelled booking is left out
+    assert.match(await text(page, '.dp-card:nth-child(4) .what small'), /Approved · Facilities/);
+    assert.equal(await page.$eval('.dp-card:nth-child(4) .dp-act', (a) => a.getAttribute('href')), '#/booking');
+    assert.deepEqual([...new Set(fake.calls.map((c) => c.action))], ['myBookings']);
+    await shot(page, 'day-plan-booking');
+    await goto(page, '/');
+    await page.waitForFunction(() => [...document.querySelectorAll('.tile.card .t')].some((e) => e.textContent === 'Empower Room booking'));
+    await page.$eval('.days', (d) => { d.scrollLeft += 100; });
+    await new Promise((r) => setTimeout(r, 700));
+    await shotEl(page, '.cal', 'home-calendar-booking');
+    await context.close();
+  });
+
+  it('shows no bookings, and asks for none, when the member has not signed in for booking', async () => {
+    const fake = fakeBooking();
+    const { page, context } = await open(`#/day/${TODAY}`, { setup: (p) => fake.install(p) });
+    await settled(page);
+    await page.waitForSelector('.dp-card');
+    await goto(page, '/');
+    await page.waitForSelector('.tile.card');
+    assert.deepEqual(fake.calls, []);
+    await context.close();
+  });
+
+  it('has no accessibility violations, with or without the task sheet', async () => {
+    const { page, context } = await open(`#/day/${addDays(TODAY, 2)}`);
+    await settled(page);
+    await page.waitForFunction(() => document.querySelectorAll('.dp-card').length === 4);
+    await page.waitForFunction(() => document.getAnimations().filter((a) => a instanceof CSSTransition).every((a) => a.playState !== 'running'));
+    await checkAccessibility(page, 'Day plan');
+    await page.click('.dp-add');
+    await page.waitForSelector('.task-sheet [role="dialog"]');
+    await shot(page, 'day-plan-sheet');
+    await checkAccessibility(page, 'Task sheet');
+    await context.close();
   });
 });
 
