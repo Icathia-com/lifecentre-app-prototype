@@ -278,3 +278,14 @@ body[data-route='notifications'] .screen { padding-bottom: 48px; }
 .bk-status { display: flex; align-items: center; flex-shrink: 0; gap: 6px; font-size: 12px; font-weight: 600; color: #26324A; }
 .bk-dot { width: 8px; height: 8px; border-radius: 50%; }
 .bk-signed { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; }
+
+.bk-head { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; padding-top: 12px; }
+.bk-head-top { display: flex; align-items: center; justify-content: space-between; }
+.bk-head h1 { display: flex; flex-direction: column; font-size: 33px; font-weight: 500; line-height: 1.15; color: #fff; }
+.bk-head h1 .light { font-weight: 300; color: #E6EEF7; }
+.bk-avatar { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: #E9EEF5; color: #3F5675; font-weight: 700; }
+.bk-frame { border-radius: 34px; padding: 10px 10px 0; background: rgba(255, 255, 255, 0.34); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.65); }
+.bk-inner { display: flex; flex-direction: column; gap: 16px; padding: 24px 22px; border-radius: 28px; background: rgba(255, 255, 255, 0.86); box-shadow: 0 10px 28px rgba(40, 60, 90, 0.12); }
+.bk-frame .bk-contact { color: var(--muted); padding: 14px 12px 16px; }
+.bk-frame .bk-contact b { color: var(--ink); }
+.bk-label { padding: 0 6px; font-size: 13px; font-weight: 600; color: #26324A; }

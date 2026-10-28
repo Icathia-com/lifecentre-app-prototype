@@ -124,8 +124,8 @@ export function render(root) {
 
   // ---- pieces ----
 
-  const head = (first, second, back) => h('header', { class: 'cr-head' },
-    back,
+  const head = (first, second, back) => h('header', { class: 'bk-head' },
+    h('div', { class: 'bk-head-top' }, back, user() ? h('span', { class: 'bk-avatar', 'aria-hidden': 'true' }, (user().name || user().email || '?').trim()[0].toUpperCase()) : null),
     h('h1', { id: 'page-title', tabindex: '-1' }, first, second ? h('span', { class: 'light' }, ` ${second}`) : null));
   const backHome = h('a', { class: 'round-btn', href: '#/', 'aria-label': 'Back to Home' }, ic('back', 20, 2.2));
   const status = (s) => { const [label, colour] = STATUS[s] ?? [s, '#6B7588']; return h('span', { class: 'bk-status' }, h('span', { class: 'bk-dot', style: `background:${colour}`, 'aria-hidden': 'true' }), label); };
@@ -143,7 +143,7 @@ export function render(root) {
     const codeInput = second ? h('input', { id: 'bk-code', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', maxlength: '6', autocomplete: 'one-time-code' }) : null;
     return [
       head('Facilities Booking', 'Request', backHome),
-      h('section', { class: 'card bk-card' },
+      h('section', { class: 'bk-frame' }, h('div', { class: 'bk-inner' },
         h('h2', { class: 'big' }, 'Sign in to book a room'),
         h('p', { class: 'muted' }, second ? notice : 'We’ll email you a 6‑digit code. No password needed.'),
         !second && notice ? h('p', { class: 'note', role: 'status' }, notice) : null,
@@ -155,7 +155,7 @@ export function render(root) {
           second ? h('div', { class: 'bk-links' },
             h('button', { type: 'button', class: 'link', onclick: () => { view = 'email'; notice = ''; error = ''; draw(); } }, 'Use a different email'),
             h('button', { type: 'button', class: 'link', onclick: sendCode }, 'Send a new code')) : null)),
-      h('a', { class: 'bk-contact', href: '#/contact' }, h('span', {}, 'Not a member yet?'), h('b', {}, 'Contact us'))];
+        h('a', { class: 'bk-contact', href: '#/contact' }, h('span', {}, 'Not a member yet?'), h('b', {}, 'Contact us')))];
   }
 
   function homeView() {
@@ -170,7 +170,7 @@ export function render(root) {
     return [
       head('Facilities Booking', 'Request', backHome),
       h('section', { class: 'card bk-card', 'aria-label': 'Rooms' },
-        h('h2', { class: 'big' }, 'Choose a room'),
+        h('h2', { class: 'bk-label' }, 'Choose a room'),
         h('div', { class: 'bk-rooms' }, cfg.rooms.map((r) => h('button', { type: 'button', class: 'bk-room', 'aria-pressed': String(r === room), onclick: () => { form = { ...(form ?? {}), room: r }; draw(); } }, r))),
         h('button', { type: 'button', class: 'cr-submit', onclick: () => openForm(room) }, ic('plus', 18, 2.2), ' New booking')),
       h('h2', { class: 'big-title' }, 'Your bookings'),

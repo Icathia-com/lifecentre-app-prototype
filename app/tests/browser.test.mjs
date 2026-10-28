@@ -950,6 +950,7 @@ describe('Facilities booking', () => {
     await checkAccessibility(page, 'Booking home');
     await page.reload();
     await waitText(page, 'Choose a room', '#main'); // still signed in
+    await page.$eval('.bk-signed .btn', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the page
     await page.click('.bk-signed .btn');
     await waitText(page, 'Sign in to book a room', '#main');
     assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
