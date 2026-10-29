@@ -149,9 +149,9 @@ export function render(root) {
       const on = cy === y && cm === m + 1;
       const name = formatDay(dayStart(key), { month: 'short' });
       buttons.push(h('button', {
-        type: 'button', class: `month-pick${on ? ' on' : ''}`, 'aria-pressed': String(on), 'aria-label': formatDay(dayStart(key), { month: 'long', year: 'numeric' }),
+        type: 'button', class: `month-pick${on ? ' on' : ''}`, 'aria-pressed': String(on), 'aria-label': `${name} ${y}`,
         onclick: () => { setMonths(false); monthButton.focus(); jumpTo(idx); },
-      }, y !== ty ? `${name} ’${String(y).slice(2)}` : name));
+      }, y !== ty ? `${name} ${y}` : name));
     }
     monthMenu.replaceChildren(...buttons);
   }

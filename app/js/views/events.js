@@ -52,8 +52,9 @@ export function render(root) {
     if (searchOpen) search.focus(); else { search.value = ''; query = ''; draw(); }
   } }, ic('search', 20));
   const note = h('p', { class: 'note', role: 'status', hidden: '' });
-  const fab = h('a', { class: 'fab-pill', href: '#/events/new', hidden: '' }, ic('plus', 18, 2.2), 'Event');
-  document.querySelector('.app').append(fab);
+  const fab = h('a', { class: 'fab-pill', href: '#/events/new' }, ic('plus', 18, 2.2), 'Event');
+  const fabLayer = h('div', { class: 'fab-layer', role: 'region', 'aria-label': 'Add an event', hidden: '' }, fab); // a landmark, so the button is not outside the page's regions
+  document.querySelector('.app').append(fabLayer);
 
   root.append(
     h('header', { class: 'ev-head' }, h('h1', { id: 'page-title', tabindex: '-1' }, 'Events'), searchBtn),
@@ -160,7 +161,7 @@ export function render(root) {
   const onKey = (e) => { if (e.key === 'Escape' && locOpen) { locOpen = false; draw(); } };
   document.addEventListener('pointerdown', onPointer);
   document.addEventListener('keydown', onKey);
-  const stopSession = onSession((session) => { fab.hidden = !['admin', 'staff'].includes(session?.role); });
+  const stopSession = onSession((session) => { fabLayer.hidden = !['admin', 'staff'].includes(session?.role); });
 
   const from = dayStart(today);
   data.getEvents({ from, to: dayStart(addDays(today, WINDOW_DAYS)), key: 'events-upcoming' }).then(({ value, source }) => {
@@ -172,7 +173,7 @@ export function render(root) {
   data.getPinnedEvent().then(({ value }) => { pinned = value; draw(); });
 
   return () => {
-    fab.remove();
+    fabLayer.remove();
     stopSession();
     document.removeEventListener('pointerdown', onPointer);
     document.removeEventListener('keydown', onKey);

@@ -39,6 +39,8 @@
 .menu button { height: 38px; padding: 0 12px; border: 0; border-radius: 12px; text-align: left; font-size: 14px; font-weight: 500; background: transparent; }
 .menu button.on { font-weight: 700; background: rgba(11, 18, 32, 0.07); }
 
+.fab-layer { position: absolute; inset: 0; z-index: 41; pointer-events: none; }
+.fab-layer .fab-pill { pointer-events: auto; }
 .fab-pill {
   position: absolute; right: 20px; bottom: 102px; z-index: 41; height: 48px; padding: 0 18px 0 14px; border-radius: 24px; background: var(--ink); color: #fff;
   display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; box-shadow: 0 10px 26px rgba(11, 18, 32, 0.3);
@@ -388,7 +390,7 @@ body[data-route='contact'] .screen, body[data-route='giving'] .screen { gap: 14p
 .ct-row-sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .ct-visit { display: flex; flex-direction: column; gap: 14px; flex-shrink: 0; }
 .ct-site { padding: 16px 18px; border-radius: 26px; display: flex; flex-direction: column; gap: 8px; background: rgba(255, 255, 255, 0.62); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 12px 32px rgba(40, 60, 90, 0.1); }
-.ct-site h3 { font-size: 16px; font-weight: 700; }
+.ct-site h2 { font-size: 16px; font-weight: 700; }
 .ct-addr { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; color: var(--muted); }
 .ct-addr svg { flex-shrink: 0; margin-top: 2px; }
 .ct-times { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -474,3 +476,20 @@ body[data-route='watch'] .screen { padding: 0; gap: 0; overflow: hidden; color: 
 .wt-error { min-height: 16px; font-size: 13px; color: #FF8A80; }
 .wt-publish { height: 52px; border-radius: 26px; border: 0; background: #fff; color: #1B1520; font-size: 15px; font-weight: 700; }
 .wt-publish:disabled { opacity: 0.6; }
+
+/* ---- Tap targets: every button, link and field is at least 44 x 44 px. Where the look is a smaller pill or switch, the extra
+   size is a transparent border or padding, with a matching negative margin, so the layout stays as designed. ---- */
+.back, .text-btn, .mark-all { display: inline-flex; align-items: center; min-height: 44px; }
+.month-btn { min-height: 44px; }
+.today-badge { width: 44px; height: 44px; border: 3px solid transparent; background-clip: padding-box; margin: -3px; }
+.weekbar button { min-height: 44px; }
+.seg button { height: 44px; }
+.pill-btn, .dir-dark, .dir-btn, .follow-pill, a.chip, button.chip { height: 44px; }
+.dp-step { width: 44px; height: 44px; }
+.dp-card button.st { padding: 12px 0 12px 12px; margin: -12px 0 -12px -12px; }
+.ct-addr { min-height: 44px; align-items: center; }
+.cr-fab { width: 44px; height: 44px; }
+.cr-input { min-height: 44px; height: 44px; }
+.cr-select { height: 44px; min-width: 44px; }
+.cr-switch { width: 66px; height: 44px; border: 7px solid transparent; border-radius: 22px; background-clip: padding-box; margin: -7px; }
+.field.check label { display: flex; align-items: center; flex: 1; min-height: 44px; }
