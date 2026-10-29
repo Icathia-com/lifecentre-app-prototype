@@ -207,7 +207,7 @@ describe('Home', () => {
     await page.waitForSelector('.banner');
     await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the calendar card
     await page.click('.fab');
-    assert.deepEqual(await page.$$eval('#fab-menu > *', (els) => els.map((e) => e.textContent.trim())), ['Add a task', 'Facilities Booking Request']);
+    assert.deepEqual(await page.$$eval('#fab-menu > *', (els) => els.map((e) => e.textContent.trim())), ['Add a task', 'Book a space']);
     assert.match(await text(page, '#fab-menu a'), /Facilities Booking Request/);
     assert.equal(await page.$eval('#fab-menu a', (a) => a.getAttribute('href')), '#/booking');
     await shotEl(page, '.cal', 'home-plus-menu');
@@ -885,9 +885,9 @@ describe('mouse drag scrolling', () => {
 });
 
 // A stand-in for the church's booking system: it answers the app's calls the way the real one does, and records them.
-function fakeBooking({ blocks = [], failure = null, delays = {} } = {}) {
+function fakeBooking({ blocks = [], failure = null, delays = {}, past = [] } = {}) {
   const TOKEN = 'a'.repeat(64);
-  const state = { calls: [], bookings: [], blocks, failure };
+  const state = { calls: [], bookings: [], blocks, failure, past };
   const reply = (body) => {
     const { action, token } = body;
     if (state.failure?.[action]) return state.failure[action];
@@ -900,7 +900,7 @@ function fakeBooking({ blocks = [], failure = null, delays = {} } = {}) {
     if (token !== TOKEN) return { ok: false, code: 'signin', error: 'Please sign in again.' };
     if (action === 'config') return { ok: true, rooms: ['Whole Church', 'Main Sanctuary', 'Empower Room', 'Foyer', 'Dining Area', 'Cry Room', 'Carpark'], today: TODAY, maxDate: addDays(TODAY, 365), dayStart: '07:00', dayEnd: '23:00' };
     if (action === 'availability') return { ok: true, facility: body.facility, date: body.date, blocks: state.blocks };
-    if (action === 'myBookings') return { ok: true, upcoming: state.bookings, past: [] };
+    if (action === 'myBookings') return { ok: true, upcoming: state.bookings, past: state.past };
     if (action === 'signOut') return { ok: true };
     if (action === 'book') {
       const entry = { id: 'LCC-E-ABC234', status: 'Approved', facility: body.facility, date: body.date, start: body.start, end: body.end, org: body.org, purpose: body.purpose, canCancel: false };
@@ -922,6 +922,8 @@ function fakeBooking({ blocks = [], failure = null, delays = {} } = {}) {
   };
   return state;
 }
+// Scrolls a control to the middle of the screen first, so the bottom tab bar never covers it, then taps it.
+const tap = async (page, selector) => { await page.$eval(selector, (el) => el.scrollIntoView({ block: 'center' })); await page.click(selector); };
 const setField = (page, name, value) => page.$eval(`[name="${name}"]`, (el, v) => {
   el.value = v;
   el.dispatchEvent(new Event(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', { bubbles: true }));
@@ -968,15 +970,16 @@ describe('Facilities booking', () => {
     await page.$eval('#bk-code', (el) => { el.value = ''; });
     await page.type('#bk-code', '123456');
     await page.click('.cr-submit');
-    await waitText(page, 'Choose a room', '#main');
-    assert.equal((await page.$$('.bk-room')).length, 7);
+    await waitTitle(page, 'Book a space');
+    await page.waitForSelector('.bs-pill');
+    assert.equal((await page.$$('.bs-pill')).length, 7);
     assert.match(await text(page, '#main'), /No upcoming bookings\./);
     assert.match(await text(page, '#main'), /Signed in as member@example\.org/);
     assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session'))).token.length, 64);
     await shot(page, 'booking-home');
     await checkAccessibility(page, 'Booking home');
     await page.reload();
-    await waitText(page, 'Choose a room', '#main'); // still signed in
+    await page.waitForSelector('.bs-pill'); // still signed in
     await page.$eval('.bk-signed .btn', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the page
     await page.click('.bk-signed .btn');
     await waitTitle(page, 'Account');
@@ -986,59 +989,87 @@ describe('Facilities booking', () => {
     await context.close();
   });
 
-  it('books a room: shows what is already booked, blocks a clash, sends only the form fields, and lists the booking', async () => {
+  it('books a space on one page: pills, timeline, hours, a blocked clash, Confirm opens the details, and the booking joins the slider', async () => {
     const fake = fakeBooking({ blocks: [{ start: '14:00', end: '16:00', kind: 'booked', wholeChurch: false }, { start: '18:00', end: '19:00', kind: 'pending', wholeChurch: false }] });
     const { page, errors, context } = await open('#/booking', { setup: (p) => fake.install(p, { signedIn: true }) });
-    await waitText(page, 'Choose a room', '#main');
-    await page.click('.bk-room:nth-child(3)'); // Empower Room
-    await page.click('.cr-submit');
-    await page.waitForSelector('[name="org"]');
-    assert.equal(await pageTitle(page), 'New booking');
-    assert.equal(await page.$eval('[name="room"]', (el) => el.value), 'Empower Room');
+    await waitTitle(page, 'Book a space');
     await page.waitForSelector('.bk-slot');
+    assert.deepEqual(await page.$$eval('.bs-pill', (els) => els.map((e) => [e.textContent, e.getAttribute('aria-pressed')])).then((x) => x.filter(([, on]) => on === 'true').map(([t]) => t)), ['Empower Room']);
+    assert.ok((await page.$$('.bs-day')).length >= 30);
+    assert.equal(await page.$eval('.bs-day[aria-pressed="true"]', (b) => b.dataset.date), addDays(TODAY, 1)); // tomorrow
+    assert.equal((await page.$$('.bs-block.is-booked')).length, 1);
+    assert.equal((await page.$$('.bs-block.is-requested')).length, 1);
     const slotState = () => page.$$eval('.bk-slot', (els) => els.map((el) => ({ t: el.dataset.slot, booked: el.disabled, on: el.getAttribute('aria-pressed') === 'true', label: el.querySelector('small')?.textContent ?? '' })));
     let slots = await slotState();
     assert.equal(slots.length, 16); // 07:00 to 22:00, one-hour slots
-    assert.deepEqual(slots.filter((s) => s.booked).map((s) => [s.t, s.label]), [['14:00', 'Booked'], ['15:00', 'Booked']]); // only the word Booked, no details
-    assert.equal(slots.find((s) => s.t === '18:00').label, 'Requested');
-    assert.deepEqual(slots.filter((s) => s.on).map((s) => s.t), ['09:00']); // the default hour
-    await page.click('[data-slot="10:00"]'); // adjoining: 09:00-11:00
-    await page.click('[data-slot="11:00"]'); // adjoining: 09:00-12:00
+    assert.deepEqual(slots.filter((x) => x.booked).map((x) => [x.t, x.label]), [['14:00', 'Booked'], ['15:00', 'Booked']]);
+    assert.equal(slots.find((x) => x.t === '18:00').label, 'Requested');
+    assert.deepEqual(slots.filter((x) => x.on).map((x) => x.t), ['09:00']);
+    await tap(page, '[data-slot="10:00"]');
+    await tap(page, '[data-slot="11:00"]');
     assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['09:00', '12:00']);
-    await page.click('[data-slot="17:00"]'); // not adjoining: starts again
-    assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['17:00', '18:00']);
-    assert.equal(await page.$eval('.bk-slot[data-slot="14:00"]', (el) => el.disabled), true); // booked hours cannot be tapped
+    assert.match(await text(page, '.bs-sum'), /09:00 – 12:00 · 3 hours/);
+    await page.select('[name="start"]', '15:00');
+    await page.select('[name="end"]', '17:00');
+    await waitText(page, 'That time is already booked for this space.', '#main');
+    assert.equal(await page.$eval('.bs-confirm', (b) => b.disabled), true);
+    await tap(page, '[data-slot="16:00"]');
+    await page.waitForFunction(() => document.activeElement?.dataset.slot === '16:00', { timeout: 2000 }).catch(() => {});
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.slot), '16:00'); // focus stays on the tapped hour
+    assert.equal(await page.$eval('.bs-confirm', (b) => b.disabled), false);
+    await shot(page, 'book-space');
+    await checkAccessibility(page, 'Book a space');
+    await tap(page, '.bs-confirm');
+    await page.waitForSelector('[name="org"]');
+    assert.equal(await pageTitle(page), 'Book a space'); // the same page
+    assert.match(await text(page, '.bs-summary'), /Empower Room/);
+    assert.match(await text(page, '.bs-summary'), /16:00 – 17:00/);
     assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), true);
     await setField(page, 'org', 'TEST, please ignore');
     await setField(page, 'purpose', 'TEST, please ignore');
     await setField(page, 'attendance', '12');
     assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), false);
-    await page.select('[name="start"]', '15:00');
-    await page.select('[name="end"]', '17:00');
-    await waitText(page, 'That time is already booked for this room.', '#main');
-    assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), true);
-    await shot(page, 'booking-form-clash');
-    await page.click('[data-slot="16:00"]');
-    assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['16:00', '17:00']);
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset.slot), '16:00'); // focus stays on the tapped hour
-    assert.equal(await page.$eval('#bk-submit', (b) => b.disabled), false);
-    await shot(page, 'booking-form-slots');
-    await checkAccessibility(page, 'Booking form');
-    await page.click('#bk-submit');
+    await shot(page, 'book-space-details');
+    await checkAccessibility(page, 'Book a space details');
+    await tap(page, '#bk-submit');
     await waitText(page, 'Reference LCC-E-ABC234', '#main');
-    assert.equal(await pageTitle(page), 'Booked');
+    assert.match(await text(page, '.bs-done'), /Booked/);
     const sent = fake.calls.find((c) => c.action === 'book');
     assert.deepEqual(Object.keys(sent).sort(), ['action', 'attendance', 'date', 'end', 'facility', 'org', 'purpose', 'setupNeeds', 'start', 'token']);
     assert.deepEqual([sent.facility, sent.start, sent.end, sent.org, sent.attendance], ['Empower Room', '16:00', '17:00', 'TEST, please ignore', '12']);
-    await shot(page, 'booking-done');
-    await checkAccessibility(page, 'Booking confirmation');
-    await page.click('.card.done .btn.primary');
-    await waitText(page, 'TEST, please ignore', '#main');
-    assert.match(await text(page, '.bk-item'), /Empower Room/);
-    assert.match(await text(page, '.bk-item'), /16:00–17:00/);
-    assert.match(await text(page, '.bk-status'), /Approved/);
+    await page.waitForSelector('#bs-mine .bs-card');
+    assert.match(await text(page, '#bs-mine .bs-card'), /Empower Room/);
+    assert.match(await text(page, '#bs-mine .bs-card'), /16:00–17:00/);
+    assert.match(await text(page, '#bs-mine .bs-badge'), /Approved/);
     assert.deepEqual(errors, []);
     await context.close();
+  });
+
+  it('Rebook: fills the same details for the next same weekday, or says it clashes', async () => {
+    const past = [{ id: 'LCC-E-OLD111', status: 'Approved', facility: 'Main Sanctuary', date: addDays(TODAY, -6), start: '19:00', end: '21:00', org: 'Youth ministry', purpose: 'Youth night', canCancel: false }];
+    const fake = fakeBooking({ past });
+    const { page, errors, context } = await open('#/booking', { setup: (p) => fake.install(p, { signedIn: true }) });
+    await page.waitForSelector('#bs-past .bs-rebook-btn');
+    assert.match(await text(page, '#bs-past .bs-card'), /Youth night/);
+    await tap(page, '#bs-past .bs-rebook-btn');
+    await page.waitForSelector('[name="org"]');
+    assert.equal(await page.$eval('[name="org"]', (el) => el.value), 'Youth ministry');
+    assert.equal(await page.$eval('[name="purpose"]', (el) => el.value), 'Youth night');
+    assert.match(await text(page, '.bs-rebook'), /Rebooking Youth night/);
+    assert.equal(await page.$eval('.bs-pill[aria-pressed="true"]', (b) => b.textContent), 'Main Sanctuary');
+    assert.equal(await page.$eval('.bs-day[aria-pressed="true"]', (b) => b.dataset.date), addDays(TODAY, 1)); // six days ago, so tomorrow is the same weekday
+    assert.deepEqual(await page.$$eval('[name="start"],[name="end"]', (els) => els.map((el) => el.value)), ['19:00', '21:00']);
+    await checkAccessibility(page, 'Rebook');
+    assert.deepEqual(errors, []);
+    await context.close();
+
+    const busyDay = fakeBooking({ past, blocks: [{ start: '20:00', end: '22:00', kind: 'booked', wholeChurch: false }] });
+    const second = await open('#/booking', { setup: (p) => busyDay.install(p, { signedIn: true }) });
+    await second.page.waitForSelector('#bs-past .bs-rebook-btn');
+    await tap(second.page, '#bs-past .bs-rebook-btn');
+    await waitText(second.page, 'Youth night clashes with a booking', '#main');
+    assert.equal((await second.page.$$('[name="org"]')).length, 0); // no details until a free time is chosen
+    await second.context.close();
   });
 
   it('goes back to sign-in when the session has ended, and shows a message when the booking system is unwell', async () => {

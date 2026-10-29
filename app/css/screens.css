@@ -511,3 +511,72 @@ body[data-route='watch'] .screen { padding: 0; gap: 0; overflow: hidden; color: 
 .acct-contact b { color: var(--ink); }
 .ms { display: flex; flex-direction: column; gap: 12px; }
 .bk-contact { min-height: 44px; align-items: center; box-sizing: border-box; }
+
+/* ---- Book a space (design boards 16b-16d): Yishun gradient for choices, pink for booked, grey for requested ---- */
+.bs {
+  --pick: linear-gradient(135deg, #2F6BFF 0%, #6B4FA8 100%);
+  --pick-solid: #4D5DD3;
+  --pick-soft: linear-gradient(135deg, rgba(47, 107, 255, 0.26) 0%, rgba(107, 79, 168, 0.26) 100%);
+  --booked: repeating-linear-gradient(135deg, #E46A88 0 5px, #E47F68 5px 8px);
+  --booked-tint: #FCEDF1; --booked-ink: #A8405A;
+  --req: repeating-linear-gradient(135deg, #8E98AA 0 4px, #B5BDCB 4px 8px);
+  --req-tint: #EEF1F5; --req-ink: #5A6477;
+}
+.bs .bk-head h1 { font-size: 33px; }
+.bs .bk-avatar { text-decoration: none; }
+.bs-spaces { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-radius: 28px; background: rgba(255, 255, 255, 0.34); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.65); }
+.bs-label { padding: 0 18px; font-size: 13px; font-weight: 700; color: #fff; }
+.bs-strip { margin: 0; padding: 2px 14px 4px; gap: 8px; }
+.bs-pill { flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid rgba(255, 255, 255, 0.95); background: rgba(255, 255, 255, 0.82); color: var(--ink); font: inherit; font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.bs-pill[aria-pressed='true'], .bs-day[aria-pressed='true'], .bs .bk-slot[aria-pressed='true'], .bs-go:not(:disabled), .bs-rebook-btn {
+  background: var(--pick); border-color: transparent; color: #fff; box-shadow: 0 6px 16px rgba(60, 85, 210, 0.28);
+}
+.bs-card-main { gap: 16px; padding: 18px 0; background: rgba(255, 255, 255, 0.86); }
+.bs-card-main > * { margin: 0 18px; }
+.bs-card-main > .bs-strip { margin: 0; padding: 2px 18px 4px; }
+.bs-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bs-month { font-size: 17px; font-weight: 700; }
+.bs-other { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #E1E6EE; background: #fff; color: #26324A; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.bs-day { flex-shrink: 0; width: 58px; height: 74px; border-radius: 22px; border: 1px solid #E1E6EE; background: #fff; color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: inherit; cursor: pointer; }
+.bs-wd { font-size: 12px; font-weight: 600; color: var(--muted); }
+.bs-num { font-size: 19px; font-weight: 700; line-height: 1; }
+.bs-mon { min-height: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pick-solid); }
+.bs-day[aria-pressed='true'] .bs-wd, .bs-day[aria-pressed='true'] .bs-mon { color: #E4E9FF; }
+.bs-day-plan { display: flex; flex-direction: column; gap: 8px; }
+.bs-day-title, .bs-sub { font-size: 15px; font-weight: 700; }
+.bs-line { position: relative; height: 34px; border-radius: 10px; background: #EEF1F5; overflow: hidden; }
+.bs-block { position: absolute; top: 0; bottom: 0; }
+.bs-block.is-booked, .bs-legend i.is-booked { background: var(--booked); }
+.bs-block.is-requested, .bs-legend i.is-requested { background: var(--req); }
+.bs-block.is-mine { top: 2px; bottom: 2px; border-radius: 8px; border: 2px solid var(--pick-solid); background: var(--pick-soft); box-sizing: border-box; }
+.bs-legend i.is-mine { background: var(--pick-soft); border: 1.5px solid var(--pick-solid); box-sizing: border-box; }
+.bs-marks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.bs-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: #26324A; }
+.bs-legend span { display: flex; align-items: center; gap: 6px; }
+.bs-legend i { width: 12px; height: 12px; border-radius: 3px; }
+.bs-hours { display: flex; flex-direction: column; gap: 10px; }
+.bs-sum { font-size: 13px; font-weight: 700; color: var(--pick-solid); }
+.bs .bk-slot { min-height: 48px; border-color: #E1E6EE; background: #fff; }
+.bs .bk-slot.is-booked { background: var(--booked-tint); border-color: transparent; color: var(--booked-ink); text-decoration: line-through; }
+.bs .bk-slot.is-booked small { color: var(--booked-ink); }
+.bs .bk-slot.is-requested { background: var(--req-tint); border-color: #DCE1E9; color: var(--req-ink); }
+.bs .bk-slot.is-requested small { color: var(--req-ink); }
+.bs .bk-slot[aria-pressed='true'] small { color: #E4E9FF; }
+.bs-clash { background: var(--booked-tint); color: #A13A54; font-weight: 600; }
+.bs-go { margin-top: 0; }
+.bs-go:disabled { background: rgba(11, 18, 32, 0.15); color: rgba(11, 18, 32, 0.55); box-shadow: none; }
+.bs-details { display: flex; flex-direction: column; gap: 14px; padding-top: 14px; border-top: 1px solid rgba(30, 45, 70, 0.08); }
+.bs-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 18px; background: #EEF1FC; }
+.bs-change { min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid rgba(77, 93, 211, 0.35); background: #fff; color: var(--pick-solid); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.bs-rebook { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 14px; background: rgba(77, 93, 211, 0.09); color: var(--pick-solid); font-size: 13px; font-weight: 600; }
+.bs-done { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 18px; background: rgba(77, 93, 211, 0.09); }
+.bs-done .done-ic { flex-shrink: 0; width: 40px; height: 40px; background: var(--pick); }
+.bs-list { display: flex; flex-direction: column; gap: 10px; }
+.bs-list > .bs-strip { margin: 0 -20px; padding: 2px 20px 8px; }
+.bs-card { flex: 0 0 248px; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 24px; background: rgba(255, 255, 255, 0.78); border: 1px solid rgba(255, 255, 255, 0.95); box-shadow: 0 10px 26px rgba(40, 60, 90, 0.1); box-sizing: border-box; }
+.bs-badge { align-self: flex-start; display: flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; font-weight: 700; }
+.bs-badge.is-ok { background: #E6F5EC; color: #1E6B3E; } .bs-badge.is-ok .bs-dot { background: #2E9E5B; }
+.bs-badge.is-wait { background: var(--req-tint); color: #4A5468; } .bs-badge.is-wait .bs-dot { background: #8E98AA; }
+.bs-badge.is-off { background: rgba(11, 18, 32, 0.06); color: #4A5468; } .bs-badge.is-off .bs-dot { background: #8E98AA; }
+.bs-dot { width: 7px; height: 7px; border-radius: 50%; }
+.bs-rebook-btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 22px; border: 0; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }

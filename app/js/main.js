@@ -24,7 +24,7 @@ startRouter({
     { path: '/giving', name: 'giving', title: 'Giving', load: () => import('./views/giving.js') },
     { path: '/watch', name: 'watch', title: 'Watch', load: () => import('./views/watch.js') },
     { path: '/contact', name: 'contact', title: 'Contact us', load: () => import('./views/contact.js') },
-    { path: '/booking', name: 'booking', title: 'Facilities Booking Request', load: () => import('./views/booking.js') },
+    { path: '/booking', name: 'booking', title: 'Book a space', load: () => import('./views/booking.js') },
     { path: '/staff', name: 'staff', title: 'Staff', load: () => import('./views/staff.js') },
     { path: '/account', name: 'account', tab: 'home', title: 'Account', load: () => import('./views/account.js') },
   ],
