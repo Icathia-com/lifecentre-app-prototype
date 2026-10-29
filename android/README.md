@@ -16,7 +16,7 @@ cd "C:\Users\Theersha Prawath\Documents\lifecentre-app-prototype\android"
    ```powershell
    curl.exe -s -o NUL -w "%{http_code}" https://icathia.com/lifecentre-app-prototype/app/manifest.webmanifest
    ```
-2. The app icon is the church logo in `appiconsicon-bethlehem-prism-white.png`. To change it, replace that file, run
+2. The app icon is the church logo in `app\icons\icon-bethlehem-prism-white.png`. To change it, replace that file, run
    `node scripts/make-icons.mjs` from the main folder, then commit and publish the new icons.
 
 ## 1. Install Bubblewrap and its tools
