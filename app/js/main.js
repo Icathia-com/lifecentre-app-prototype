@@ -48,3 +48,11 @@ function showFifthTab(session) {
 }
 onSession(showFifthTab);
 setTimeout(startSession, 0); // after the first screen is drawn
+
+// The service worker keeps the app shell (never data) so the app opens offline and can be added to the home screen.
+// Not registered against the local emulators, so tests and development always see the files as they are (add &sw to try it).
+if ('serviceWorker' in navigator) {
+  const params = new URLSearchParams(location.search);
+  const local = ['localhost', '127.0.0.1'].includes(location.hostname) && params.has('emulator') && !params.has('sw');
+  if (!local) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch((e) => console.warn('No offline copy:', e.message)));
+}

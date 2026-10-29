@@ -1899,3 +1899,67 @@ describe('Phone sizes: layout and tap targets', () => {
     });
   }
 });
+
+describe('Installable app and offline use', () => {
+  it('serves the manifest and the icons, and a full load has no failed requests (no favicon 404)', async () => {
+    const context = await browser.createBrowserContext();
+    const page = await context.newPage();
+    const failed = [];
+    page.on('response', (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url()}`); });
+    await page.goto(base);
+    await page.waitForSelector('#page-title');
+    await new Promise((r) => setTimeout(r, 800));
+    assert.deepEqual(failed, []);
+    const manifest = await page.evaluate(async () => {
+      const link = document.querySelector('link[rel=manifest]');
+      const res = await fetch(link.href);
+      return { type: res.headers.get('content-type'), json: await res.json(), base: link.href };
+    });
+    assert.match(manifest.type, /manifest\+json/);
+    assert.equal(manifest.json.name, 'Life Centre');
+    for (const icon of manifest.json.icons) {
+      const status = await page.evaluate(async (u) => (await fetch(u)).status, new URL(icon.src, manifest.base).href);
+      assert.equal(status, 200, icon.src);
+    }
+    assert.equal(await page.$eval('link[rel=icon]', (l) => l.sizes.value), '32x32');
+    await context.close();
+  });
+
+  it('saves the app shell (never data) and opens with no connection', async () => {
+    const own = await serve(0); // its own server, so it can be switched off to go truly offline
+    const url = `http://localhost:${own.address().port}/app/?emulator&sw`;
+    const context = await browser.createBrowserContext();
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.setViewport({ width: 390, height: 844 });
+    await page.goto(`${url}#/giving`);
+    await page.waitForSelector('#page-title');
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload(); // now controlled by the worker
+    await page.waitForSelector('#page-title');
+    assert.equal(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), true);
+    const saved = await page.evaluate(async () => {
+      const out = [];
+      for (const name of await caches.keys()) for (const r of await (await caches.open(name)).keys()) out.push(r.url);
+      return out;
+    });
+    for (const file of ['/app/index.html', '/app/js/main.js', '/app/js/views/watch.js', '/app/js/views/booking.js', '/app/css/screens.css', '/app/manifest.webmanifest', '/app/icons/icon-512.png']) {
+      assert.ok(saved.some((u) => u.endsWith(file)), `${file} is saved`);
+    }
+    assert.ok(saved.some((u) => /gstatic\.com\/firebasejs\/.*firebase-firestore\.js$/.test(u)), 'the Firebase code is saved');
+    assert.deepEqual(saved.filter((u) => /firestore\.googleapis|127\.0\.0\.1|identitytoolkit|script\.google|youtube\.com|youtube-nocookie|ytimg/.test(u)), [], 'no data or sign-in or booking requests are saved');
+    own.closeAllConnections(); own.close(); // the network is gone for this app
+    await page.reload();
+    await page.waitForSelector('#page-title', { timeout: 15000 });
+    assert.equal(await pageTitle(page), 'Giving via PayNow');
+    await goto(page, '/contact');
+    assert.equal(await pageTitle(page), 'Contact us');
+    await goto(page, '/');
+    assert.equal(await pageTitle(page), 'Today');
+    await goto(page, '/watch');
+    await page.waitForSelector('.wt-slide', { timeout: 15000 });
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+});
