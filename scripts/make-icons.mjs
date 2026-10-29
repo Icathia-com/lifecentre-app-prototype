@@ -1,6 +1,5 @@
 // Makes the app icons in app/icons/: node scripts/make-icons.mjs
-// If app/icons/icon-bethlehem-prism-white.png exists (the church's white icon), it is drawn in the middle of the app's blue-to-indigo
-// background. If it does not, a white "LC" monogram stands in. Run it again after adding the file, then commit the new icons.
+// If app/icons/icon-bethlehem-prism-white.png exists (the church's logo on a white tile), it is used as the icon on a white background. If it does not, a white "LC" monogram stands in. Run it again after adding the file, then commit the new icons.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 
@@ -17,11 +16,11 @@ const browser = await puppeteer.launch({ executablePath: EDGE, headless: true })
 const page = await browser.newPage();
 for (const [file, size] of OUTPUTS) {
   await page.setViewport({ width: size, height: size, deviceScaleFactor: 1 });
-  // The picture takes about half the width, well inside the circle a phone may crop a maskable icon to.
-  await page.setContent(`<body style="margin:0"><div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5B7B9F 0%,#3558C8 55%,#1B1740 100%);overflow:hidden">${
+  // The logo file is a white tile with the ring at about 70% of its width, already inside the circle a phone may crop a maskable icon to. The favicon is drawn larger so it stays readable.
+  await page.setContent(`<body style="margin:0"><div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden">${
     source
-      ? `<img src="${source}" style="width:${Math.round(size * 0.56)}px;height:${Math.round(size * 0.56)}px;object-fit:contain">`
-      : `<span style="font:800 ${Math.round(size * 0.42)}px 'Segoe UI',Arial,sans-serif;letter-spacing:-0.05em;color:#fff">LC</span>`}</div></body>`);
+      ? `<img src="${source}" style="width:${Math.round(size * (size < 48 ? 1.3 : 1))}px;height:${Math.round(size * (size < 48 ? 1.3 : 1))}px;object-fit:contain">`
+      : `<span style="font:800 ${Math.round(size * 0.42)}px 'Segoe UI',Arial,sans-serif;letter-spacing:-0.05em;color:#3558C8">LC</span>`}</div></body>`);
   if (source) await page.evaluate(() => Promise.all([...document.images].map((i) => i.decode())));
   writeFileSync(new URL(file, DIR), await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: size, height: size } }));
   console.log('wrote', file);
