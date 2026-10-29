@@ -253,7 +253,7 @@ describe('collections without rules yet', () => {
 });
 
 describe('videos (Watch)', () => {
-  const video = (email, extra = {}) => ({ title: 'Sunday message in 60 seconds', org: 'Yishun', desc: 'A short word.', src: 'youtube', url: 'https://youtu.be/abc123', dur: 58, updatedBy: email, ...extra });
+  const video = (email, extra = {}) => ({ title: 'Sunday message in 60 seconds', org: 'Yishun', desc: 'A short word.', src: 'youtube', videoId: 'dQw4w9WgXcQ', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', dur: 58, updatedBy: email, ...extra });
   beforeEach(async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'videos', 'v1'), video(ADMIN));
@@ -285,7 +285,7 @@ describe('videos (Watch)', () => {
   it('refuses bad videos: unknown source, link that is not https, bad length, extra fields, empty or long title', async () => {
     const db = user(ADMIN);
     for (const bad of [
-      { src: 'vimeo' }, { src: 'upload', url: 'http://example.com/v.mp4' }, { url: 'javascript:alert(1)' },
+      { src: 'vimeo' }, { src: 'upload', url: 'http://example.com/v.mp4' }, { videoId: 'short' }, { videoId: 'dQw4w9WgXc!' }, { videoId: 'dQw4w9WgXcQQ' }, { videoId: 12345678901 }, { url: 'javascript:alert(1)' },
       { dur: 0 }, { dur: 1.5 }, { dur: 20000 }, { title: '' }, { title: 'x'.repeat(121) }, { org: 'x'.repeat(41) }, { desc: 'x'.repeat(301) },
       { views: 10 }, { published: false },
     ]) {
@@ -293,6 +293,8 @@ describe('videos (Watch)', () => {
     }
     const missing = video(ADMIN); delete missing.src;
     await assertFails(setDoc(doc(db, 'videos', 'x'), missing));
+    const noId = video(ADMIN); delete noId.videoId; // a YouTube video must say which one
+    await assertFails(setDoc(doc(db, 'videos', 'x'), noId));
     await assertSucceeds(setDoc(doc(db, 'videos', 'ok'), { title: 'Minimal', src: 'upload', updatedBy: ADMIN }));
   });
 

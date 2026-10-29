@@ -218,3 +218,37 @@ describe('a leader', () => {
     await assert.rejects(() => data.admin.list('events'), { code: 'permission-denied' });
   });
 });
+
+describe('Watch videos', () => {
+  const publicData = () => createData(env.unauthenticatedContext().firestore(), { now: () => NOW });
+  const asData = (email) => createData(env.authenticatedContext(email, { email, email_verified: true }).firestore(), { now: () => NOW });
+  const YT = { title: 'Sunday message', src: 'youtube', videoId: 'dQw4w9WgXcQ', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
+
+  it('gives an empty list when nothing is posted, so Watch can show its sample cards', async () => {
+    const { value, source } = await publicData().getVideos();
+    assert.deepEqual(value, []);
+    assert.equal(source, 'live');
+  });
+  it('lets a leader post a video, and the public reads them newest first', async () => {
+    const leader = asData(LEADER);
+    const first = await leader.admin.save('videos', LEADER, { ...YT, title: 'First', org: 'Kids' });
+    await new Promise((r) => setTimeout(r, 30));
+    await leader.admin.save('videos', LEADER, { ...YT, title: 'Second', videoId: 'abcdefghijk' });
+    const { value } = await publicData().getVideos();
+    assert.deepEqual(value.map((v) => v.title), ['Second', 'First']);
+    assert.equal(value[1].id, first);
+    assert.equal(value[1].org, 'Kids');
+    assert.equal(value[1].videoId, 'dQw4w9WgXcQ');
+    assert.equal(typeof value[1].createdAt, 'number');
+  });
+  it('refuses a video from plain staff or the public, and a YouTube video without a valid id', async () => {
+    await assert.rejects(() => asData(STAFF).admin.save('videos', STAFF, YT), { code: 'permission-denied' });
+    await assert.rejects(() => publicData().admin.save('videos', STAFF, YT), { code: 'permission-denied' });
+    await assert.rejects(() => asData(LEADER).admin.save('videos', LEADER, { ...YT, videoId: 'nope' }), { code: 'permission-denied' });
+  });
+  it('lets staff remove a video', async () => {
+    const id = await asData(LEADER).admin.save('videos', LEADER, YT);
+    await asData(STAFF).admin.remove('videos', id);
+    assert.deepEqual((await publicData().getVideos()).value, []);
+  });
+});

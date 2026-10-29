@@ -1524,6 +1524,7 @@ describe('Giving', () => {
 });
 
 describe('Watch', () => {
+  const openWatch = async (hash, options) => { const opened = await open(hash, options); await opened.page.waitForSelector('.wt-slide'); return opened; };
   const resumeAt = (id, t) => (page) => page.evaluateOnNewDocument((state) => localStorage.setItem('lc:v1:watchResume', JSON.stringify(state)), { id, t });
   const current = (page) => page.$eval('.wt-title', (e) => e.textContent);
   const waitCurrent = (page, title) => page.waitForFunction((t) => document.querySelector('.wt-title')?.textContent === t, { timeout: 8000 }, title);
@@ -1532,7 +1533,7 @@ describe('Watch', () => {
   const waitRestedOn = (page, index) => page.waitForFunction((i) => { const f = document.querySelector('.wt-feed'); return Math.abs(f.scrollTop / f.clientHeight - i) < 0.02; }, { timeout: 8000 }, index);
 
   it('opens on the first sample video with the Sample label, a progress line and the tab bar', async () => {
-    const { page, errors, context } = await open('#/watch');
+    const { page, errors, context } = await openWatch('#/watch');
     assert.equal(await pageTitle(page), 'Watch');
     assert.equal((await page.$$('.wt-slide')).length, 6);
     assert.equal(await current(page), 'Sunday message in 60 seconds');
@@ -1547,7 +1548,7 @@ describe('Watch', () => {
     await context.close();
   });
   it('pauses and resumes when the feed is tapped', async () => {
-    const { page, context } = await open('#/watch');
+    const { page, context } = await openWatch('#/watch');
     await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 1, { timeout: 6000 });
     await page.mouse.click(195, 400);
     await page.waitForSelector('.wt-pause.on');
@@ -1561,7 +1562,7 @@ describe('Watch', () => {
     await context.close();
   });
   it('turns sound on and off and remembers the choice', async () => {
-    const { page, context } = await open('#/watch');
+    const { page, context } = await openWatch('#/watch');
     assert.equal(await page.$eval('.wt-sound', (b) => b.getAttribute('aria-label')), 'Turn sound on');
     await page.click('.wt-sound');
     assert.equal(await page.$eval('.wt-sound', (b) => b.getAttribute('aria-label')), 'Mute');
@@ -1573,7 +1574,7 @@ describe('Watch', () => {
     await context.close();
   });
   it('moves to the next video with the keyboard and with a mouse drag, and starts it from the beginning', async () => {
-    const { page, context } = await open('#/watch');
+    const { page, context } = await openWatch('#/watch');
     await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 1, { timeout: 6000 });
     await page.focus('.wt-feed');
     await page.keyboard.press('ArrowDown');
@@ -1599,7 +1600,7 @@ describe('Watch', () => {
     await context.close();
   });
   it('says "Continue where you left off" and goes back to the video the member stopped at', async () => {
-    const { page, context } = await open('#/watch', { setup: resumeAt('sample-v3', 20) });
+    const { page, context } = await openWatch('#/watch', { setup: resumeAt('sample-v3', 20) });
     await page.waitForFunction(() => document.querySelector('.wt-toast.on'), { timeout: 4000 });
     assert.equal(await text(page, '.wt-toast'), 'Continue where you left off · 0:20');
     await waitCurrent(page, 'Testimony: an answered prayer');
@@ -1609,19 +1610,230 @@ describe('Watch', () => {
     // leaving and coming back keeps the place
     await goto(page, '/giving');
     await goto(page, '/watch');
-    assert.equal(await current(page), 'Testimony: an answered prayer');
+    await waitCurrent(page, 'Testimony: an answered prayer');
     await context.close();
   });
   it('does not offer to continue when the saved place is the very start, or when the video is unknown', async () => {
     for (const setup of [resumeAt('sample-v2', 1), resumeAt('gone', 30)]) {
-      const { page, context } = await open('#/watch', { setup });
+      const { page, context } = await openWatch('#/watch', { setup });
       assert.equal(await page.$('.wt-toast.on'), null);
       await context.close();
     }
   });
   it('has no accessibility violations', async () => {
-    const { page, context } = await open('#/watch');
+    const { page, context } = await openWatch('#/watch');
     await checkAccessibility(page, 'Watch');
+    await context.close();
+  });
+});
+
+describe('Watch with posted videos and the publisher', () => {
+  const idOf = (n) => `vid${String(n).padStart(8, '0')}`; // 11 characters
+  const seedVideos = () => env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const base = { src: 'youtube', updatedBy: LEADER };
+    await setDoc(doc(db, 'videos', 'v-old'), { ...base, title: 'Older message', org: 'Kids', videoId: idOf(1), url: `https://www.youtube.com/watch?v=${idOf(1)}`, createdAt: Timestamp.fromMillis(Date.now() - 86400000) });
+    await setDoc(doc(db, 'videos', 'v-new'), { ...base, title: 'Newest message', desc: 'Fresh this week.', org: 'Yishun', videoId: idOf(2), url: `https://www.youtube.com/watch?v=${idOf(2)}`, createdAt: Timestamp.fromMillis(Date.now() - 3600000) });
+  });
+  // A stand-in for YouTube's player: it records what the app asks of it and counts seconds while "playing".
+  const fakeYouTube = (page) => page.evaluateOnNewDocument(() => {
+    window.__yt = { players: [] };
+    window.YT = { Player: class {
+      constructor(el, opts) {
+        Object.assign(this, { opts, t: 0, d: 120, paused: false, muted: Boolean(opts.playerVars.mute), destroyed: false });
+        window.__yt.players.push(this);
+        this.f = document.createElement('iframe'); this.f.src = 'about:blank'; this.f.title = 'Video player';
+        el.replaceWith(this.f);
+        setTimeout(() => opts.events.onReady(), 20);
+      }
+      getCurrentTime() { return this.t; } getDuration() { return this.d; }
+      playVideo() { this.paused = false; } pauseVideo() { this.paused = true; }
+      mute() { this.muted = true; } unMute() { this.muted = false; }
+      seekTo(s) { this.t = s; } destroy() { this.destroyed = true; this.f.remove(); }
+    } };
+    setInterval(() => { for (const p of window.__yt.players) if (!p.destroyed && !p.paused) p.t += 1; }, 1000);
+  });
+  const live = (page) => page.evaluate(() => window.__yt.players.filter((p) => !p.destroyed).map((p) => ({ id: p.opts.videoId, paused: p.paused, muted: p.muted, t: p.t, vars: p.opts.playerVars })));
+  const watch = async (opts = {}) => {
+    await seedVideos();
+    const o = await open('#/watch', { ...opts, setup: async (page) => { await fakeYouTube(page); await opts.setup?.(page); } });
+    await o.page.waitForSelector('.wt-slide');
+    return o;
+  };
+  const title = (page) => page.$eval('.wt-title', (e) => e.textContent);
+  const waitTitle2 = (page, t) => page.waitForFunction((x) => document.querySelector('.wt-title')?.textContent === x, { timeout: 8000 }, t);
+  const staffWatch = async (email) => {
+    await seedVideos();
+    const o = await open('#/staff', { setup: fakeYouTube });
+    await waitText(o.page, 'Sign in with Google');
+    await signIn(o.page, email);
+    await goto(o.page, '/watch');
+    await o.page.waitForSelector('.wt-slide');
+    return o;
+  };
+  const storedVideos = async () => {
+    let list = [];
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const { getDocs, collection } = await import('firebase/firestore');
+      list = (await getDocs(collection(ctx.firestore(), 'videos'))).docs.map((d) => ({ id: d.id, ...d.data() }));
+    });
+    return list;
+  };
+
+  it('shows the posted videos newest first, with no Sample label, and plays only the one on screen', async () => {
+    const { page, errors, context } = await watch();
+    assert.equal((await page.$$('.wt-slide')).length, 2);
+    assert.equal(await title(page), 'Newest message');
+    assert.equal(await text(page, '.wt-chip'), 'YouTube');
+    assert.equal(await text(page, '.wt-name'), 'Yishun');
+    assert.equal(await text(page, '.wt-desc'), 'Fresh this week.');
+    assert.equal(await text(page, '.wt-caption'), '');
+    assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Sample/);
+    await page.waitForFunction(() => window.__yt.players.some((p) => !p.destroyed));
+    const players = await live(page);
+    assert.equal(players.length, 1, 'one player at a time');
+    assert.equal(players[0].id, idOf(2));
+    assert.equal(players[0].muted, true, 'starts muted, so the browser lets it autoplay');
+    assert.equal(players[0].vars.controls, 0);
+    assert.equal(await page.$eval('.wt-slide iframe', (f) => getComputedStyle(f).pointerEvents), 'none', 'taps and drags reach the feed');
+    await shot(page, 'watch-youtube');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('draws the progress line from the YouTube player and keeps pause and sound working', async () => {
+    const { page, context } = await watch();
+    await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 2, { timeout: 8000 });
+    assert.match(await page.$eval('.wt-bar', (e) => e.getAttribute('aria-valuetext')), /^0:0[2-9] of 2:00$/);
+    await page.mouse.click(195, 400);
+    await page.waitForSelector('.wt-pause.on');
+    assert.equal((await live(page))[0].paused, true, 'tap pauses the video');
+    await page.mouse.click(195, 400);
+    await page.waitForFunction(() => !document.querySelector('.wt-pause.on') && !window.__yt.players.find((p) => !p.destroyed).paused);
+    await page.click('.wt-sound');
+    assert.equal((await live(page))[0].muted, false, 'sound on');
+    await page.click('.wt-sound');
+    assert.equal((await live(page))[0].muted, true, 'sound off');
+    await context.close();
+  });
+
+  it('moves to the next video with a new player, from the beginning, and the old player is gone', async () => {
+    const { page, context } = await watch();
+    await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 2, { timeout: 8000 });
+    await page.focus('.wt-feed');
+    await page.keyboard.press('ArrowDown');
+    await waitTitle2(page, 'Older message');
+    await page.waitForFunction((id) => window.__yt.players.some((p) => !p.destroyed && p.opts.videoId === id), { timeout: 5000 }, idOf(1));
+    const players = await live(page);
+    assert.deepEqual(players.map((p) => p.id), [idOf(1)]);
+    assert.ok(players[0].t <= 1);
+    assert.equal(await text(page, '.wt-name'), 'Kids');
+    assert.equal(await page.$('.wt-desc:not([hidden])'), null, 'no description line when there is none');
+    await context.close();
+  });
+
+  it('says "Continue where you left off" and seeks the YouTube video to the saved second', async () => {
+    const { page, context } = await watch({ setup: (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:watchResume', JSON.stringify({ id: 'v-old', t: 30 }))) });
+    await page.waitForFunction(() => document.querySelector('.wt-toast.on'), { timeout: 4000 });
+    assert.equal(await text(page, '.wt-toast'), 'Continue where you left off · 0:30');
+    await waitTitle2(page, 'Older message');
+    await page.waitForFunction(() => window.__yt.players.some((p) => !p.destroyed && p.opts.videoId === 'vid00000001' && p.t >= 30), { timeout: 6000 });
+    await shot(page, 'watch-youtube-resume');
+    await context.close();
+  });
+
+  it('shows a message and a link when the video cannot load', async () => {
+    await seedVideos();
+    const { page, context } = await open('#/watch', { setup: async (p) => {
+      await p.setRequestInterception(true);
+      p.on('request', (r) => (/youtube\.com|ytimg\.com/.test(r.url()) ? r.abort() : r.continue()));
+    } });
+    await page.waitForSelector('.wt-fail', { timeout: 10000 });
+    assert.match(await text(page, '.wt-fail'), /could not be loaded/);
+    assert.equal(await page.$eval('.wt-fail-link', (a) => a.href), `https://www.youtube.com/watch?v=${idOf(2)}`);
+    await context.close();
+  });
+
+  it('shows the + button to admins and leaders only', async () => {
+    for (const [email, shown] of [[ADMIN, true], [LEADER, true], [STAFF, false]]) {
+      const { page, context } = await staffWatch(email);
+      assert.equal(await page.$eval('.wt-add', (b) => !b.hidden), shown, email);
+      await context.close();
+    }
+    const { page, context } = await watch();
+    assert.equal(await page.$eval('.wt-add', (b) => b.hidden), true, 'signed out');
+    await context.close();
+  });
+
+  it('adds a video: checks the title and link, stores the video id and organization, and shows it first', async () => {
+    const { page, errors, context } = await staffWatch(LEADER);
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', LEADER), { role: 'leader', name: 'Kids Ministry', updatedBy: ADMIN }));
+    await page.click('.wt-add');
+    await page.waitForSelector('.wt-sheet[role=dialog]');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'wt-f-title', 'focus starts in the title');
+    assert.equal((await live(page))[0].paused, true, 'the video pauses behind the sheet');
+    await shot(page, 'watch-publisher');
+    await page.click('.wt-publish');
+    await waitText(page, 'Please give the video a title.', '.wt-error');
+    await page.type('#wt-f-title', '  Kids camp  ');
+    await page.type('#wt-f-link', 'https://vimeo.com/123456');
+    await page.click('.wt-publish');
+    await waitText(page, 'Please paste a YouTube or YouTube Shorts link.', '.wt-error');
+    await page.$eval('#wt-f-link', (i) => { i.value = ''; });
+    await page.type('#wt-f-link', 'https://www.youtube.com/shorts/aBcDeFgHiJk?feature=share');
+    await page.click('.wt-publish');
+    await page.waitForFunction(() => !document.querySelector('.wt-sheet'), { timeout: 8000 });
+    await waitTitle2(page, 'Kids camp');
+    assert.equal((await page.$$('.wt-slide')).length, 3);
+    assert.equal(await text(page, '.wt-name'), 'Kids Ministry');
+    await page.waitForFunction(() => window.__yt.players.some((p) => !p.destroyed && p.opts.videoId === 'aBcDeFgHiJk'));
+    const saved = (await storedVideos()).find((d) => d.title === 'Kids camp');
+    assert.equal(saved.videoId, 'aBcDeFgHiJk');
+    assert.equal(saved.url, 'https://www.youtube.com/watch?v=aBcDeFgHiJk');
+    assert.equal(saved.src, 'youtube');
+    assert.equal(saved.org, 'Kids Ministry');
+    assert.equal(saved.updatedBy, LEADER);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('closes the sheet with Escape or the close button and carries on playing, with nothing posted', async () => {
+    const { page, context } = await staffWatch(ADMIN);
+    await page.click('.wt-add');
+    await page.waitForSelector('.wt-sheet');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.wt-sheet'));
+    await page.waitForFunction(() => !window.__yt.players.find((p) => !p.destroyed)?.paused);
+    await page.click('.wt-add');
+    await page.click('.wt-sheet-x');
+    await page.waitForFunction(() => !document.querySelector('.wt-sheet'));
+    assert.equal((await page.$$('.wt-slide')).length, 2);
+    assert.equal((await storedVideos()).length, 2);
+    await context.close();
+  });
+
+  it('lets staff remove a video, but not a sample, and the public never sees the button', async () => {
+    const { page, context } = await staffWatch(STAFF);
+    assert.equal(await page.$eval('.wt-remove', (b) => !b.hidden), true);
+    await page.click('.wt-remove'); // the test browser accepts the confirmation
+    await waitTitle2(page, 'Older message');
+    assert.equal((await page.$$('.wt-slide')).length, 1);
+    assert.deepEqual((await storedVideos()).map((v) => v.id), ['v-old']);
+    await page.click('.wt-remove');
+    await page.waitForFunction(() => document.querySelector('.wt-chip')?.textContent === 'Sample', { timeout: 8000 });
+    assert.equal(await page.$eval('.wt-remove', (b) => b.hidden), true, 'a sample card cannot be removed');
+    await context.close();
+    const anon = await watch();
+    assert.equal(await anon.page.$eval('.wt-remove', (b) => b.hidden), true);
+    await anon.context.close();
+  });
+
+  it('has no accessibility violations with videos or with the sheet open', async () => {
+    const { page, context } = await staffWatch(ADMIN);
+    await checkAccessibility(page, 'Watch with videos');
+    await page.click('.wt-add');
+    await page.waitForSelector('.wt-sheet');
+    await checkAccessibility(page, 'Add a video sheet');
     await context.close();
   });
 });
