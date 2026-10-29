@@ -17,8 +17,17 @@ export function getSession() {
     return s && /^[0-9a-f]{64}$/.test(s.token) ? s : null;
   } catch { return null; }
 }
-export function setSession(s) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* storage may be blocked */ } }
-export function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ } }
+// Screens that show who is signed in (the Home avatar, the Account page) listen for changes here.
+const CHANGED = 'lc:booking-session';
+const announce = () => { try { window.dispatchEvent(new Event(CHANGED)); } catch { /* not in a browser */ } };
+export function setSession(s) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* storage may be blocked */ } announce(); }
+export function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ } announce(); }
+export function onBookingSession(fn) {
+  const run = () => fn(getSession());
+  window.addEventListener(CHANGED, run);
+  run();
+  return () => window.removeEventListener(CHANGED, run);
+}
 
 // Resolves with the answer's fields, or throws a BookingError. A "signin" error also forgets the saved session.
 export async function api(action, fields = {}, { auth = true } = {}) {

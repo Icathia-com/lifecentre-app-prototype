@@ -15,13 +15,15 @@ This guide is for church staff, leaders and admins. You do not need any technica
 
 ## Sign in
 
-1. Open this address on your phone or computer: **https://icathia.com/lifecentre-app-prototype/app/#/staff**
-   (Tip: add it to your home screen or bookmarks so you can find it again.)
-2. Tap **Sign in with Google** and choose your Google account.
-3. You should see "Signed in as" with your email and your role.
+1. Open the app and tap the round avatar at the top right of Home. This opens **Account**.
+2. Tap **Staff sign-in with Google** and choose your Google account.
+3. Account now shows your email and your role, with your tools underneath (**Admin tools** or **Staff tools**).
 
-If it says **"is not on the staff list"**, ask an admin to add the email address you signed in with (see "Manage the staff list" below).
-To leave, tap **Sign out**.
+If it says **"Not on the staff list"**, ask an admin to add the email address you signed in with (see "Manage the staff list" below).
+To leave, or to switch to another account, tap **Sign out** on Account.
+
+To book a room you also sign in as a member (an emailed 6-digit code). Do that from **Sign in for bookings** on Account, or from Facilities booking.
+The staff page is still at **https://icathia.com/lifecentre-app-prototype/app/#/staff**.
 
 ## Post a notice
 
