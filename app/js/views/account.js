@@ -31,11 +31,17 @@ const TOOLS = {
   ],
 };
 
+// Where to go back to after signing in (only screens of this app, by name).
+const NEXT = { booking: '#/booking' };
+
 export function render(root) {
+  const query = new URLSearchParams(location.hash.split('?')[1] ?? '');
+  const next = NEXT[query.get('next')] ?? null;
+  const ended = query.get('ended') === '1';
   let staff = null; // { email, role } from the Google sign-in, or null
   let member = null; // { token, name, email } from the emailed-code sign-in, or null
   let signin = null; // the member sign-in form, kept between redraws so what was typed survives
-  let showMemberForm = false;
+  let showMemberForm = !!next; // arriving from booking: the member form is open straight away
   let googleError = '';
   let busy = false;
 
@@ -75,7 +81,11 @@ export function render(root) {
   }
 
   const memberForm = () => {
-    signin ??= memberSignIn({ intro: 'We’ll email you a 6‑digit code. No password needed.', onDone: () => { signin = null; showMemberForm = false; } });
+    signin ??= memberSignIn({
+      intro: 'We’ll email you a 6‑digit code. No password needed.',
+      notice: ended ? 'Your sign-in ended. Please sign in again.' : '',
+      onDone: () => { signin = null; showMemberForm = false; if (next) location.replace(next); },
+    });
     return signin.el;
   };
 

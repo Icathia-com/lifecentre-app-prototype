@@ -6,7 +6,6 @@ import { ic } from '../ui.js';
 import { load, save } from '../local.js';
 import { api, getSession, clearSession } from '../booking-api.js';
 import { forgetMyBookings } from '../my-bookings.js';
-import { memberSignIn } from '../member-signin.js';
 
 const LAST_ORG = 'bookingOrg';
 const STATUS = {
@@ -22,9 +21,10 @@ const toClock = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${Str
 const day = (ymd) => formatDay(dayStart(ymd));
 
 export function render(root) {
-  let view = getSession() ? 'home' : 'email'; // email (the shared sign-in form) | home | form | done
-  let notice = '';
-  let signin = null; // the sign-in form, kept between redraws so what was typed survives
+  // Signed out: there is one sign-in page, Account. It brings the member back here after the code.
+  const toSignIn = (ended) => location.replace(`#/account?next=booking${ended ? '&ended=1' : ''}`);
+  if (!getSession()) { toSignIn(false); return; }
+  let view = 'home'; // home | form | done
   let error = '';
   let busy = false;
   let cfg = null;
@@ -44,7 +44,8 @@ export function render(root) {
   // Anything that fails: a lost session goes back to sign-in, the rest shows a message.
   function fail(e) {
     busy = false;
-    if (e.code === 'signin') { view = 'email'; notice = 'Your sign-in ended. Please sign in again.'; error = ''; signin = null; } else error = e.message;
+    if (e.code === 'signin') { toSignIn(true); return; }
+    error = e.message;
     draw();
   }
 
@@ -59,8 +60,7 @@ export function render(root) {
   async function signOut() {
     try { await api('signOut'); } catch { /* the session is forgotten on this phone either way */ }
     clearSession();
-    view = 'email'; notice = ''; error = ''; signin = null; cfg = null; mine = null;
-    draw();
+    toSignIn(false);
   }
 
   function openForm(room) {
@@ -117,16 +117,6 @@ export function render(root) {
     for (let m = toMinutes(from); m <= toMinutes(to); m += 30) out.push(h('option', { value: toClock(m), selected: toClock(m) === selected }, toClock(m)));
     return out;
   };
-
-  function signInView() {
-    signin ??= memberSignIn({ notice, intro: 'We’ll email you a 6‑digit code. No password needed.', onDone: () => { signin = null; notice = ''; view = 'home'; loadHome(); } });
-    return [
-      head('Facilities Booking', 'Request', backHome),
-      h('section', { class: 'bk-frame' }, h('div', { class: 'bk-inner' },
-        h('h2', { class: 'big' }, 'Sign in to book a room'),
-        signin.el),
-        h('a', { class: 'bk-contact', href: '#/contact' }, h('span', {}, 'Not a member yet?'), h('b', {}, 'Contact us')))];
-  }
 
   function homeView() {
     const u = user();
@@ -221,7 +211,7 @@ export function render(root) {
   }
 
   function draw() {
-    const nodes = view === 'email' ? signInView() : view === 'home' ? homeView() : view === 'form' ? formView() : doneView();
+    const nodes = view === 'home' ? homeView() : view === 'form' ? formView() : doneView();
     fill(host, nodes);
   }
 
