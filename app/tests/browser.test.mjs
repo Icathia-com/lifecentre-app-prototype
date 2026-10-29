@@ -1622,8 +1622,14 @@ describe('Giving', () => {
       ['Life Centre (Tithes, Offering)', 'S87SS0049C'],
       ['Life Centre (Building Fund)', 'S87SS0049CBLD'],
     ]);
-    assert.equal((await page.$$('.gv-qr')).length, 2, 'a QR space in each card');
-    assert.equal(await page.$('.gv-qr img'), null, 'the QR spaces stay blank');
+    assert.equal((await page.$$('.gv-qr')).length, 2, 'a QR code in each card');
+    // The code in each card belongs to that card's fund (its picture is named for the fund) and is big and white enough to scan.
+    const codes = await page.$$eval('.gv-fund', (els) => els.map((e) => { const img = e.querySelector('.gv-qr img'); return { title: e.querySelector('.gv-title').textContent, src: img?.getAttribute('src'), alt: img?.alt, loaded: !!img && img.complete && img.naturalWidth > 0, width: Math.round(img?.getBoundingClientRect().width ?? 0), bg: getComputedStyle(e.querySelector('.gv-qr')).backgroundColor }; }));
+    assert.deepEqual(codes.map((c) => [c.title, c.src, c.alt]), [
+      ['Life Centre (Tithes, Offering)', 'images/paynow-tithes.png', 'PayNow QR code for Life Centre (Tithes, Offering)'],
+      ['Life Centre (Building Fund)', 'images/paynow-building.png', 'PayNow QR code for Life Centre (Building Fund)'],
+    ]);
+    for (const c of codes) { assert.ok(c.loaded, `${c.src} loads`); assert.equal(c.width, 200); assert.equal(c.bg, 'rgb(255, 255, 255)'); }
     assert.match(await text(page, '.gv-foot'), /recorded as anonymous/);
     assert.match(await text(page, '.gv-source'), /Source: lifecentre\.sg/);
     assert.doesNotMatch(await page.$eval('body', (b) => b.innerText), /coming soon/i);

@@ -2,13 +2,14 @@
 // It never touches data. Firestore, sign-in, the booking system, YouTube and anything else not listed below are left to the browser.
 // Files are fetched from the network first (so a new version shows up straight away) and fall back to the saved copy.
 // When the shell changes, raise VERSION: old copies are deleted when the new worker starts.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `lc-shell-${VERSION}`;
 
 // Every file the app needs to open. app/tests/pwa.test.mjs fails if a file is missing from this list.
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'css/app.css', 'css/screens.css',
+  'images/paynow-building.png', 'images/paynow-tithes.png',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
   'js/booking-api.js', 'js/data.js', 'js/firebase.js', 'js/image.js', 'js/local.js', 'js/main.js', 'js/member-signin.js', 'js/my-bookings.js', 'js/planner.js', 'js/poster.js',
   'js/router.js', 'js/sample-data.js', 'js/session.js', 'js/sites.js', 'js/task-sheet.js', 'js/ui.js', 'js/util.js', 'js/youtube.js',

@@ -47,7 +47,7 @@ describe('the service worker', () => {
   const source = read('sw.js');
   const shell = new Function(`return ${source.match(/const SHELL = (\[[\s\S]*?\]);/)[1]}`)();
   it('keeps every screen, style, script and icon the app needs, and each of them exists', () => {
-    const needed = ['index.html', 'manifest.webmanifest', ...files('css', '.css'), ...files('js', '.js'), ...files('icons', '.png').filter((f) => f !== 'icons/icon-bethlehem-prism-white.png')]; // that one is only the source scripts/make-icons.mjs draws the others from
+    const needed = ['index.html', 'manifest.webmanifest', ...files('css', '.css'), ...files('images', '.png'), ...files('js', '.js'), ...files('icons', '.png').filter((f) => f !== 'icons/icon-bethlehem-prism-white.png')]; // that one is only the source scripts/make-icons.mjs draws the others from
     for (const file of needed) assert.ok(shell.includes(file), `${file} is missing from SHELL in sw.js`);
     for (const file of shell) if (file !== './') assert.ok(statSync(join(APP, file)).isFile(), `${file} is in SHELL but does not exist`);
   });

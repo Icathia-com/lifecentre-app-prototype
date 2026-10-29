@@ -423,6 +423,8 @@ body[data-route='contact'] .screen, body[data-route='giving'] .screen { gap: 14p
 .gv-qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .gv-qr-wrap .gv-small { align-self: flex-start; }
 .gv-qr { width: 176px; height: 176px; border-radius: 18px; border: 2px dashed rgba(11, 18, 32, 0.25); background: rgba(255, 255, 255, 0.5); display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.gv-qr.has-code { width: auto; height: auto; padding: 10px; border: 0; background: #fff; }
+.gv-qr.has-code img { display: block; width: 200px; height: 200px; max-width: 100%; object-fit: contain; }
 .gv-foot { font-size: 12.5px; line-height: 1.45; color: #3A4558; }
 .gv-source { flex-shrink: 0; font-size: 11px; color: var(--muted); text-align: center; padding: 2px 0 6px; }
 

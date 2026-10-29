@@ -1,9 +1,15 @@
 // Giving via PayNow: the intro, the scam warning, and one card per PayNow account with its UEN and a Copy button.
-// The official QR codes are not in the app yet (decided 27 Oct), so each card keeps an empty QR space.
+// Each card shows the church's official PayNow QR code (app/images), matched to the fund by its UEN. A fund with no picture keeps an empty QR space.
 // Layout follows design/Giving.dc.html.
 import { h, fill } from '../util.js';
 import { ic } from '../ui.js';
 import { FUNDS } from '../sites.js';
+
+// The official codes, redrawn sharp from the church's own. Each one decodes to the UEN of its fund.
+const QR_BY_UEN = {
+  S87SS0049C: 'images/paynow-tithes.png',
+  S87SS0049CBLD: 'images/paynow-building.png',
+};
 
 async function copyText(text) {
   try {
@@ -42,7 +48,9 @@ function fundCard(fund, status) {
       button),
     h('div', { class: 'gv-qr-wrap' },
       h('span', { class: 'gv-small' }, 'QR Code'),
-      h('div', { class: 'gv-qr', role: 'img', 'aria-label': 'Space for the official PayNow QR code' }, ic('qr', 34, 1.6))),
+      QR_BY_UEN[fund.uen]
+        ? h('div', { class: 'gv-qr has-code' }, h('img', { src: QR_BY_UEN[fund.uen], alt: `PayNow QR code for ${fund.title}`, width: '200', height: '200' }))
+        : h('div', { class: 'gv-qr', role: 'img', 'aria-label': 'Space for the official PayNow QR code' }, ic('qr', 34, 1.6))),
     h('div', { class: 'gv-line gv-ref' }, h('span', { class: 'gv-line-text' }, h('span', { class: 'gv-small' }, 'Reference number / Description'), h('span', { class: 'gv-ref-text' }, 'Your contact number'))),
     h('p', { class: 'gv-foot' }, 'If your contact number is not entered, the giving will be recorded as anonymous.'));
 }
