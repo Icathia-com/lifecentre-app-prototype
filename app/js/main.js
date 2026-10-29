@@ -26,6 +26,7 @@ startRouter({
     { path: '/contact', name: 'contact', title: 'Contact us', load: () => import('./views/contact.js') },
     { path: '/booking', name: 'booking', title: 'Facilities Booking Request', load: () => import('./views/booking.js') },
     { path: '/staff', name: 'staff', title: 'Staff', load: () => import('./views/staff.js') },
+    { path: '/account', name: 'account', tab: 'home', title: 'Account', load: () => import('./views/account.js') },
   ],
 });
 

@@ -4,8 +4,9 @@
 import { h, fill, addDays, dayStart, formatDay } from '../util.js';
 import { ic } from '../ui.js';
 import { load, save } from '../local.js';
-import { api, getSession, setSession, clearSession } from '../booking-api.js';
+import { api, getSession, clearSession } from '../booking-api.js';
 import { forgetMyBookings } from '../my-bookings.js';
+import { memberSignIn } from '../member-signin.js';
 
 const LAST_ORG = 'bookingOrg';
 const STATUS = {
@@ -21,9 +22,9 @@ const toClock = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${Str
 const day = (ymd) => formatDay(dayStart(ymd));
 
 export function render(root) {
-  let view = getSession() ? 'home' : 'email'; // email | code | home | form | done
-  let email = '';
+  let view = getSession() ? 'home' : 'email'; // email (the shared sign-in form) | home | form | done
   let notice = '';
+  let signin = null; // the sign-in form, kept between redraws so what was typed survives
   let error = '';
   let busy = false;
   let cfg = null;
@@ -43,32 +44,8 @@ export function render(root) {
   // Anything that fails: a lost session goes back to sign-in, the rest shows a message.
   function fail(e) {
     busy = false;
-    if (e.code === 'signin') { view = 'email'; notice = 'Your sign-in ended. Please sign in again.'; error = ''; } else error = e.message;
+    if (e.code === 'signin') { view = 'email'; notice = 'Your sign-in ended. Please sign in again.'; error = ''; signin = null; } else error = e.message;
     draw();
-  }
-
-  async function sendCode() {
-    if (busy) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return say('Enter a valid email address.');
-    busy = true; error = ''; draw();
-    try {
-      const r = await api('requestCode', { email: email.trim() }, { auth: false });
-      view = 'code'; notice = r.message;
-    } catch (e) { return fail(e); }
-    busy = false; draw();
-  }
-
-  async function verify(code) {
-    if (busy) return;
-    if (!/^\d{6}$/.test(code)) return say('Enter the 6-digit code from the email.');
-    busy = true; error = ''; draw();
-    try {
-      const r = await api('verifyCode', { email: email.trim(), code }, { auth: false });
-      setSession({ token: r.token, name: r.user.name, email: r.user.email });
-      notice = '';
-      view = 'home';
-    } catch (e) { return fail(e); }
-    await loadHome();
   }
 
   async function loadHome() {
@@ -82,7 +59,7 @@ export function render(root) {
   async function signOut() {
     try { await api('signOut'); } catch { /* the session is forgotten on this phone either way */ }
     clearSession();
-    view = 'email'; notice = ''; error = ''; email = ''; cfg = null; mine = null;
+    view = 'email'; notice = ''; error = ''; signin = null; cfg = null; mine = null;
     draw();
   }
 
@@ -142,23 +119,12 @@ export function render(root) {
   };
 
   function signInView() {
-    const second = view === 'code';
-    const emailInput = h('input', { id: 'bk-email', type: 'email', autocomplete: 'email', inputmode: 'email', value: email, readonly: second ? '' : null, oninput: (e) => { email = e.target.value; } });
-    const codeInput = second ? h('input', { id: 'bk-code', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', maxlength: '6', autocomplete: 'one-time-code' }) : null;
+    signin ??= memberSignIn({ notice, intro: 'We’ll email you a 6‑digit code. No password needed.', onDone: () => { signin = null; notice = ''; view = 'home'; loadHome(); } });
     return [
       head('Facilities Booking', 'Request', backHome),
       h('section', { class: 'bk-frame' }, h('div', { class: 'bk-inner' },
         h('h2', { class: 'big' }, 'Sign in to book a room'),
-        h('p', { class: 'muted' }, second ? notice : 'We’ll email you a 6‑digit code. No password needed.'),
-        !second && notice ? h('p', { class: 'note', role: 'status' }, notice) : null,
-        h('form', { class: 'bk-form', novalidate: '', onsubmit: (e) => { e.preventDefault(); if (second) verify(codeInput.value.trim()); else sendCode(); } },
-          field('Email address', emailInput),
-          second ? field('6-digit code', codeInput) : null,
-          alertBox(),
-          h('button', { type: 'submit', class: 'cr-submit', disabled: busy ? '' : null }, busy ? 'Please wait…' : second ? 'Sign in' : 'Send my code'),
-          second ? h('div', { class: 'bk-links' },
-            h('button', { type: 'button', class: 'link', onclick: () => { view = 'email'; notice = ''; error = ''; draw(); } }, 'Use a different email'),
-            h('button', { type: 'button', class: 'link', onclick: sendCode }, 'Send a new code')) : null)),
+        signin.el),
         h('a', { class: 'bk-contact', href: '#/contact' }, h('span', {}, 'Not a member yet?'), h('b', {}, 'Contact us')))];
   }
 
@@ -255,9 +221,8 @@ export function render(root) {
   }
 
   function draw() {
-    const nodes = view === 'email' || view === 'code' ? signInView() : view === 'home' ? homeView() : view === 'form' ? formView() : doneView();
+    const nodes = view === 'email' ? signInView() : view === 'home' ? homeView() : view === 'form' ? formView() : doneView();
     fill(host, nodes);
-    if (view === 'code') host.querySelector('#bk-code')?.focus();
   }
 
   draw();

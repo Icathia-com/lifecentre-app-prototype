@@ -7,6 +7,7 @@ import { siteVenue } from '../sites.js';
 import { ic, eventHref } from '../ui.js';
 import { loadTasks, loadDailyTicks, itemsFor, progress, EVENT_WINDOW } from '../planner.js';
 import { myBookings } from '../my-bookings.js';
+import { onBookingSession } from '../booking-api.js';
 import { openTaskSheet } from '../task-sheet.js';
 
 const COLW = 100;    // every day column is 100px wide, so a wider screen simply shows more days
@@ -84,11 +85,18 @@ export function render(root) {
   const fab = h('button', { type: 'button', class: 'fab', 'aria-label': 'Add', 'aria-expanded': 'false', 'aria-controls': 'fab-menu', onclick: () => setMenu(menu.hidden) }, icon(PLUS));
   const note = h('p', { class: 'note', role: 'status', hidden: '' });
 
-  // The profile menu: a small "Contact us" link for everyone.
-  const profileMenu = h('div', { class: 'profile-menu', id: 'profile-menu', hidden: '' }, h('a', { href: '#/contact' }, 'Contact us'));
-  const avatar = h('button', { type: 'button', class: 'avatar', 'aria-label': 'Profile menu', 'aria-expanded': 'false', 'aria-controls': 'profile-menu', onclick: () => setProfile(profileMenu.hidden) });
-  const setProfile = (open) => { profileMenu.hidden = !open; avatar.setAttribute('aria-expanded', String(open)); };
-  const stopSession = onSession((session) => avatar.replaceChildren(session?.email ? session.email[0].toUpperCase() : icon(PERSON)));
+  // The avatar opens the Account page: sign in there, or see who is signed in and sign out.
+  // It shows the first letter of whoever is signed in (a member for bookings, or staff with Google), else a person icon.
+  const avatar = h('a', { class: 'avatar', href: '#/account', 'aria-label': 'Account' });
+  let staffSession = null;
+  let memberSession = null;
+  const showAvatar = () => {
+    const who = (memberSession?.name || memberSession?.email || staffSession?.email || '').trim();
+    avatar.replaceChildren(who ? who[0].toUpperCase() : icon(PERSON));
+    avatar.setAttribute('aria-label', who ? `Account, signed in as ${memberSession?.email || staffSession?.email}` : 'Account, sign in');
+  };
+  const stopSession = onSession((session) => { staffSession = session?.email ? session : null; showAvatar(); });
+  const stopMember = onBookingSession((session) => { memberSession = session; showAvatar(); });
 
   const calEl = h('section', { class: 'glass cal', 'aria-labelledby': 'cal-h' },
     h('div', { class: 'cal-head' }, h('h2', { class: 'month-h' }, monthButton), badge),
@@ -99,7 +107,7 @@ export function render(root) {
 
   root.append(
     h('header', { class: 'greeting' },
-      h('div', { class: 'top-row' }, h('a', { class: 'round-btn', href: '#/notifications', 'aria-label': 'Notifications' }, ic('bell', 20)), avatar, profileMenu),
+      h('div', { class: 'top-row' }, h('a', { class: 'round-btn', href: '#/notifications', 'aria-label': 'Notifications' }, ic('bell', 20)), avatar),
       h('div', { class: 'lines' },
         h('p', { class: 'hello' }, 'Hello'),
         h('h1', { id: 'page-title', tabindex: '-1' }, 'Today'),
@@ -289,12 +297,10 @@ export function render(root) {
   const onKey = (e) => {
     if (e.key !== 'Escape') return;
     if (!menu.hidden) { setMenu(false); fab.focus(); }
-    if (!profileMenu.hidden) { setProfile(false); avatar.focus(); }
     if (!monthMenu.hidden) { setMonths(false); monthButton.focus(); }
   };
   const onPointer = (e) => {
     if (!menu.hidden && !e.target.closest('.fab-row')) setMenu(false);
-    if (!profileMenu.hidden && !e.target.closest('.top-row')) setProfile(false);
     if (!monthMenu.hidden && !e.target.closest('.month-menu, .month-btn')) setMonths(false);
   };
   document.addEventListener('keydown', onKey);
@@ -331,6 +337,7 @@ export function render(root) {
     clearTimeout(timer);
     closeSheet?.();
     stopSession();
+    stopMember();
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('pointerdown', onPointer);
   };

@@ -189,17 +189,16 @@ describe('Home', () => {
     assert.ok((await page.$$('.tile.line')).length >= 21 * 3);
     await context.close();
   });
-  it('has a profile menu with a small "Contact us" link', async () => {
+  it('opens the Account page from the avatar, which links on to Contact us', async () => {
     const { page, context } = await open();
-    assert.equal(await page.$eval('#profile-menu', (m) => m.hidden), true);
+    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('href')), '#/account');
+    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('aria-label')), 'Account, sign in');
+    assert.equal(await page.$$eval('.avatar svg', (s) => s.length), 1); // a person icon while nobody is signed in
     await page.click('.avatar');
-    assert.match(await text(page, '#profile-menu a'), /^Contact us$/);
-    await page.keyboard.press('Escape');
-    assert.equal(await page.$eval('#profile-menu', (m) => m.hidden), true);
-    await page.click('.avatar');
-    await page.click('#profile-menu a');
+    await waitTitle(page, 'Account');
+    assert.match(page.url(), /#\/account$/);
+    await page.click('.acct-contact');
     await waitTitle(page, 'Contact us');
-    assert.match(page.url(), /#\/contact$/);
     await context.close();
   });
   it('lists Facilities Booking Request in the + menu', async () => {
@@ -886,7 +885,7 @@ describe('mouse drag scrolling', () => {
 });
 
 // A stand-in for the church's booking system: it answers the app's calls the way the real one does, and records them.
-function fakeBooking({ blocks = [], failure = null } = {}) {
+function fakeBooking({ blocks = [], failure = null, delays = {} } = {}) {
   const TOKEN = 'a'.repeat(64);
   const state = { calls: [], bookings: [], blocks, failure };
   const reply = (body) => {
@@ -917,7 +916,8 @@ function fakeBooking({ blocks = [], failure = null } = {}) {
       if (!req.url().startsWith('https://script.google.com/')) return req.continue();
       const body = JSON.parse(req.postData() || '{}');
       state.calls.push(body);
-      req.respond({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply(body)) });
+      const send = () => req.respond({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply(body)) });
+      if (delays[body.action]) setTimeout(send, delays[body.action]); else send();
     });
   };
   return state;
@@ -1060,6 +1060,100 @@ describe('Facilities booking', () => {
     await waitText(staff.page, 'Sign in to book a room', '#main');
     assert.equal((await fifthTab(staff.page)).label, 'Facilities Booking');
     await staff.context.close();
+  });
+});
+
+describe('Account (from the Home avatar)', () => {
+  it('signed out: offers member sign-in and staff sign-in, and passes the accessibility check', async () => {
+    const fake = fakeBooking();
+    const { page, errors, context } = await open('#/account', { setup: (p) => fake.install(p) });
+    assert.equal(await pageTitle(page), 'Account');
+    await page.waitForSelector('#bk-email');
+    assert.match(await text(page, '#main'), /We’ll email you a 6‑digit code\. No password needed\./);
+    assert.match(await text(page, '#main'), /Staff sign-in with Google/);
+    assert.equal((await page.$$('.acct-me')).length, 0);
+    await shot(page, 'account-signed-out');
+    await checkAccessibility(page, 'Account, signed out');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('locks the code box while a code is checked, opens it again for a wrong code, then signs the member in', async () => {
+    const fake = fakeBooking({ delays: { verifyCode: 900 } });
+    const { page, errors, context } = await open('#/account', { setup: (p) => fake.install(p) });
+    await page.type('#bk-email', 'member@example.org');
+    await page.click('.cr-submit');
+    await page.waitForSelector('#bk-code');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'bk-code');
+    await page.type('#bk-code', '000 000'); // a pasted code may carry a space
+    await page.click('.cr-submit');
+    await page.waitForFunction(() => document.querySelector('#bk-code')?.readOnly === true);
+    const locked = await page.$eval('#main', (m) => ({
+      value: m.querySelector('#bk-code').value, busy: m.querySelector('#bk-code').getAttribute('aria-busy'),
+      submit: m.querySelector('.cr-submit').disabled, label: m.querySelector('.cr-submit').textContent,
+      links: [...m.querySelectorAll('.bk-links button')].map((b) => b.disabled),
+    }));
+    assert.deepEqual(locked, { value: '000 000', busy: 'true', submit: true, label: 'Checking…', links: [true, true] });
+    await page.keyboard.type('9');
+    assert.equal(await page.$eval('#bk-code', (el) => el.value), '000 000'); // nothing more can be typed while it is checked
+    await waitText(page, 'That code is not right', '#main');
+    assert.deepEqual(await page.$eval('#main', (m) => ({ readOnly: m.querySelector('#bk-code').readOnly, value: m.querySelector('#bk-code').value, submit: m.querySelector('.cr-submit').disabled, focus: document.activeElement?.id })),
+      { readOnly: false, value: '', submit: false, focus: 'bk-code' });
+    assert.equal(fake.calls.filter((c) => c.action === 'verifyCode')[0].code, '000000');
+    await page.type('#bk-code', '123456');
+    await page.click('.cr-submit');
+    await page.waitForSelector('.acct-me');
+    assert.match(await text(page, '.acct-me'), /Test Member/);
+    assert.match(await text(page, '.acct-row'), /Member\s*member@example\.org/);
+    assert.equal(await text(page, '.acct-av'), 'T');
+    assert.equal((await page.$$('.acct-tools')).length, 0); // members get no staff tools
+    await shot(page, 'account-member');
+    await checkAccessibility(page, 'Account, member');
+    await goto(page, '#/');
+    await page.waitForFunction(() => document.querySelector('.avatar')?.textContent === 'T');
+    assert.match(await page.$eval('.avatar', (a) => a.getAttribute('aria-label')), /member@example\.org/);
+    await goto(page, '#/account');
+    await page.waitForSelector('.acct-row .btn');
+    await page.click('.acct-row .btn');
+    await page.waitForSelector('#bk-email');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
+    assert.ok(fake.calls.some((c) => c.action === 'signOut'));
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('admin: shows the role and the admin tools, and signing out puts the fifth tab back to Contact us', async () => {
+    const fake = fakeBooking();
+    const { page, errors, context } = await openAsStaff('/account', ADMIN, { setup: (p) => fake.install(p) });
+    await page.waitForSelector('.acct-tools');
+    assert.match(await text(page, '.acct-row'), /Admin\s*admin@lifecentre\.sg/);
+    assert.match(await text(page, '#acct-tools-h'), /Admin tools/);
+    assert.deepEqual(await page.$$eval('.acct-links a', (as) => as.map((a) => [a.getAttribute('href'), a.textContent.trim()])), [
+      ['#/staff', 'Notices, verses, events and the staff list'], ['#/events/new', 'Create an event'], ['#/watch', 'Post a video'], ['#/booking', 'Facilities booking']]);
+    assert.match(await text(page, '#main'), /Sign in for bookings/);
+    assert.equal((await fifthTab(page)).label, 'Facilities Booking');
+    await shot(page, 'account-admin');
+    await checkAccessibility(page, 'Account, admin');
+    await page.click('.acct-row .btn');
+    await page.waitForSelector('#bk-email');
+    assert.equal((await fifthTab(page)).label, 'Contact us');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:session')), null);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('leader: staff tools for videos and bookings only; signed in both ways: one button signs out of both', async () => {
+    const fake = fakeBooking();
+    const { page, context } = await openAsStaff('/account', LEADER, { setup: (p) => fake.install(p, { signedIn: true }) });
+    await page.waitForSelector('.acct-tools');
+    assert.match(await text(page, '#acct-tools-h'), /Staff tools/);
+    assert.deepEqual(await page.$$eval('.acct-links a', (as) => as.map((a) => a.getAttribute('href'))), ['#/watch', '#/booking']);
+    assert.equal((await page.$$('.acct-row')).length, 2);
+    await page.click('.acct-me > .btn');
+    await page.waitForSelector('#bk-email');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:session')), null);
+    await context.close();
   });
 });
 
@@ -1972,7 +2066,7 @@ describe('Accessibility sweep: menus, sheets, roles and the small phone', () => 
   const SIGNED_OUT = [
     ['Home: + menu open', '#/', async (page) => { await page.waitForSelector('.tile.card'); await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' })); await page.click('.fab'); }],
     ['Home: month list open', '#/', async (page) => { await page.waitForSelector('.tile.card'); await page.$eval('.month-btn', (b) => b.scrollIntoView({ block: 'center' })); await page.click('.month-btn'); }],
-    ['Home: profile menu open', '#/', async (page) => { await page.click('.avatar'); }],
+    ['Account: signed out', '#/account', async (page) => { await page.waitForSelector('#bk-email'); }],
     ['Events: location menu open', '#/events', async (page) => { await page.waitForSelector('.ev-row'); await page.click('.pill-btn'); }],
     ['Event page: More menu', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act[aria-haspopup=menu]'); }],
     ['Event page: Contact sheet', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act::-p-text(Contact)'); await page.waitForSelector('.sheet'); }],
