@@ -332,12 +332,12 @@ describe('Events: Upcoming', () => {
   it('shows "+ Event" to admins and staff only', async () => {
     const visitor = await open('#/events');
     await visitor.page.waitForSelector('.ev-row');
-    assert.equal(await visitor.page.$eval('.fab-pill', (a) => a.hidden), true);
+    assert.equal(await visitor.page.$eval('.fab-layer', (a) => a.hidden), true);
     await visitor.context.close();
     for (const [email, shown] of [[STAFF, true], [ADMIN, true], [LEADER, false]]) {
       const { page, context } = await openAsStaff('/events', email);
       await page.waitForSelector('.ev-row');
-      assert.equal(await page.$eval('.fab-pill', (a) => a.hidden), !shown, email);
+      assert.equal(await page.$eval('.fab-layer', (a) => a.hidden), !shown, email);
       if (shown) assert.equal(await page.$eval('.fab-pill', (a) => a.getAttribute('href')), '#/events/new');
       await context.close();
     }
@@ -1443,7 +1443,7 @@ describe('Contact us', () => {
     assert.equal(await page.$eval('#visit', (e) => e.hidden), true);
     await page.click('button.ct-row');
     assert.equal(await page.$eval('button.ct-row', (b) => b.getAttribute('aria-expanded')), 'true');
-    assert.deepEqual(await page.$$eval('#visit h3', (els) => els.map((e) => e.textContent)), ['Life Centre @ Yishun', 'Life Centre @ Tuas', 'Life Centre @ Kranji', 'Life Centre @ Pasir Ris']);
+    assert.deepEqual(await page.$$eval('#visit h2', (els) => els.map((e) => e.textContent)), ['Life Centre @ Yishun', 'Life Centre @ Tuas', 'Life Centre @ Kranji', 'Life Centre @ Pasir Ris']);
     assert.match(await text(page, '#visit'), /English Service\s*Every Sunday, 10\.30am/);
     assert.match(await page.$eval('#visit .ct-addr', (a) => a.href), /google\.com\/maps\/search\/\?api=1&query=3%20Yishun/);
     await shot(page, 'contact-visit');
@@ -1962,4 +1962,61 @@ describe('Installable app and offline use', () => {
     assert.deepEqual(errors, []);
     await context.close();
   });
+});
+
+// An accessibility sweep over the states the screen-by-screen checks above do not reach: open menus and sheets, every staff tab,
+// each role, and the small phone. (axe checks contrast, names, roles, landmarks, focus order hints and target size.)
+describe('Accessibility sweep: menus, sheets, roles and the small phone', () => {
+  const ready = (page) => new Promise((r) => setTimeout(r, 700)).then(() => page.waitForSelector('#page-title'));
+  const eventPage = async (page) => { await page.waitForSelector('.act'); await new Promise((r) => setTimeout(r, 1200)); await page.$eval('.act', (a) => a.scrollIntoView({ block: 'center' })); }; // the page redraws once the live data arrives
+  const SIGNED_OUT = [
+    ['Home: + menu open', '#/', async (page) => { await page.waitForSelector('.tile.card'); await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' })); await page.click('.fab'); }],
+    ['Home: month list open', '#/', async (page) => { await page.waitForSelector('.tile.card'); await page.$eval('.month-btn', (b) => b.scrollIntoView({ block: 'center' })); await page.click('.month-btn'); }],
+    ['Home: profile menu open', '#/', async (page) => { await page.click('.avatar'); }],
+    ['Events: location menu open', '#/events', async (page) => { await page.waitForSelector('.ev-row'); await page.click('.pill-btn'); }],
+    ['Event page: More menu', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act[aria-haspopup=menu]'); }],
+    ['Event page: Contact sheet', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act::-p-text(Contact)'); await page.waitForSelector('.sheet'); }],
+    ['Event page: calendar sheet', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act[aria-haspopup=menu]'); await page.click('[role=menuitem]::-p-text(Add to calendar)'); await page.waitForSelector('.sheet'); }],
+    ['Event page: QR sheet', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act[aria-haspopup=menu]'); await page.click('[role=menuitem]::-p-text(Event QR code)'); await page.waitForSelector('.sheet'); }],
+    ['Location: a filter chosen', '#/events/location/yishun', async (page) => { await page.click('button.chip::-p-text(Services)'); }],
+    ['Contact: Plan a visit open', '#/contact', async (page) => { await page.click('button.ct-row'); }],
+    ['Giving: after Copy', '#/giving', async (page) => { await page.click('.gv-copy'); await page.waitForFunction(() => document.querySelector('.gv-copy').textContent.trim() === 'Copied'); }],
+    ['Watch: paused', '#/watch', async (page) => { await page.waitForSelector('.wt-slide'); await page.mouse.click(195, 400); await page.waitForSelector('.wt-pause.on'); }],
+    ['Watch: Continue where you left off', '#/watch', async (page) => { await page.waitForSelector('.wt-slide'); }],
+  ];
+  for (const [width, height] of [[390, 844], [375, 667]]) {
+    for (const [label, hash, step] of SIGNED_OUT) {
+      it(`${label} (${width}x${height})`, async () => {
+        const { page, context } = await open(hash, { width, height, setup: label.includes('Continue') ? (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:watchResume', JSON.stringify({ id: 'sample-v3', t: 20 }))) : undefined });
+        await ready(page);
+        await step(page);
+        await new Promise((r) => setTimeout(r, 400));
+        await checkAccessibility(page, label);
+        await context.close();
+      });
+    }
+  }
+
+  const STAFF_STATES = [
+    ['Staff page: Notices (staff)', STAFF, '/staff', async () => {}],
+    ['Staff page: Verses', STAFF, '/staff', async (page) => { await page.click('.switch button::-p-text(Verses)'); }],
+    ['Staff page: Events', STAFF, '/staff', async (page) => { await page.click('.switch button::-p-text(Events)'); }],
+    ['Staff page: Staff list (admin)', ADMIN, '/staff', async (page) => { await page.click('.switch button::-p-text(Staff)'); }],
+    ['Events as admin', ADMIN, '/events', async (page) => { await page.waitForSelector('.ev-row'); }],
+    ['Event page as admin (Edit in More)', ADMIN, '/events/conf', async (page) => { await eventPage(page); await page.click('.act[aria-haspopup=menu]'); }],
+    ['Home as staff (Facilities tab)', STAFF, '/', async (page) => { await page.waitForSelector('.tile.card'); }],
+    ['Watch as leader (+ and trash buttons)', LEADER, '/watch', async (page) => { await page.waitForSelector('.wt-add:not([hidden])'); }],
+    ['Watch: Add a video, with an error', LEADER, '/watch', async (page) => { await page.click('.wt-add'); await page.click('.wt-publish'); await page.waitForFunction(() => document.querySelector('.wt-error').textContent); }],
+    ['Create event: cover colours and a photo choice', ADMIN, '/events/new', async (page) => { await page.click('.cr-fab.left'); }],
+  ];
+  for (const [label, email, path, step] of STAFF_STATES) {
+    it(`${label}`, async () => {
+      const { page, context } = await openAsStaff(path, email);
+      await ready(page);
+      await step(page);
+      await new Promise((r) => setTimeout(r, 500));
+      await checkAccessibility(page, label);
+      await context.close();
+    });
+  }
 });

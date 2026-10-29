@@ -31,8 +31,9 @@ function fundCard(fund, status) {
     clearTimeout(timer);
     button.classList.toggle('done', ok);
     label.textContent = ok ? 'Copied' : 'Copy failed';
+    button.setAttribute('aria-label', `${ok ? 'Copied' : 'Copy failed for'} the UEN number for ${fund.title}`);
     status.textContent = ok ? `${fund.title} UEN copied` : 'Could not copy. Select the number and copy it by hand.';
-    timer = setTimeout(() => { button.classList.remove('done'); label.textContent = 'Copy'; status.textContent = ''; }, 2000);
+    timer = setTimeout(() => { button.classList.remove('done'); label.textContent = 'Copy'; button.setAttribute('aria-label', `Copy the UEN number for ${fund.title}`); status.textContent = ''; }, 2000);
   });
   return h('section', { class: 'card gv-fund', 'aria-label': fund.title },
     h('h2', { class: 'gv-title' }, fund.title),

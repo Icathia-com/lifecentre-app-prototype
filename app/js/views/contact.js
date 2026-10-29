@@ -22,7 +22,7 @@ function rowLink(href, title, sub) {
 function siteTimes(site) {
   const lines = TYPE_ORDER.flatMap((type) => site.weekly[type] ?? []);
   return h('section', { class: 'ct-site', 'aria-label': site.name },
-    h('h3', null, site.venue),
+    h('h2', null, site.venue),
     h('a', { class: 'ct-addr', href: mapsHref(site.address), target: '_blank', rel: 'noopener' }, ic('pin', 15, 2), site.address),
     h('ul', { class: 'ct-times' }, lines.map((l) => h('li', null,
       h('span', { class: 'ct-time-name' }, l.name),
