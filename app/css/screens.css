@@ -510,3 +510,4 @@ body[data-route='watch'] .screen { padding: 0; gap: 0; overflow: hidden; color: 
 .acct-contact { color: var(--muted); padding: 4px 8px 12px; }
 .acct-contact b { color: var(--ink); }
 .ms { display: flex; flex-direction: column; gap: 12px; }
+.bk-contact { min-height: 44px; align-items: center; box-sizing: border-box; }

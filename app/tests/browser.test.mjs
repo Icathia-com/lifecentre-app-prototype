@@ -931,10 +931,11 @@ describe('Facilities booking', () => {
   it('asks a visitor to sign in with an emailed code, then shows the code step, and passes the accessibility check', async () => {
     const fake = fakeBooking();
     const { page, errors, context } = await open('#/booking', { setup: (p) => fake.install(p) });
-    assert.equal(await pageTitle(page), 'Facilities Booking Request');
-    await waitText(page, 'Sign in to book a room', '#main');
+    await waitTitle(page, 'Account'); // one sign-in page for the whole app
+    assert.match(page.url(), /#\/account\?next=booking$/);
+    await page.waitForSelector('#bk-email');
     assert.match(await text(page, '#main'), /We’ll email you a 6‑digit code\. No password needed\./);
-    assert.match(await text(page, '#main'), /Not a member yet\?\s*Contact us/);
+    assert.match(await text(page, '#main'), /Need help\?\s*Contact us/);
     await shot(page, 'booking-signed-out');
     await checkAccessibility(page, 'Booking sign-in');
     await page.type('#bk-email', 'not an email');
@@ -952,9 +953,11 @@ describe('Facilities booking', () => {
     await context.close();
   });
 
-  it('signs in with the right code, keeps the session, and signs out', async () => {
+  it('signs in with the right code on Account, comes back to booking, keeps the session, and signs out', async () => {
     const fake = fakeBooking();
     const { page, context } = await open('#/booking', { setup: (p) => fake.install(p) });
+    await waitTitle(page, 'Account');
+    await page.waitForSelector('#bk-email');
     await page.type('#bk-email', 'member@example.org');
     await page.click('.cr-submit');
     await page.waitForSelector('#bk-code');
@@ -976,7 +979,8 @@ describe('Facilities booking', () => {
     await waitText(page, 'Choose a room', '#main'); // still signed in
     await page.$eval('.bk-signed .btn', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the page
     await page.click('.bk-signed .btn');
-    await waitText(page, 'Sign in to book a room', '#main');
+    await waitTitle(page, 'Account');
+    await page.waitForSelector('#bk-email');
     assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
     assert.ok(fake.calls.some((c) => c.action === 'signOut' && c.token.length === 64));
     await context.close();
@@ -1040,7 +1044,8 @@ describe('Facilities booking', () => {
   it('goes back to sign-in when the session has ended, and shows a message when the booking system is unwell', async () => {
     const fake = fakeBooking();
     const { page, context } = await open('#/booking', { setup: (p) => fake.install(p, { signedIn: true, token: 'b'.repeat(64) }) });
-    await waitText(page, 'Sign in to book a room', '#main');
+    await waitTitle(page, 'Account');
+    await waitText(page, 'Your sign-in ended. Please sign in again.', '#main');
     assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:booking-session')), null);
     await context.close();
 
@@ -1057,7 +1062,8 @@ describe('Facilities booking', () => {
     assert.equal(await page.$eval('#fab-menu a', (a) => a.getAttribute('href')), '#/booking');
     await context.close();
     const staff = await openAsStaff('/booking');
-    await waitText(staff.page, 'Sign in to book a room', '#main');
+    await waitTitle(staff.page, 'Account');
+    await staff.page.waitForSelector('#bk-email'); // a staff member who is not signed in as a member gets the member form open
     assert.equal((await fifthTab(staff.page)).label, 'Facilities Booking');
     await staff.context.close();
   });
@@ -1968,7 +1974,7 @@ describe('Phone sizes: layout and tap targets', () => {
   };
   const SCREENS = [
     ['Home', '#/'], ['Events', '#/events'], ['an event', '#/events/conf'], ['a location', '#/events/location/yishun'], ['Notifications', '#/notifications'],
-    ['Day plan', '#/day'], ['Giving', '#/giving'], ['Watch', '#/watch'], ['Contact us', '#/contact'], ['Facilities booking sign-in', '#/booking'],
+    ['Day plan', '#/day'], ['Giving', '#/giving'], ['Watch', '#/watch'], ['Contact us', '#/contact'], ['Sign-in, arriving from booking', '#/booking'],
   ];
   const STAFF_SCREENS = [['Staff page', '/staff'], ['Create event', '/events/new'], ['Edit event', '/events/e1/edit'], ['Events (staff)', '/events']];
 
