@@ -81,7 +81,7 @@ export function render(root) {
   const days = h('div', { class: 'days drag-x', role: 'group', 'aria-label': 'Your days. Drag or swipe sideways for other days.' });
   const menu = h('div', { class: 'fab-menu', id: 'fab-menu', hidden: '' },
     h('button', { type: 'button', class: 'fab-item', onclick: () => { setMenu(false); addTask(); } }, icon(TASK), 'Add a task'),
-    h('a', { href: '#/booking' }, icon(BOOK), 'Facilities Booking Request'));
+    h('a', { href: '#/booking' }, icon(BOOK), 'Book a space'));
   const fab = h('button', { type: 'button', class: 'fab', 'aria-label': 'Add', 'aria-expanded': 'false', 'aria-controls': 'fab-menu', onclick: () => setMenu(menu.hidden) }, icon(PLUS));
   const note = h('p', { class: 'note', role: 'status', hidden: '' });
 
