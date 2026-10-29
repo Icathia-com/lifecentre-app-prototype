@@ -59,3 +59,15 @@ export function sampleEvents(now = Date.now()) {
       cover: { from: '#14532D', to: '#4ADE80', label: 'LEADERS\nTRAINING' }, description: 'Training for current and new cell group leaders.', going: 24, createdAt: now - 6 * 24 * HOUR }),
   ];
 }
+// The design's sample videos for Watch (design/Watch.dc.html). They have no real video behind them, so Watch shows them
+// as colour cards and says "Sample". `dur` is the length in seconds that the progress line runs over; `c` is the two card colours.
+export function sampleVideos() {
+  return [
+    { id: 'sample-v1', org: 'Yishun', title: 'Sunday message in 60 seconds', desc: 'A short word from this week’s service.', dur: 58, c: ['#5B2A86', '#1B1740'], sample: true },
+    { id: 'sample-v2', org: 'Kids', title: 'Memory verse of the week', desc: 'Say it along with us!', dur: 42, c: ['#C2185B', '#4A148C'], sample: true },
+    { id: 'sample-v3', org: 'Pasir Ris', title: 'Testimony: an answered prayer', desc: 'A member shares what God did.', dur: 75, c: ['#00796B', '#0D2B3E'], sample: true },
+    { id: 'sample-v4', org: 'Youth', title: 'Youth Connect highlights', desc: 'Moments from last Saturday.', dur: 50, c: ['#E65100', '#4E1B00'], sample: true },
+    { id: 'sample-v5', org: 'Tuas', title: 'Welcome to Life Centre @ Tuas', desc: 'Come and visit us on Sunday.', dur: 35, c: ['#1565C0', '#0B1F3A'], sample: true },
+    { id: 'sample-v6', org: 'Kranji', title: 'A word from Bro. Selvaraj', desc: 'Encouragement for the week ahead.', dur: 55, c: ['#6A1B9A', '#1A237E'], sample: true },
+  ];
+}

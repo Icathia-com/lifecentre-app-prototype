@@ -227,9 +227,6 @@ body[data-route='staff'] .tabbar { display: none; }
   box-shadow: inset 0 1px 0 #fff, 0 8px 20px rgba(40, 60, 90, 0.2);
 }
 .tab:active .lens { transform: scale(0.93); }
-.tab-soon { flex-direction: column; justify-content: center; gap: 0; padding-bottom: 2px; }
-.tab-soon svg { opacity: 0.55; margin-top: -4px; }
-.tab-soon .soon { position: relative; z-index: 1; margin-top: 1px; font-size: 9px; font-weight: 800; letter-spacing: 0.05em; line-height: 1; text-transform: uppercase; color: #3F4C63; }
 
 /* ---- Staff page ---- */
 .who { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; }

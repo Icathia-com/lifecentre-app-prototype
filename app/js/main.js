@@ -5,9 +5,6 @@ import { onSession, startSession, isOnStaffList } from './session.js';
 const outlet = document.getElementById('main');
 enableDragScroll(outlet, 'y');
 
-// Screens that are not built yet share one "Coming soon" page.
-const soon = (title) => () => import('./views/coming-soon.js').then((m) => ({ render: (root) => m.render(root, title) }));
-
 const tabs = [...document.querySelectorAll('.tab')];
 startRouter({
   outlet,
@@ -24,9 +21,9 @@ startRouter({
     { path: '/day/:date', name: 'day', tab: 'home', title: 'Day plan', load: () => import('./views/day.js') },
     { path: '/notifications', name: 'notifications', tab: 'home', title: 'Notifications', load: () => import('./views/notifications.js') },
     { path: '/announcements', redirect: '/notifications' }, // church notices live in Notifications now
-    { path: '/giving', name: 'giving', title: 'Giving', load: soon('Giving') },
-    { path: '/watch', name: 'watch', title: 'Watch', load: soon('Watch') },
-    { path: '/contact', name: 'contact', title: 'Contact us', load: soon('Contact us') },
+    { path: '/giving', name: 'giving', title: 'Giving', load: () => import('./views/giving.js') },
+    { path: '/watch', name: 'watch', title: 'Watch', load: () => import('./views/watch.js') },
+    { path: '/contact', name: 'contact', title: 'Contact us', load: () => import('./views/contact.js') },
     { path: '/booking', name: 'booking', title: 'Facilities Booking Request', load: () => import('./views/booking.js') },
     { path: '/staff', name: 'staff', title: 'Staff', load: () => import('./views/staff.js') },
   ],
@@ -39,13 +36,11 @@ function showFifthTab(session) {
   const label = facilities ? 'Facilities Booking' : 'Contact us';
   fifth.dataset.route = facilities ? 'booking' : 'contact';
   fifth.setAttribute('href', facilities ? '#/booking' : '#/contact');
-  fifth.title = facilities ? label : `${label} (coming soon)`;
-  fifth.setAttribute('aria-label', facilities ? label : `${label}, coming soon`);
-  fifth.classList.toggle('tab-soon', !facilities);
+  fifth.title = label;
+  fifth.setAttribute('aria-label', label);
   // toggleAttribute, because SVG elements have no `hidden` property
   fifth.querySelector('.ic-contact').toggleAttribute('hidden', facilities);
   fifth.querySelector('.ic-facilities').toggleAttribute('hidden', !facilities);
-  fifth.querySelector('.soon').toggleAttribute('hidden', facilities);
   for (const tab of tabs) {
     if (tab.dataset.route === document.body.dataset.route) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');

@@ -117,6 +117,7 @@ export function enableDragScroll(el, axis = 'y') {
   el.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'mouse' || e.button !== 0 || e.target.closest(FORM_FIELDS)) return;
     if (axis === 'y' && e.target.closest('.drag-x')) return; // a horizontal strip handles its own drag
+    if (e.target.closest('.own-drag')) return; // a screen that runs its own drag (the Watch feed)
     active = true; dragging = false; pointer = e.pointerId; startPos = e[coord]; startScroll = el[prop];
   });
   el.addEventListener('pointermove', (e) => {

@@ -48,8 +48,25 @@ export const MINISTRIES = [
 // Cover colours offered when creating an event.
 export const COVERS = [['#1B1740', '#3558C8'], ['#2A1B6B', '#7A3FD6'], ['#FF6A3D', '#E5326B'], ['#F5B700', '#38B26B'], ['#0F766E', '#22B8A6'], ['#1E3A8A', '#3B82F6']];
 
-// How to reach the church. WhatsApp and phone are left empty until the numbers are known; empty ones are not shown.
-export const CHURCH = { name: 'Life Centre', email: 'hello@lifecentre.sg', whatsapp: '', phone: '' };
+// How to reach the church. WhatsApp and phone (the office) are left empty until the numbers are known; empty ones are not shown.
+// Numbers are written the way people dial them, e.g. '+65 6123 4567'.
+export const CHURCH = { name: 'Life Centre', email: 'hello@lifecentre.sg', whatsapp: '', phone: '', mainSite: 'yishun' };
+
+// Links from a number: digits only, with the Singapore code added to an 8-digit local number. '' when it is not a usable number.
+export function dialDigits(number) {
+  const digits = String(number || '').replace(/\D/g, '');
+  if (digits.length === 8) return `65${digits}`;
+  return digits.length >= 9 && digits.length <= 15 ? digits : '';
+}
+export const telHref = (number) => (dialDigits(number) ? `tel:+${dialDigits(number)}` : '');
+export const whatsappHref = (number) => (dialDigits(number) ? `https://wa.me/${dialDigits(number)}` : '');
+export const mapsHref = (address) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+
+// The two PayNow accounts on design/Giving.dc.html (source: lifecentre.sg). The UEN is what members copy.
+export const FUNDS = [
+  { id: 'tithe', title: 'Life Centre (Tithes, Offering)', uen: 'S87SS0049C' },
+  { id: 'build', title: 'Life Centre (Building Fund)', uen: 'S87SS0049CBLD' },
+];
 
 export const siteName = (id, place) => SITES[id]?.name ?? (place || 'Elsewhere');
 export const siteVenue = (id, place) => SITES[id]?.venue ?? (place || 'Venue to be confirmed');

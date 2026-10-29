@@ -4,7 +4,8 @@ rules_version = '2';
 // Public: read published announcements and events, read verses.
 // Staff and admin (an email in /staff with that role, signed in with a verified Google account): write them.
 // Leader (also in /staff): can be recognised by the app, but cannot post or read drafts.
-// Admin: also manage /staff. Everything not listed here (stories, videos for now) is denied.
+// Videos (Watch): public read; admins and leaders post and edit; any staff-list member (admin, staff or leader) can remove one.
+// Admin: also manage /staff. Everything not listed here (stories for now) is denied.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -38,6 +39,11 @@ service cloud.firestore {
     // Leaders are on the staff list (they get the Facilities Booking tab) but cannot post.
     function canPublish() {
       return isStaff() && role() in ['admin', 'staff'];
+    }
+
+    // Who may post videos in Watch: admins and organisation leaders (not plain staff).
+    function canPostVideo() {
+      return isStaff() && role() in ['admin', 'leader'];
     }
 
     function isText(v, max) {
@@ -115,6 +121,22 @@ service cloud.firestore {
         && d.updatedBy == userEmail();
     }
 
+    // A Watch video is a YouTube link or an uploaded file (the upload path is added with the publisher screen).
+    // `dur` is the length in seconds. Nothing here is a draft: a video is public as soon as it is saved.
+    function validVideo(d) {
+      return d.keys().hasOnly(['title', 'org', 'desc', 'src', 'url', 'dur', 'sample', 'createdAt', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['title', 'src', 'updatedBy'])
+        && isText(d.title, 120)
+        && optionalText(d, 'org', 40)
+        && optionalText(d, 'desc', 300)
+        && d.src in ['youtube', 'upload']
+        && (!('url' in d) || (d.url is string && d.url.matches('^https://.{1,490}$')))
+        && (!('dur' in d) || (d.dur is int && d.dur > 0 && d.dur <= 14400))
+        && (!('sample' in d) || d.sample is bool)
+        && (!('createdAt' in d) || d.createdAt is timestamp)
+        && d.updatedBy == userEmail();
+    }
+
     function validStaff(d) {
       return d.keys().hasOnly(['role', 'name', 'updatedBy', 'updatedAt'])
         && d.keys().hasAll(['role', 'updatedBy'])
@@ -143,6 +165,12 @@ service cloud.firestore {
       allow read: if resource.data.published == true || canPublish();
       allow create, update: if canPublish() && validEvent(request.resource.data);
       allow delete: if canPublish();
+    }
+
+    match /videos/{id} {
+      allow read: if true;
+      allow create, update: if canPostVideo() && validVideo(request.resource.data);
+      allow delete: if isStaff();
     }
 
     // The document id is the lower-case email address.

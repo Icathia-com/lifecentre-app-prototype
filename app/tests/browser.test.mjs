@@ -89,9 +89,8 @@ const waitTitle = (page, title) => page.waitForFunction((t) => document.querySel
 const fifthTab = (page) => page.$eval('#tab-fifth', (a) => {
   const shown = (sel) => getComputedStyle(a.querySelector(sel)).display !== 'none';
   return {
-    label: a.getAttribute('aria-label'), href: a.getAttribute('href'), route: a.dataset.route, soon: a.classList.contains('tab-soon'),
+    label: a.getAttribute('aria-label'), href: a.getAttribute('href'), route: a.dataset.route,
     icon: shown('.ic-facilities') && !shown('.ic-contact') ? 'facilities' : shown('.ic-contact') && !shown('.ic-facilities') ? 'contact' : 'both or neither',
-    soonLabelShown: shown('.soon'),
   };
 });
 
@@ -199,7 +198,8 @@ describe('Home', () => {
     assert.equal(await page.$eval('#profile-menu', (m) => m.hidden), true);
     await page.click('.avatar');
     await page.click('#profile-menu a');
-    await waitText(page, 'Coming soon');
+    await waitTitle(page, 'Contact us');
+    assert.match(page.url(), /#\/contact$/);
     await context.close();
   });
   it('lists Facilities Booking Request in the + menu', async () => {
@@ -226,13 +226,16 @@ describe('Home', () => {
 });
 
 describe('the bottom bar', () => {
-  it('has five tabs: Events replaces Announcements, and Giving, Watch and Contact us are marked coming soon', async () => {
+  it('has five tabs: Home, Events, Giving, Watch and Contact us, and none is marked coming soon', async () => {
     const { page, context } = await open();
-    assert.deepEqual(await page.$$eval('.tabbar .tab', (els) => els.map((e) => e.getAttribute('aria-label'))), ['Home', 'Events', 'Giving, coming soon', 'Watch, coming soon', 'Contact us, coming soon']);
-    assert.equal((await page.$$('.tab-soon .soon:not([hidden])')).length, 3);
-    await page.click('.tab[data-route="giving"]');
-    await waitText(page, 'Coming soon', '#main');
-    assert.equal(await pageTitle(page), 'Giving');
+    assert.deepEqual(await page.$$eval('.tabbar .tab', (els) => els.map((e) => e.getAttribute('aria-label'))), ['Home', 'Events', 'Giving', 'Watch', 'Contact us']);
+    assert.equal((await page.$$('.tab-soon, .tab .soon')).length, 0);
+    for (const [route, title] of [['giving', 'Giving via PayNow'], ['watch', 'Watch'], ['contact', 'Contact us']]) {
+      await page.click(`.tab[data-route="${route}"]`);
+      await waitTitle(page, title);
+      assert.equal(await page.$eval('.tab[aria-current="page"]', (a) => a.dataset.route), route);
+      assert.doesNotMatch(await page.$eval('#main', (m) => m.innerText), /coming soon/i);
+    }
     await context.close();
   });
   it('keeps the Events tab lit on the location and event pages', async () => {
@@ -251,11 +254,11 @@ describe('the bottom bar', () => {
   it('shows "Contact us" as the fifth tab to visitors, and Facilities Booking to admins, staff and leaders', async () => {
     const { page, context } = await open('#/staff');
     await waitText(page, 'Sign in with Google');
-    assert.deepEqual(await fifthTab(page), { label: 'Contact us, coming soon', href: '#/contact', route: 'contact', soon: true, icon: 'contact', soonLabelShown: true });
+    assert.deepEqual(await fifthTab(page), { label: 'Contact us', href: '#/contact', route: 'contact', icon: 'contact' });
     for (const email of [STAFF, LEADER, ADMIN]) {
       await signIn(page, email);
       await page.waitForFunction(() => document.querySelector('#tab-fifth').dataset.route === 'booking', { timeout: 15000 });
-      assert.deepEqual(await fifthTab(page), { label: 'Facilities Booking', href: '#/booking', route: 'booking', soon: false, icon: 'facilities', soonLabelShown: false }, email);
+      assert.deepEqual(await fifthTab(page), { label: 'Facilities Booking', href: '#/booking', route: 'booking', icon: 'facilities' }, email);
       await page.click('button::-p-text(Sign out)');
       await page.waitForFunction(() => document.querySelector('#tab-fifth').dataset.route === 'contact', { timeout: 15000 });
     }
@@ -1211,8 +1214,10 @@ describe('Day plan', () => {
     await page.waitForFunction(() => !document.querySelector('.task-sheet'));
     assert.deepEqual((await titles(page)).slice(0, 2), ['Walk in the park', 'Verse of the day']);
     assert.match(await text(page, '.dp-card:nth-child(1) .what small'), /Repeats every day/);
+    // wait for the next day's own page: the old one also shows this task for a moment
+    await page.evaluate(() => { window.__oldList = document.querySelector('.dp-list'); });
     await goto(page, `/day/${addDays(day, 1)}`);
-    await page.waitForFunction(() => document.querySelector('.dp-card .what b')?.textContent === 'Walk in the park');
+    await page.waitForFunction(() => { const l = document.querySelector('.dp-list'); return l && l !== window.__oldList && l.dataset.events === 'loaded' && document.querySelector('.dp-card .what b')?.textContent === 'Walk in the park'; });
     await page.click('.dp-card:nth-child(1) button.st');
     await waitText(page, 'Done', '.dp-card:nth-child(1)');
     const saved = JSON.parse(await page.evaluate(() => localStorage.getItem('lc.tasks')));
@@ -1405,6 +1410,218 @@ describe('Staff page', () => {
     await shot(page, 'staff-admin');
     await page.click('button[aria-label="Delete New Leader"]');
     await page.waitForFunction(() => !document.querySelector('.items').innerText.includes('New Leader'));
+    await context.close();
+  });
+});
+
+describe('Contact us', () => {
+  // The church numbers are not known yet, so sites.js has none. This serves a copy of it with two numbers, to test the cards.
+  const withNumbers = async (page) => {
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (!req.url().includes('/app/js/sites.js')) return req.continue();
+      const src = readFileSync(new URL('../js/sites.js', import.meta.url), 'utf8').replace("whatsapp: ''", "whatsapp: '9123 4567'").replace("phone: ''", "phone: '+65 6123 4567'");
+      return req.respond({ status: 200, contentType: 'text/javascript', body: src });
+    });
+  };
+
+  it('lists email, prayer request, plan a visit and a map link, and no "coming soon"', async () => {
+    const { page, errors, context } = await open('#/contact');
+    assert.equal(await pageTitle(page), 'Contact us');
+    assert.equal((await page.$$('.ct-reach')).length, 0, 'no WhatsApp or Call card while the numbers are empty');
+    const rows = await page.$$eval('.ct-rows .ct-row', (els) => els.map((e) => [e.querySelector('.ct-row-title').textContent, e.getAttribute('href')]));
+    assert.deepEqual(rows, [['Email', 'mailto:hello@lifecentre.sg'], ['Prayer request', 'mailto:hello@lifecentre.sg?subject=Prayer%20request'], ['Plan a visit', null]]);
+    const map = await page.$eval('.ct-map', (a) => ({ href: a.href, text: a.textContent }));
+    assert.match(map.href, /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=3%20Yishun%20Street%2011/);
+    assert.match(map.text, /Find us\s*3 Yishun Street 11, Singapore 768645/);
+    assert.doesNotMatch(await page.$eval('body', (b) => b.innerText), /coming soon/i);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+  it('opens the service times for all four sites under "Plan a visit"', async () => {
+    const { page, context } = await open('#/contact');
+    assert.equal(await page.$eval('#visit', (e) => e.hidden), true);
+    await page.click('button.ct-row');
+    assert.equal(await page.$eval('button.ct-row', (b) => b.getAttribute('aria-expanded')), 'true');
+    assert.deepEqual(await page.$$eval('#visit h3', (els) => els.map((e) => e.textContent)), ['Life Centre @ Yishun', 'Life Centre @ Tuas', 'Life Centre @ Kranji', 'Life Centre @ Pasir Ris']);
+    assert.match(await text(page, '#visit'), /English Service\s*Every Sunday, 10\.30am/);
+    assert.match(await page.$eval('#visit .ct-addr', (a) => a.href), /google\.com\/maps\/search\/\?api=1&query=3%20Yishun/);
+    await shot(page, 'contact-visit');
+    await page.click('button.ct-row');
+    assert.equal(await page.$eval('#visit', (e) => e.hidden), true);
+    await context.close();
+  });
+  it('shows the WhatsApp and Call cards with working links once the numbers are set', async () => {
+    const { page, context } = await open('#/contact', { setup: withNumbers });
+    await page.waitForSelector('.ct-reach');
+    const cards = await page.$$eval('.ct-reach', (els) => els.map((e) => ({ title: e.querySelector('.ct-reach-title').textContent, sub: e.querySelector('.ct-reach-sub').textContent, href: e.getAttribute('href') })));
+    assert.deepEqual(cards, [
+      { title: 'WhatsApp', sub: '9123 4567', href: 'https://wa.me/6591234567' },
+      { title: 'Call', sub: '+65 6123 4567', href: 'tel:+6561234567' },
+    ]);
+    await shot(page, 'contact-numbers');
+    await context.close();
+  });
+  it('is the fifth tab for visitors and has no accessibility violations', async () => {
+    const { page, context } = await open('#/contact');
+    assert.equal(await page.$eval('.tab[aria-current="page"]', (a) => a.dataset.route), 'contact');
+    await shot(page, 'contact');
+    await checkAccessibility(page, 'Contact us');
+    const withCards = await open('#/contact', { setup: withNumbers });
+    await withCards.page.waitForSelector('.ct-reach');
+    await checkAccessibility(withCards.page, 'Contact us with numbers');
+    await withCards.context.close();
+    await context.close();
+  });
+});
+
+describe('Giving', () => {
+  it('shows the intro, the scam warning and a PayNow card for each account', async () => {
+    const { page, errors, context } = await open('#/giving');
+    assert.equal(await pageTitle(page), 'Giving via PayNow');
+    assert.equal(await text(page, '.screen-head .light'), 'via PayNow');
+    assert.match(await text(page, '.gv-intro'), /give your tithes and offerings via PayNow UENs/);
+    const warn = await page.$eval('.gv-warn', (e) => ({ role: e.getAttribute('role'), text: e.innerText }));
+    assert.equal(warn.role, 'note');
+    assert.match(warn.text, /Important: to avoid scams/);
+    assert.match(warn.text, /Life Centre - Tithes & Offering/);
+    assert.match(warn.text, /Life Centre - Building Fund/);
+    assert.match(warn.text, /ensure that the UEN number is correct/);
+    assert.deepEqual(await page.$$eval('.gv-fund', (els) => els.map((e) => [e.querySelector('.gv-title').textContent, e.querySelector('.gv-uen').textContent])), [
+      ['Life Centre (Tithes, Offering)', 'S87SS0049C'],
+      ['Life Centre (Building Fund)', 'S87SS0049CBLD'],
+    ]);
+    assert.equal((await page.$$('.gv-qr')).length, 2, 'a QR space in each card');
+    assert.equal(await page.$('.gv-qr img'), null, 'the QR spaces stay blank');
+    assert.match(await text(page, '.gv-foot'), /recorded as anonymous/);
+    assert.match(await text(page, '.gv-source'), /Source: lifecentre\.sg/);
+    assert.doesNotMatch(await page.$eval('body', (b) => b.innerText), /coming soon/i);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+  it('copies a UEN, says "Copied", then goes back to "Copy"', async () => {
+    const { page, context } = await open('#/giving');
+    const buttons = await page.$$('.gv-copy');
+    assert.equal(await buttons[1].evaluate((b) => b.getAttribute('aria-label')), 'Copy the UEN number for Life Centre (Building Fund)');
+    await buttons[1].click();
+    await page.waitForFunction(() => document.querySelectorAll('.gv-copy')[1].textContent.trim() === 'Copied');
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'S87SS0049CBLD');
+    assert.match(await text(page, '[role=status]'), /UEN copied/);
+    assert.equal(await page.$eval('.gv-copy', (b) => b.textContent.trim()), 'Copy', 'the other card is unchanged');
+    await page.waitForFunction(() => document.querySelectorAll('.gv-copy')[1].textContent.trim() === 'Copy', { timeout: 4000 });
+    await buttons[0].click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'S87SS0049C');
+    await context.close();
+  });
+  it('has no accessibility violations', async () => {
+    const { page, context } = await open('#/giving');
+    await shot(page, 'giving');
+    await page.$eval('.gv-fund:last-of-type', (e) => e.scrollIntoView());
+    await shot(page, 'giving-bottom');
+    await checkAccessibility(page, 'Giving');
+    await context.close();
+  });
+});
+
+describe('Watch', () => {
+  const resumeAt = (id, t) => (page) => page.evaluateOnNewDocument((state) => localStorage.setItem('lc:v1:watchResume', JSON.stringify(state)), { id, t });
+  const current = (page) => page.$eval('.wt-title', (e) => e.textContent);
+  const waitCurrent = (page, title) => page.waitForFunction((t) => document.querySelector('.wt-title')?.textContent === t, { timeout: 8000 }, title);
+  const progress = (page) => page.$eval('.wt-bar', (e) => Number(e.getAttribute('aria-valuenow')));
+  // the feed has come to rest exactly on video number `index` (counting from 0)
+  const waitRestedOn = (page, index) => page.waitForFunction((i) => { const f = document.querySelector('.wt-feed'); return Math.abs(f.scrollTop / f.clientHeight - i) < 0.02; }, { timeout: 8000 }, index);
+
+  it('opens on the first sample video with the Sample label, a progress line and the tab bar', async () => {
+    const { page, errors, context } = await open('#/watch');
+    assert.equal(await pageTitle(page), 'Watch');
+    assert.equal((await page.$$('.wt-slide')).length, 6);
+    assert.equal(await current(page), 'Sunday message in 60 seconds');
+    assert.equal(await text(page, '.wt-chip'), 'Sample');
+    assert.equal(await text(page, '.wt-caption'), 'Sample videos');
+    assert.equal(await page.$eval('.tab[aria-current="page"]', (a) => a.dataset.route), 'watch');
+    assert.ok(await page.$eval('.tabbar', (e) => e.getBoundingClientRect().height > 0));
+    await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 2, { timeout: 6000 });
+    assert.match(await page.$eval('.wt-bar', (e) => e.getAttribute('aria-valuetext')), /^0:0[2-9] of 0:58$/);
+    await shot(page, 'watch');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+  it('pauses and resumes when the feed is tapped', async () => {
+    const { page, context } = await open('#/watch');
+    await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 1, { timeout: 6000 });
+    await page.mouse.click(195, 400);
+    await page.waitForSelector('.wt-pause.on');
+    const frozen = await progress(page);
+    await new Promise((r) => setTimeout(r, 1600));
+    assert.equal(await progress(page), frozen, 'the progress line stops while paused');
+    await shot(page, 'watch-paused');
+    await page.mouse.click(195, 400);
+    await page.waitForFunction((n) => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) > n, { timeout: 4000 }, frozen);
+    assert.equal(await page.$('.wt-pause.on'), null);
+    await context.close();
+  });
+  it('turns sound on and off and remembers the choice', async () => {
+    const { page, context } = await open('#/watch');
+    assert.equal(await page.$eval('.wt-sound', (b) => b.getAttribute('aria-label')), 'Turn sound on');
+    await page.click('.wt-sound');
+    assert.equal(await page.$eval('.wt-sound', (b) => b.getAttribute('aria-label')), 'Mute');
+    await page.reload();
+    await page.waitForSelector('.wt-sound');
+    assert.equal(await page.$eval('.wt-sound', (b) => b.getAttribute('aria-label')), 'Mute');
+    await page.click('.wt-sound');
+    assert.equal(await page.$eval('.wt-sound', (b) => b.getAttribute('aria-label')), 'Turn sound on');
+    await context.close();
+  });
+  it('moves to the next video with the keyboard and with a mouse drag, and starts it from the beginning', async () => {
+    const { page, context } = await open('#/watch');
+    await page.waitForFunction(() => Number(document.querySelector('.wt-bar').getAttribute('aria-valuenow')) >= 1, { timeout: 6000 });
+    await page.focus('.wt-feed');
+    await page.keyboard.press('ArrowDown');
+    await waitCurrent(page, 'Memory verse of the week');
+    assert.match(await text(page, '[role=status].sr'), /Video 2 of 6: Memory verse of the week/);
+    assert.ok(await progress(page) <= 1, 'the new video starts at the beginning');
+    // drag up with the mouse: the feed snaps to the next whole video
+    await page.mouse.move(195, 500);
+    await page.mouse.down();
+    for (let y = 500; y >= 300; y -= 25) await page.mouse.move(195, y);
+    await page.mouse.up();
+    await waitCurrent(page, 'Testimony: an answered prayer');
+    await waitRestedOn(page, 2); // snapped to the third video, not left half way
+    assert.equal(await page.$('.wt-pause.on'), null, 'a drag is not a tap');
+    // and back down
+    await page.mouse.move(195, 300);
+    await page.mouse.down();
+    for (let y = 300; y <= 520; y += 30) await page.mouse.move(195, y);
+    await page.mouse.up();
+    await waitCurrent(page, 'Memory verse of the week');
+    await waitRestedOn(page, 1);
+    await shot(page, 'watch-next');
+    await context.close();
+  });
+  it('says "Continue where you left off" and goes back to the video the member stopped at', async () => {
+    const { page, context } = await open('#/watch', { setup: resumeAt('sample-v3', 20) });
+    await page.waitForFunction(() => document.querySelector('.wt-toast.on'), { timeout: 4000 });
+    assert.equal(await text(page, '.wt-toast'), 'Continue where you left off · 0:20');
+    await waitCurrent(page, 'Testimony: an answered prayer');
+    assert.ok(await progress(page) >= 20);
+    await shot(page, 'watch-resume');
+    await page.waitForFunction(() => !document.querySelector('.wt-toast.on'), { timeout: 6000 });
+    // leaving and coming back keeps the place
+    await goto(page, '/giving');
+    await goto(page, '/watch');
+    assert.equal(await current(page), 'Testimony: an answered prayer');
+    await context.close();
+  });
+  it('does not offer to continue when the saved place is the very start, or when the video is unknown', async () => {
+    for (const setup of [resumeAt('sample-v2', 1), resumeAt('gone', 30)]) {
+      const { page, context } = await open('#/watch', { setup });
+      assert.equal(await page.$('.wt-toast.on'), null);
+      await context.close();
+    }
+  });
+  it('has no accessibility violations', async () => {
+    const { page, context } = await open('#/watch');
+    await checkAccessibility(page, 'Watch');
     await context.close();
   });
 });

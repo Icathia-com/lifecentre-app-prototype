@@ -244,10 +244,65 @@ describe('sample data', () => {
 });
 
 describe('collections without rules yet', () => {
-  it('stories and videos are denied to everyone, including admin', async () => {
+  it('stories are denied to everyone, including admin', async () => {
     for (const db of [anon(), user(STAFF), user(ADMIN)]) {
       await assertFails(getDoc(doc(db, 'stories', 's')));
-      await assertFails(setDoc(doc(db, 'videos', 'v'), { title: 'x' }));
+      await assertFails(setDoc(doc(db, 'stories', 's'), { title: 'x' }));
     }
+  });
+});
+
+describe('videos (Watch)', () => {
+  const video = (email, extra = {}) => ({ title: 'Sunday message in 60 seconds', org: 'Yishun', desc: 'A short word.', src: 'youtube', url: 'https://youtu.be/abc123', dur: 58, updatedBy: email, ...extra });
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'videos', 'v1'), video(ADMIN));
+    });
+  });
+
+  it('anyone can read and list videos, signed out or not', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'videos', 'v1')));
+    await assertSucceeds(getDocs(collection(anon(), 'videos')));
+    await assertSucceeds(getDoc(doc(user('visitor@example.com'), 'videos', 'v1')));
+  });
+
+  it('admins and leaders can post and edit, and the record must name them', async () => {
+    for (const email of [ADMIN, LEADER]) {
+      await assertSucceeds(setDoc(doc(user(email), 'videos', `new-${email}`), video(email)));
+      await assertSucceeds(setDoc(doc(user(email), 'videos', 'v1'), video(email, { title: 'Edited' })));
+    }
+    await assertFails(setDoc(doc(user(ADMIN), 'videos', 'x'), video(LEADER))); // updatedBy must be the signed-in email
+  });
+
+  it('plain staff, other signed-in people, unverified emails and the public cannot post or edit', async () => {
+    await assertFails(setDoc(doc(user(STAFF), 'videos', 'x'), video(STAFF)));
+    await assertFails(setDoc(doc(user(STAFF), 'videos', 'v1'), video(STAFF)));
+    await assertFails(setDoc(doc(user('visitor@example.com'), 'videos', 'x'), video('visitor@example.com')));
+    await assertFails(setDoc(doc(user(ADMIN, false), 'videos', 'x'), video(ADMIN)));
+    await assertFails(setDoc(doc(anon(), 'videos', 'x'), video(ADMIN)));
+  });
+
+  it('refuses bad videos: unknown source, link that is not https, bad length, extra fields, empty or long title', async () => {
+    const db = user(ADMIN);
+    for (const bad of [
+      { src: 'vimeo' }, { src: 'upload', url: 'http://example.com/v.mp4' }, { url: 'javascript:alert(1)' },
+      { dur: 0 }, { dur: 1.5 }, { dur: 20000 }, { title: '' }, { title: 'x'.repeat(121) }, { org: 'x'.repeat(41) }, { desc: 'x'.repeat(301) },
+      { views: 10 }, { published: false },
+    ]) {
+      await assertFails(setDoc(doc(db, 'videos', 'x'), video(ADMIN, bad)));
+    }
+    const missing = video(ADMIN); delete missing.src;
+    await assertFails(setDoc(doc(db, 'videos', 'x'), missing));
+    await assertSucceeds(setDoc(doc(db, 'videos', 'ok'), { title: 'Minimal', src: 'upload', updatedBy: ADMIN }));
+  });
+
+  it('admins, leaders and staff can remove a video; the public and other people cannot', async () => {
+    await assertFails(deleteDoc(doc(anon(), 'videos', 'v1')));
+    await assertFails(deleteDoc(doc(user('visitor@example.com'), 'videos', 'v1')));
+    await assertSucceeds(deleteDoc(doc(user(STAFF), 'videos', 'v1')));
+    await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'videos', 'v1'), video(ADMIN)); });
+    await assertSucceeds(deleteDoc(doc(user(LEADER), 'videos', 'v1')));
+    await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'videos', 'v1'), video(ADMIN)); });
+    await assertSucceeds(deleteDoc(doc(user(ADMIN), 'videos', 'v1')));
   });
 });
