@@ -208,7 +208,7 @@ describe('Home', () => {
     await page.$eval('.fab', (b) => b.scrollIntoView({ block: 'center' })); // it sits at the bottom of the calendar card
     await page.click('.fab');
     assert.deepEqual(await page.$$eval('#fab-menu > *', (els) => els.map((e) => e.textContent.trim())), ['Add a task', 'Book a space']);
-    assert.match(await text(page, '#fab-menu a'), /Facilities Booking Request/);
+    assert.match(await text(page, '#fab-menu a'), /Book a space/);
     assert.equal(await page.$eval('#fab-menu a', (a) => a.getAttribute('href')), '#/booking');
     await shotEl(page, '.cal', 'home-plus-menu');
     await context.close();
