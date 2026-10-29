@@ -50,7 +50,7 @@ export const COVERS = [['#1B1740', '#3558C8'], ['#2A1B6B', '#7A3FD6'], ['#FF6A3D
 
 // How to reach the church. WhatsApp and phone (the office) are left empty until the numbers are known; empty ones are not shown.
 // Numbers are written the way people dial them, e.g. '+65 6123 4567'.
-export const CHURCH = { name: 'Life Centre', email: 'hello@lifecentre.sg', whatsapp: '', phone: '', mainSite: 'yishun' };
+export const CHURCH = { name: 'Life Centre', email: 'hello@lifecentre.sg', whatsapp: '+65 9655 3787', phone: '+65 9655 3787', mainSite: 'yishun' };
 
 // Links from a number: digits only, with the Singapore code added to an 8-digit local number. '' when it is not a usable number.
 export function dialDigits(number) {

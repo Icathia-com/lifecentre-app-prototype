@@ -35,6 +35,12 @@ describe('church details', () => {
     assert.ok(SITES[CHURCH.mainSite]);
     assert.equal(CHURCH.email, 'hello@lifecentre.sg');
   });
+  it('has one number for WhatsApp and Call, with working links', () => {
+    assert.equal(CHURCH.whatsapp, '+65 9655 3787');
+    assert.equal(CHURCH.phone, '+65 9655 3787');
+    assert.equal(whatsappHref(CHURCH.whatsapp), 'https://wa.me/6596553787');
+    assert.equal(telHref(CHURCH.phone), 'tel:+6596553787');
+  });
   it('lists the two PayNow accounts from the design', () => {
     assert.deepEqual(FUNDS.map((f) => [f.id, f.uen]), [['tithe', 'S87SS0049C'], ['build', 'S87SS0049CBLD']]);
   });

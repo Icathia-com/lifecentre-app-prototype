@@ -506,14 +506,18 @@ describe('Event page', () => {
     assert.match(await text(page, '.loc-card'), /Park/); // a venue outside the four sites
     await context.close();
   });
-  it('opens the Contact sheet with the church email, and shows only the numbers that are known', async () => {
+  it('opens the Contact sheet with the church email, WhatsApp and phone', async () => {
     const { page, context } = await open('#/events/e1');
     await waitTitle(page, 'Cell group night');
     await page.click('.acts > button.act::-p-text(Contact)');
     await page.waitForSelector('[role=dialog]');
     assert.match(await text(page, '[role=dialog]'), /Contact the organiser.*Discipleship Team/s);
     assert.match(await page.$eval('[role=dialog] a[href^="mailto:"]', (a) => a.href), /^mailto:hello@lifecentre\.sg\?subject=About%3A%20Cell%20group%20night$/);
-    assert.equal((await page.$$('[role=dialog] .sheet-row')).length, 1); // no WhatsApp or phone number configured yet
+    assert.deepEqual(await page.$$eval('[role=dialog] .sheet-row', (els) => els.map((e) => [e.querySelector('b').textContent, e.querySelector('small').textContent, e.getAttribute('href').replace(/\?.*/, '')])), [
+      ['Email', 'hello@lifecentre.sg', 'mailto:hello@lifecentre.sg'],
+      ['WhatsApp', '+65 9655 3787', 'https://wa.me/6596553787'],
+      ['Call the office', '+65 9655 3787', 'tel:+6596553787'],
+    ]);
     await page.keyboard.press('Escape');
     assert.equal(await page.$('[role=dialog]'), null);
     await context.close();
@@ -1547,17 +1551,17 @@ describe('Staff page', () => {
 
 describe('Contact us', () => {
   // The church numbers are not known yet, so sites.js has none. This serves a copy of it with two numbers, to test the cards.
-  const withNumbers = async (page) => {
+  const withoutNumbers = async (page) => {
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       if (!req.url().includes('/app/js/sites.js')) return req.continue();
-      const src = readFileSync(new URL('../js/sites.js', import.meta.url), 'utf8').replace("whatsapp: ''", "whatsapp: '9123 4567'").replace("phone: ''", "phone: '+65 6123 4567'");
+      const src = readFileSync(new URL('../js/sites.js', import.meta.url), 'utf8').replace(/whatsapp: '[^']*'/, "whatsapp: ''").replace(/phone: '[^']*'/, "phone: ''");
       return req.respond({ status: 200, contentType: 'text/javascript', body: src });
     });
   };
 
   it('lists email, prayer request, plan a visit and a map link, and no "coming soon"', async () => {
-    const { page, errors, context } = await open('#/contact');
+    const { page, errors, context } = await open('#/contact', { setup: withoutNumbers });
     assert.equal(await pageTitle(page), 'Contact us');
     assert.equal((await page.$$('.ct-reach')).length, 0, 'no WhatsApp or Call card while the numbers are empty');
     const rows = await page.$$eval('.ct-rows .ct-row', (els) => els.map((e) => [e.querySelector('.ct-row-title').textContent, e.getAttribute('href')]));
@@ -1582,13 +1586,13 @@ describe('Contact us', () => {
     assert.equal(await page.$eval('#visit', (e) => e.hidden), true);
     await context.close();
   });
-  it('shows the WhatsApp and Call cards with working links once the numbers are set', async () => {
-    const { page, context } = await open('#/contact', { setup: withNumbers });
+  it('shows the WhatsApp and Call cards with working links for the church number', async () => {
+    const { page, context } = await open('#/contact');
     await page.waitForSelector('.ct-reach');
     const cards = await page.$$eval('.ct-reach', (els) => els.map((e) => ({ title: e.querySelector('.ct-reach-title').textContent, sub: e.querySelector('.ct-reach-sub').textContent, href: e.getAttribute('href') })));
     assert.deepEqual(cards, [
-      { title: 'WhatsApp', sub: '9123 4567', href: 'https://wa.me/6591234567' },
-      { title: 'Call', sub: '+65 6123 4567', href: 'tel:+6561234567' },
+      { title: 'WhatsApp', sub: '+65 9655 3787', href: 'https://wa.me/6596553787' },
+      { title: 'Call', sub: '+65 9655 3787', href: 'tel:+6596553787' },
     ]);
     await shot(page, 'contact-numbers');
     await context.close();
@@ -1598,10 +1602,10 @@ describe('Contact us', () => {
     assert.equal(await page.$eval('.tab[aria-current="page"]', (a) => a.dataset.route), 'contact');
     await shot(page, 'contact');
     await checkAccessibility(page, 'Contact us');
-    const withCards = await open('#/contact', { setup: withNumbers });
-    await withCards.page.waitForSelector('.ct-reach');
-    await checkAccessibility(withCards.page, 'Contact us with numbers');
-    await withCards.context.close();
+    await page.waitForSelector('.ct-reach');
+    const withoutCards = await open('#/contact', { setup: withoutNumbers });
+    await checkAccessibility(withoutCards.page, 'Contact us without numbers');
+    await withoutCards.context.close();
     await context.close();
   });
 });
