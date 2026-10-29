@@ -111,8 +111,8 @@ async function signIn(page, email) {
 }
 
 // Signs in on a first page, then returns the page ready to use (the role is saved on the phone for the next screens).
-async function openAsStaff(path = '/events', email = STAFF) {
-  const opened = await open('#/staff');
+async function openAsStaff(path = '/events', email = STAFF, size = {}) {
+  const opened = await open('#/staff', size);
   await waitText(opened.page, 'Sign in with Google');
   await signIn(opened.page, email);
   await goto(opened.page, path);
@@ -1836,4 +1836,66 @@ describe('Watch with posted videos and the publisher', () => {
     await checkAccessibility(page, 'Add a video sheet');
     await context.close();
   });
+});
+
+// Real-phone readiness: every screen at a small phone, the design size and a large phone. Nothing may push the page sideways,
+// and every button, link and field must be at least 44 x 44 px to tap (the bottom bar, headers and sheets included).
+describe('Phone sizes: layout and tap targets', () => {
+  const SIZES = [[375, 667], [390, 844], [430, 932]];
+  const MIN = 44;
+  const auditPage = (min) => {
+    const vw = innerWidth;
+    const problems = [];
+    const shown = (el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && !el.closest('[hidden]') && !el.closest('.sr');
+    };
+    const name = (el) => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? `.${el.className.trim().split(/\s+/)[0]}` : ''} "${(el.getAttribute('aria-label') || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\s+/g, ' ').slice(0, 28)}"`;
+    if (document.documentElement.scrollWidth > vw + 1) problems.push(`the page scrolls sideways (${document.documentElement.scrollWidth} > ${vw})`);
+    const main = document.querySelector('#main');
+    if (main && main.scrollWidth > main.clientWidth + 1) problems.push(`#main is wider than the screen (${main.scrollWidth} > ${main.clientWidth})`);
+    const clipped = (el) => { for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if ((o === 'hidden' || o === 'clip') && p.getBoundingClientRect().right <= vw + 1) return true; } return false; };
+    const scrollsSideways = (el) => { const o = getComputedStyle(el).overflowX; return (o === 'auto' || o === 'scroll') && el.scrollWidth > el.clientWidth + 1 && el !== main && el !== document.body; };
+    for (const el of document.querySelectorAll('.app *')) {
+      if (!shown(el)) continue;
+      const r = el.getBoundingClientRect();
+      if ((r.right > vw + 1 || r.left < -1) && !el.closest('.orb') && !clipped(el) && ![...(function* () { for (let p = el.parentElement; p; p = p.parentElement) yield p; }())].some(scrollsSideways)) problems.push(`sticks out of the screen: ${name(el)} (${Math.round(r.left)} to ${Math.round(r.right)})`);
+    }
+    for (const el of document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button]')) {
+      if (!shown(el)) continue;
+      const box = el.matches('input[type=checkbox], input[type=radio]') ? (el.closest('label') ?? el.labels?.[0] ?? el) : el;
+      // The Home calendar is a time grid: its tiles can be 15 minutes tall by design, and each one is also a row in the Day plan.
+      if (el.matches('.cell .tile')) continue;
+      const r = box.getBoundingClientRect();
+      if (r.width < min - 0.5 || r.height < min - 0.5) problems.push(`small tap target: ${name(el)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+    }
+    return [...new Set(problems)];
+  };
+  const SCREENS = [
+    ['Home', '#/'], ['Events', '#/events'], ['an event', '#/events/conf'], ['a location', '#/events/location/yishun'], ['Notifications', '#/notifications'],
+    ['Day plan', '#/day'], ['Giving', '#/giving'], ['Watch', '#/watch'], ['Contact us', '#/contact'], ['Facilities booking sign-in', '#/booking'],
+  ];
+  const STAFF_SCREENS = [['Staff page', '/staff'], ['Create event', '/events/new'], ['Edit event', '/events/e1/edit'], ['Events (staff)', '/events']];
+
+  for (const [width, height] of SIZES) {
+    it(`${width}x${height}: no screen breaks or has a small tap target`, async () => {
+      const report = [];
+      for (const [label, hash] of SCREENS) {
+        const { page, context } = await open(hash, { width, height });
+        await new Promise((r) => setTimeout(r, 900)); // let the screen finish loading
+        if (hash === '#/contact') { await page.click('button.ct-row'); await new Promise((r) => setTimeout(r, 200)); }
+        if (hash === '#/') await page.waitForSelector('.tile.card', { timeout: 15000 }).catch(() => {});
+        for (const p of await page.evaluate(auditPage, MIN)) report.push(`${label}: ${p}`);
+        await context.close();
+      }
+      for (const [label, path] of STAFF_SCREENS) {
+        const { page, context } = await openAsStaff(path, ADMIN, { width, height });
+        await new Promise((r) => setTimeout(r, 900));
+        for (const p of await page.evaluate(auditPage, MIN)) report.push(`${label}: ${p}`);
+        await context.close();
+      }
+      assert.deepEqual(report, []);
+    });
+  }
 });

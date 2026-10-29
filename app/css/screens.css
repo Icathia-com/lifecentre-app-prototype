@@ -474,3 +474,20 @@ body[data-route='watch'] .screen { padding: 0; gap: 0; overflow: hidden; color: 
 .wt-error { min-height: 16px; font-size: 13px; color: #FF8A80; }
 .wt-publish { height: 52px; border-radius: 26px; border: 0; background: #fff; color: #1B1520; font-size: 15px; font-weight: 700; }
 .wt-publish:disabled { opacity: 0.6; }
+
+/* ---- Tap targets: every button, link and field is at least 44 x 44 px. Where the look is a smaller pill or switch, the extra
+   size is a transparent border or padding, with a matching negative margin, so the layout stays as designed. ---- */
+.back, .text-btn, .mark-all { display: inline-flex; align-items: center; min-height: 44px; }
+.month-btn { min-height: 44px; }
+.today-badge { width: 44px; height: 44px; border: 3px solid transparent; background-clip: padding-box; margin: -3px; }
+.weekbar button { min-height: 44px; }
+.seg button { height: 44px; }
+.pill-btn, .dir-dark, .dir-btn, .follow-pill, a.chip, button.chip { height: 44px; }
+.dp-step { width: 44px; height: 44px; }
+.dp-card button.st { padding: 12px 0 12px 12px; margin: -12px 0 -12px -12px; }
+.ct-addr { min-height: 44px; align-items: center; }
+.cr-fab { width: 44px; height: 44px; }
+.cr-input { min-height: 44px; height: 44px; }
+.cr-select { height: 44px; min-width: 44px; }
+.cr-switch { width: 66px; height: 44px; border: 7px solid transparent; border-radius: 22px; background-clip: padding-box; margin: -7px; }
+.field.check label { display: flex; align-items: center; flex: 1; min-height: 44px; }
