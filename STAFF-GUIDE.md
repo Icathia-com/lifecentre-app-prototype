@@ -78,6 +78,24 @@ The name shown above the video is your **Name** on the staff list, so ask an adm
 
 To remove a video, open it in Watch and tap the round bin button at the top right, then confirm. Admins, staff and leaders can all remove videos.
 
+## Book a space
+
+Anyone can book a church space from the app, with their own email address. This is separate from the staff sign-in above.
+
+1. Tap **+** on the Home screen, then **Book a space**. If you are not signed in yet, you are taken to **Account**. Type your email, tap **Send my code**, then type the 6-digit code from the email and tap **Sign in**. You go straight back to booking. (You can also sign in any time from the round button at the top of Home.)
+2. Pick a space and a day from the pills. Swipe sideways to see more days, or tap **Other date** to jump to one.
+3. Read the timeline for that day:
+   - **Pink** is already booked.
+   - **Grey** is requested but not yet confirmed.
+   - Your own choice shows as a blue outline.
+4. Tap the hours you want in the list. Tap the hour just after or just before to make it longer. Or use **Start** and **End**. If the time is already booked, the app tells you.
+5. Tap **Confirm**. Fill in the **Ministry or organisation**, **What is the event?**, **Expected attendance**, and any setup or AV needs (optional).
+6. Tap **Send booking request**. You will see "Request sent" (or "Booked", if it was approved straight away) with a reference number, and a confirmation goes to your email. A request is not final until the church approves it.
+
+Your bookings are listed lower on the same page, under **Your bookings** and **Your earlier bookings**.
+
+**Rebook:** on an earlier booking, tap **Rebook** to book the same space again. The app picks the same hours on the next same weekday and fills in your details, so you only choose a different day if you want one, then tap **Confirm** and **Send booking request**.
+
 ## Manage the staff list (admins only)
 
 1. Sign in, then tap **Staff**.
