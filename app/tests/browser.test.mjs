@@ -1650,6 +1650,120 @@ describe('Giving', () => {
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'S87SS0049C');
     await context.close();
   });
+  it('has a Save QR code button under each code, at least 44px tall', async () => {
+    const { page, context } = await open('#/giving');
+    const saves = await page.$$eval('.gv-fund', (els) => els.map((e) => {
+      const button = e.querySelector('.gv-qr-wrap .gv-save');
+      const image = e.querySelector('.gv-qr img');
+      return { text: button?.textContent.trim(), height: Math.round(button?.getBoundingClientRect().height ?? 0), below: !!button && button.getBoundingClientRect().top >= image.getBoundingClientRect().bottom };
+    }));
+    assert.deepEqual(saves.map((b) => b.text), ['Save QR code', 'Save QR code']);
+    for (const b of saves) { assert.ok(b.height >= 44, `the button is ${b.height}px tall`); assert.ok(b.below, 'the button sits under the code'); }
+    await context.close();
+  });
+  it('shares the QR picture as a PNG named for its fund, and does nothing if the share sheet is cancelled', async () => {
+    const { page, context } = await open('#/giving', {
+      setup: (p) => p.evaluateOnNewDocument(() => {
+        window.__shared = []; window.__clicks = [];
+        navigator.canShare = () => true;
+        navigator.share = async (data) => { window.__shared.push(data.files.map((f) => [f.name, f.type, f.size])); if (window.__cancel) throw new DOMException('cancelled', 'AbortError'); };
+        HTMLAnchorElement.prototype.click = function () { window.__clicks.push([this.download, this.href.slice(0, 5)]); };
+      }),
+    });
+    await page.waitForSelector('.gv-save');
+    const saves = await page.$$('.gv-save');
+    await saves[1].click();
+    await page.waitForFunction(() => window.__shared.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.__shared), [[['Life Centre PayNow - Life Centre (Building Fund).png', 'image/png', readFileSync(new URL('../images/paynow-building.png', import.meta.url)).length]]]);
+    await saves[0].click();
+    await page.waitForFunction(() => window.__shared.length === 2);
+    assert.equal(await page.evaluate(() => window.__shared[1][0][0]), 'Life Centre PayNow - Life Centre (Tithes, Offering).png');
+    await page.evaluate(() => { window.__cancel = true; });
+    await saves[0].click();
+    await page.waitForFunction(() => window.__shared.length === 3);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(await page.evaluate(() => window.__clicks), [], 'no download after a share');
+    assert.equal(await text(page, '[role=status]'), '', 'nothing is said when the share sheet is cancelled');
+    await context.close();
+  });
+  it('downloads the same PNG where files cannot be shared', async () => {
+    const { page, context } = await open('#/giving', {
+      setup: (p) => p.evaluateOnNewDocument(() => {
+        window.__clicks = [];
+        navigator.canShare = undefined;
+        HTMLAnchorElement.prototype.click = function () { window.__clicks.push([this.download, this.href.slice(0, 5)]); };
+      }),
+    });
+    await page.waitForSelector('.gv-save');
+    await (await page.$$('.gv-save'))[0].click();
+    await page.waitForFunction(() => window.__clicks.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.__clicks), [['Life Centre PayNow - Life Centre (Tithes, Offering).png', 'blob:']]);
+    await context.close();
+  });
+  it('has two sections, closed at first, that open and close from their headings', async () => {
+    const { page, context } = await open('#/giving');
+    const state = () => page.$$eval('.gv-acc', (els) => els.map((e) => {
+      const button = e.querySelector('h2 > button');
+      const panel = e.querySelector('.gv-acc-panel');
+      return [button.textContent.trim(), button.getAttribute('aria-expanded'), panel.hidden, button.getAttribute('aria-controls') === panel.id];
+    }));
+    assert.deepEqual(await state(), [['Giving via Internet bank transfer', 'false', true, true], ['Giving via Cash/Cheque', 'false', true, true]]);
+    assert.ok(await page.evaluate(() => document.querySelector('.gv-acc').getBoundingClientRect().top > document.querySelector('.gv-fund:last-of-type').getBoundingClientRect().bottom - 1), 'the sections come after the QR cards');
+    await page.click('#gv-bank-btn');
+    assert.deepEqual(await state(), [['Giving via Internet bank transfer', 'true', false, true], ['Giving via Cash/Cheque', 'false', true, true]]);
+    assert.ok(await page.$eval('#gv-bank-panel', (e) => e.getBoundingClientRect().height > 100), 'the open section is visible');
+    assert.match(await text(page, '#gv-bank-panel'), /If you have an online banking facility, you may give your tithes and offerings & Building Fund Contributions via Internet bank transfer\./);
+    await page.click('#gv-cash-btn');
+    assert.deepEqual((await state()).map((s) => s[1]), ['true', 'true']);
+    await page.click('#gv-bank-btn');
+    await page.click('#gv-cash-btn');
+    assert.deepEqual(await state(), [['Giving via Internet bank transfer', 'false', true, true], ['Giving via Cash/Cheque', 'false', true, true]]);
+    await context.close();
+  });
+  it('shows the bank account numbers exactly, and each Copy button copies its number', async () => {
+    const { page, context } = await open('#/giving');
+    await page.click('#gv-bank-btn');
+    assert.deepEqual(await page.$$eval('.gv-bank-fund', (els) => els.map((e) => [e.querySelector('.gv-bank-title').textContent, e.querySelector('.gv-uen').textContent, e.querySelector('.gv-copy').getAttribute('aria-label')])), [
+      ['LIFE CENTRE (TITHES & OFFERING)', '669417388001', 'Copy the account number for LIFE CENTRE (TITHES & OFFERING)'],
+      ['LIFE CENTRE (BUILDING FUND)', '669417396001', 'Copy the account number for LIFE CENTRE (BUILDING FUND)'],
+    ]);
+    const panel = await text(page, '#gv-bank-panel');
+    assert.equal(panel.split('Oversea-Chinese Banking Corporation Limited (OCBC)').length - 1, 2);
+    assert.equal(panel.split('Recipient/Payee name - LIFE CENTRE').length - 1, 2);
+    assert.match(panel, /Add LIFE CENTRE as a funds transfer payee with the following bank account details:/);
+    const copies = await page.$$('#gv-bank-panel .gv-copy');
+    await copies[1].click();
+    await page.waitForFunction(() => document.querySelectorAll('#gv-bank-panel .gv-copy')[1].textContent.trim() === 'Copied');
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '669417396001');
+    assert.match(await text(page, '[role=status]'), /LIFE CENTRE \(BUILDING FUND\) account number copied/);
+    assert.equal(await page.$eval('#gv-bank-panel .gv-copy', (b) => b.textContent.trim()), 'Copy', 'the other number is unchanged');
+    await copies[0].click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '669417388001');
+    await context.close();
+  });
+  it('keeps the cheque wording and the three-line address, and its PayNow and bank transfer links work', async () => {
+    const { page, context } = await open('#/giving');
+    await page.click('#gv-cash-btn');
+    assert.deepEqual(await page.$$eval('.gv-address > *', (els) => els.map((e) => e.textContent)), ['Life Centre (Attn: Finance)', '3 Yishun Street 11, #01-01', 'Singapore 768645']);
+    const panel = await text(page, '#gv-cash-panel');
+    assert.match(panel, /^You may drop your cash\/cheque at our offering boxes available at any of our Locations during Sunday services, or mail your cheque to us at:/);
+    assert.match(panel, /\*Important: Please make cheque payable to LIFE CENTRE and write your contact number on the reverse\. Please do not mail cash\. Do also note that there is a \$0\.75 admin fee charged by the bank for each cheque processed from 1 August 2022\./);
+    assert.match(panel, /You may wish to consider giving via PayNow or Internet bank transfer instead\./);
+    assert.equal(await page.$eval('#gv-cash-panel b', (b) => b.textContent), 'LIFE CENTRE');
+    assert.equal(await page.$eval('#gv-cash-panel h3', (e) => e.textContent), 'Designated Offering');
+    assert.equal((await page.$$('#gv-cash-panel li')).length, 2);
+    // PayNow takes the reader up to the QR codes.
+    await page.$eval('#gv-cash-panel button.gv-inline', (b) => b.scrollIntoView({ block: 'center' })); // clear of the bottom bar
+    await page.click('#gv-cash-panel button.gv-inline::-p-text(PayNow)');
+    await page.waitForFunction(() => { const top = document.querySelector('.gv-fund').getBoundingClientRect().top; return top > -4 && top < 120; }, { timeout: 5000 });
+    // Internet bank transfer opens the bank transfer section.
+    assert.equal(await page.$eval('#gv-bank-btn', (b) => b.getAttribute('aria-expanded')), 'false');
+    await page.$eval('#gv-cash-panel button.gv-inline:last-of-type', (b) => b.scrollIntoView({ block: 'center' }));
+    await page.click('#gv-cash-panel button.gv-inline::-p-text(Internet bank transfer)');
+    assert.equal(await page.$eval('#gv-bank-btn', (b) => b.getAttribute('aria-expanded')), 'true');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'gv-bank-btn');
+    await context.close();
+  });
   it('has no accessibility violations', async () => {
     const { page, context } = await open('#/giving');
     await shot(page, 'giving');
@@ -2022,6 +2136,7 @@ describe('Phone sizes: layout and tap targets', () => {
         const { page, context } = await open(hash, { width, height });
         await new Promise((r) => setTimeout(r, 900)); // let the screen finish loading
         if (hash === '#/contact') { await page.click('button.ct-row'); await new Promise((r) => setTimeout(r, 200)); }
+        if (hash === '#/giving') { await page.click('#gv-bank-btn'); await page.click('#gv-cash-btn'); await new Promise((r) => setTimeout(r, 200)); }
         if (hash === '#/') await page.waitForSelector('.tile.card', { timeout: 15000 }).catch(() => {});
         for (const p of await page.evaluate(auditPage, MIN)) report.push(`${label}: ${p}`);
         await context.close();
@@ -2117,6 +2232,7 @@ describe('Accessibility sweep: menus, sheets, roles and the small phone', () => 
     ['Event page: QR sheet', '#/events/conf', async (page) => { await eventPage(page); await page.click('.act[aria-haspopup=menu]'); await page.click('[role=menuitem]::-p-text(Event QR code)'); await page.waitForSelector('.sheet'); }],
     ['Location: a filter chosen', '#/events/location/yishun', async (page) => { await page.click('button.chip::-p-text(Services)'); }],
     ['Contact: Plan a visit open', '#/contact', async (page) => { await page.click('button.ct-row'); }],
+    ['Giving: both sections open', '#/giving', async (page) => { await page.click('#gv-bank-btn'); await page.click('#gv-cash-btn'); }],
     ['Giving: after Copy', '#/giving', async (page) => { await page.click('.gv-copy'); await page.waitForFunction(() => document.querySelector('.gv-copy').textContent.trim() === 'Copied'); }],
     ['Watch: paused', '#/watch', async (page) => { await page.waitForSelector('.wt-slide'); await page.mouse.click(195, 400); await page.waitForSelector('.wt-pause.on'); }],
     ['Watch: Continue where you left off', '#/watch', async (page) => { await page.waitForSelector('.wt-slide'); }],
