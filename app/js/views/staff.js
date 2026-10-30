@@ -29,9 +29,9 @@ const PANELS = {
     fields: [
       { name: 'date', label: 'Date', type: 'date', required: true, lockWhenEditing: true },
       { name: 'book', label: 'Book', type: 'select', required: true, options: BOOKS.map((b) => ({ value: b.code, label: b.name })) },
-      { name: 'chapter', label: 'Chapter', type: 'number', required: true, min: 1, max: 150, step: 1 },
-      { name: 'verseFrom', label: 'Verse from', type: 'number', required: true, min: 1, max: 176, step: 1 },
-      { name: 'verseTo', label: 'Verse to (optional)', type: 'number', min: 2, max: 176, step: 1 },
+      { name: 'chapter', label: 'Chapter', type: 'whole', required: true, max: 3 },
+      { name: 'verseFrom', label: 'Verse from', type: 'whole', required: true, max: 3 },
+      { name: 'verseTo', label: 'Verse to (optional)', type: 'whole', max: 3 },
     ],
     blank: () => ({ date: addDays(dateKey(), 1), book: 'GEN' }),
     // A saved verse is a passage; one saved before Bible versions has only its typed reference, which is read back where it can be.
@@ -44,7 +44,7 @@ const PANELS = {
       const built = buildPassage(v.book, v.chapter, v.verseFrom, v.verseTo);
       return built.ok ? { values: { date: v.date, passageId: built.passageId, reference: built.reference } } : { error: built.error };
     },
-    show: (v) => [`${v.id} · ${v.reference}`, []],
+    show: (v) => [`${dateLabel(v.id)} · ${v.reference}`, []],
   },
   events: {
     label: 'Events', noun: 'event', roles: POSTERS, external: true, // created and edited in the app (#/events/new)
@@ -65,6 +65,16 @@ const PANELS = {
   },
 };
 
+// '2026-11-01' -> 'Sun 1 Nov 2026'
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function dateLabel(key) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return key;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 const explain = (err) => (err.code === 'permission-denied' ? 'this account is not allowed to do that.' : err.message);
 
 function fieldEl(f, value, id, editing) {
@@ -82,7 +92,8 @@ function fieldEl(f, value, id, editing) {
   }
   else {
     input = h('input', {
-      ...common, type: f.type === 'datetime' ? 'datetime-local' : f.type, pattern: f.pattern, min: f.min, max: f.max, step: f.step,
+      ...common, type: f.type === 'datetime' ? 'datetime-local' : f.type === 'whole' ? 'text' : f.type, pattern: f.type === 'whole' ? '[0-9]*' : f.pattern,
+      inputmode: f.type === 'whole' ? 'numeric' : undefined, autocomplete: f.type === 'whole' ? 'off' : undefined,
       value: f.type === 'datetime' ? (value ? msToSgInput(value) : '') : (value ?? ''),
       readonly: f.lockWhenEditing && editing,
     });
@@ -124,11 +135,6 @@ function panel(col, spec, user) {
         h('button', { class: 'btn primary', type: 'submit' }, 'Save'),
         editing ? h('button', { class: 'btn', type: 'button', onclick: () => { editing = null; say(''); drawForm(); } }, 'Cancel') : null));
     form.addEventListener('submit', onSubmit);
-    if (col === 'verses') { // a chapter can't be past the book's last
-      const syncChapters = () => { form.elements.chapter.max = BOOKS.find((b) => b.code === form.elements.book.value)?.chapters ?? 150; };
-      form.elements.book.addEventListener('change', syncChapters);
-      syncChapters();
-    }
     formBox.replaceChildren(form);
   }
 

@@ -103,10 +103,17 @@ export function parseReference(text) {
 
 // ---- Versions and licences ----
 
+// label: shown in English. native: the language in its own script. also: other English names people type.
+// wide: its text is set smaller on the Home card, so lines carry several words.
 export const LANGUAGES = [
-  { id: 'eng', label: 'English' }, { id: 'tam', label: 'Tamil' }, { id: 'tel', label: 'Telugu' },
-  { id: 'mal', label: 'Malayalam' }, { id: 'tha', label: 'Thai' }, { id: 'zho', label: 'Mandarin' },
+  { id: 'eng', label: 'English', native: 'English', also: [] },
+  { id: 'tam', label: 'Tamil', native: 'தமிழ்', also: [], wide: true },
+  { id: 'tel', label: 'Telugu', native: 'తెలుగు', also: [], wide: true },
+  { id: 'mal', label: 'Malayalam', native: 'മലയാളം', also: [], wide: true },
+  { id: 'tha', label: 'Thai', native: 'ไทย', also: [], wide: true },
+  { id: 'zho', label: 'Mandarin', native: '中文', also: ['Chinese'] },
 ];
+export const languageById = (id) => LANGUAGES.find((l) => l.id === id) ?? null;
 
 // publisher: 'biblica' and 'lockman' have licence rules below; anything else is public domain or Creative Commons.
 // The default of each language comes first.
@@ -188,15 +195,19 @@ export function cardFor(votd, builtIn, chosen = DEFAULT_VERSION) {
   const version = versionById(chosen);
   const entry = votd?.versions?.[String(chosen)];
   if (version && usableEntry(version, entry)) {
-    return {
+    const card = {
       fallback: false, id: version.id, abbr: text(entry.abbr) || version.abbr, name: text(entry.name) || version.name,
       reference: entry.reference, text: entry.text, footnotes: Array.isArray(entry.footnotes) ? entry.footnotes.map(String).filter(Boolean) : [],
       notice: noticeFor(version, entry) || '', link: linkFor(version, entry),
+      language: version.language,
     };
+    // Lockman allows just the version tag as a link when space is tight; the full notice stays on the Contact page.
+    if (version.publisher === 'lockman') { card.notice = ''; card.link = { href: LOCKMAN.href, label: card.abbr }; card.tagOnly = true; }
+    return card;
   }
   // The built-in verse is KJV; a verse saved before Bible versions carries its own translation, which is shown honestly.
   const own = text(builtIn.translation) || FALLBACK_ABBR;
-  return { fallback: true, id: null, abbr: own, name: own === FALLBACK_ABBR ? 'King James Version' : own, reference: builtIn.reference, text: builtIn.text, footnotes: [], notice: '', link: null };
+  return { fallback: true, language: 'eng', id: null, abbr: own, name: own === FALLBACK_ABBR ? 'King James Version' : own, reference: builtIn.reference, text: builtIn.text, footnotes: [], notice: '', link: null };
 }
 
 // Versions of the sheet, grouped by language in the order above. `present` marks the ones the day's document has.
@@ -205,4 +216,45 @@ export function versionGroups(votd) {
     ...lang,
     versions: VERSIONS.filter((v) => v.language === lang.id).map((v) => ({ ...v, available: usableEntry(v, votd?.versions?.[String(v.id)]) })),
   })).filter((g) => g.versions.length);
+}
+
+// ---- Recent versions, and finding a version by typing ----
+
+export const RECENT_KEY = 'bible-recent'; // saved on the phone as lc:v1:bible-recent: at most three ids, newest first
+export const RECENT_MAX = 3;
+export const SHORTLIST_DEFAULT = [111, 2730, 36]; // NIV, Tamil Contemporary Version, Chinese Contemporary Bible Simplified
+export const RESULT_MAX = 6;
+
+export function savedRecent(storage = globalThis.localStorage) {
+  try {
+    const list = JSON.parse(storage.getItem(`lc:v1:${RECENT_KEY}`));
+    if (!Array.isArray(list)) return [];
+    return [...new Set(list.map(Number))].filter((id) => versionById(id)).slice(0, RECENT_MAX);
+  } catch { return []; }
+}
+// Picking a version moves it to the front.
+export function saveRecent(id, storage = globalThis.localStorage) {
+  const list = [Number(id), ...savedRecent(storage).filter((x) => x !== Number(id))].slice(0, RECENT_MAX);
+  try { storage.setItem(`lc:v1:${RECENT_KEY}`, JSON.stringify(list)); } catch { /* storage may be full or blocked */ }
+  return list;
+}
+
+// The three versions shown before anything is typed: the recent ones, then the usual three to fill, with no repeats.
+export function shortlist(recent = []) {
+  const ids = [...new Set([...recent.map(Number), ...SHORTLIST_DEFAULT])].filter((id) => versionById(id)).slice(0, RECENT_MAX);
+  return ids.map((id) => versionById(id));
+}
+
+// Lower case, with spaces and punctuation taken out, so "nasb 2020" and "NASB2020" are the same.
+const squash = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}\p{M}]/gu, '');
+
+// Versions whose abbreviation, full name, language (in English) or language in its own script starts with what was typed.
+// Nothing typed gives the shortlist. At most RESULT_MAX results, in the order of the list above.
+export function searchVersions(query, recent = []) {
+  const q = squash(query);
+  if (!q) return shortlist(recent);
+  return VERSIONS.filter((v) => {
+    const lang = languageById(v.language);
+    return [v.abbr, v.name, lang.label, lang.native, ...lang.also].some((t) => squash(t).startsWith(q));
+  }).slice(0, RESULT_MAX);
 }

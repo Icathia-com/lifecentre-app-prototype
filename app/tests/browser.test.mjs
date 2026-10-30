@@ -1517,7 +1517,7 @@ describe('Staff page', () => {
     await page.type('#verses-chapter', '3');
     await page.type('#verses-verseFrom', '16');
     await page.click('form button[type=submit]');
-    await waitText(page, `${tomorrow} · John 3:16`, '.items');
+    await waitText(page, `${dayLabel(tomorrow)} · John 3:16`, '.items');
 
     await page.click('button[aria-pressed]::-p-text(Events)');
     await page.waitForSelector('a.btn::-p-text(Create event)');
@@ -2292,6 +2292,10 @@ const VOTD_VERSIONS = {
   1392: votdEntry('CCB', 'Chinese Contemporary Bible (Traditional)', 'zho', '神愛世人，甚至將他的獨生子賜給他們。', { reference: '約翰福音 3:16', notice: 'Chinese notice © Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
 };
 // A document as saved in the emulator (withSecurityRulesDisabled does not hand back what its callback returns).
+function dayLabel(key) { // '2026-11-01' -> 'Sun 1 Nov 2026', as the staff list shows it
+  const d = new Date(`${key}T00:00:00Z`);
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
 async function readDoc(col, id) {
   let snap;
   await env.withSecurityRulesDisabled(async (ctx) => { snap = await getDoc(doc(ctx.firestore(), col, id)); });
@@ -2330,34 +2334,268 @@ describe('the verse of the day in Bible versions', () => {
     await context.close();
   });
 
-  it('opens a sheet listing the versions by language, current one marked, and swaps the verse at once, remembering the choice', async () => {
+  const openSheet = async (page) => { await page.click('.verse-chip'); await page.waitForSelector('#vs-search'); };
+  const resultsOf = (page) => page.$$eval('.vs-item', (els) => els.map((e) => [e.dataset.version, e.querySelector('b').textContent, e.querySelector('small').textContent, e.getAttribute('aria-current') === 'true']));
+  const typeQuery = async (page, q) => { await page.$eval('#vs-search', (i) => { i.value = ''; i.dispatchEvent(new Event('input')); }); if (q) await page.type('#vs-search', q); await page.waitForFunction((n) => document.querySelector('#vs-search').value === n, {}, q); };
+  const pickVersion = async (page, query, id) => { await openSheet(page); await typeQuery(page, query); await page.click(`.vs-item[data-version="${id}"]`); };
+  const manyVotd = () => ({
+    ...VOTD_VERSIONS,
+    1895: votdEntry('IRV', 'Telugu Indian Revised Version', 'tel', 'తెలుగు పరీక్ష పాఠ్యం.', { reference: 'యోహాను 3:16' }),
+    2431: votdEntry('MCV', 'Malayalam Contemporary Version', 'mal', 'മലയാളം പരീക്ഷണ വാചകം.', { reference: 'യോഹന്നാൻ 3:16', notice: 'Malayalam notice © Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
+    179: votdEntry('TNCV', 'Thai New Contemporary Version', 'tha', 'ข้อความทดสอบภาษาไทย', { reference: 'ยอห์น 3:16', notice: 'Thai notice © Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
+  });
+
+  it('opens a small search sheet that shows three versions to a new member: NIV, Tamil and Chinese Simplified, with the current one marked', async () => {
     await seedVotd();
     const { page, context } = await open('#/');
     await waitVerse(page, 'NIV');
-    await page.click('.verse-chip');
-    await page.waitForSelector('[role=dialog] .vs-item');
-    assert.equal(await text(page, '[role=dialog] h2'), 'Bible version');
-    assert.deepEqual(await page.$$eval('[role=dialog] .vs-group h3', (els) => els.map((e) => e.textContent)), ['English', 'Tamil', 'Telugu', 'Malayalam', 'Thai', 'Mandarin']);
-    assert.deepEqual(await page.$$eval('[role=dialog] .vs-group', (els) => els.map((g) => [...g.querySelectorAll('.vs-item b')].map((b) => b.textContent))), [
-      ['NIV', 'NASB 2020', 'NASB 1995', 'AMP', 'BSB', 'WEB', 'ASV'], ['TCV', 'IRV'], ['IRV'], ['MCV', 'SVP', 'IRV'], ['TNCV', 'THAI KJV'], ['CCB', 'CCB', 'CSB'],
+    await openSheet(page);
+    assert.equal(await page.$eval('#vs-search', (i) => i.getAttribute('aria-label')), 'Search Bible versions');
+    assert.deepEqual(await resultsOf(page), [
+      ['111', 'NIV', 'New International Version · English', true],
+      ['2730', 'TCV', 'Tamil Contemporary Version · Tamil', false],
+      ['36', 'CCB', 'Chinese Contemporary Bible (Simplified) · Mandarin', false],
     ]);
-    assert.deepEqual(await page.$$eval('[role=dialog] .vs-item[aria-current=true]', (els) => els.map((e) => e.dataset.version)), ['111']);
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.version), '111', 'focus starts on the current version');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'vs-search', 'the search box has focus');
+    assert.equal(await page.$('.vs-group'), null, 'the full grouped list is gone');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:bible-recent')), null);
+    await shot(page, 'sheet-new-member');
+    await context.close();
+  });
+
+  it('swaps the verse at once when a version is picked, remembering it with no sign-in', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    await openSheet(page);
     await page.click('.vs-item[data-version="2730"]');
     await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
-    assert.deepEqual((await verseCard(page)).chip, 'TCV');
-    assert.equal((await verseCard(page)).text, 'தேவன் உலகத்தின்மீது அன்பாயிருந்தார்.');
-    assert.equal((await verseCard(page)).reference, 'யோவான் 3:16');
+    const card = await verseCard(page);
+    assert.deepEqual([card.chip, card.text, card.reference], ['TCV', 'தேவன் உலகத்தின்மீது அன்பாயிருந்தார்.', 'யோவான் 3:16']);
     assert.equal(await page.evaluate(() => document.activeElement.className), 'verse-chip', 'focus returns to the chip');
     assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:bible-version')), '2730');
     assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:session')), null, 'no sign-in was needed');
     await page.reload();
     await waitVerse(page, 'TCV');
-    assert.equal((await verseCard(page)).reference, 'யோவான் 3:16');
-    await page.click('.verse-chip');
-    await page.waitForSelector('.vs-item[aria-current=true]');
-    assert.deepEqual(await page.$$eval('.vs-item[aria-current=true]', (els) => els.map((e) => e.dataset.version)), ['2730']);
-    await shot(page, 'home-verse-tamil');
+    await context.close();
+  });
+
+  it('shows the three most recently picked versions, newest first, then fills from the usual three without repeats', async () => {
+    await seedVotd(manyVotd());
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    await pickVersion(page, 'web', 206);
+    await waitVerse(page, 'WEB');
+    await openSheet(page);
+    assert.deepEqual((await resultsOf(page)).map((r) => r[0]), ['206', '111', '2730'], 'one pick, then the usual three fill the rest');
+    await page.keyboard.press('Escape');
+    await pickVersion(page, 'nasb2020', 2692);
+    await waitVerse(page, 'NASB 2020');
+    await pickVersion(page, 'ccb', 1392);
+    await waitVerse(page, 'CCB');
+    await pickVersion(page, 'niv', 111);
+    await waitVerse(page, 'NIV');
+    await openSheet(page);
+    assert.deepEqual(await resultsOf(page), [
+      ['111', 'NIV', 'New International Version · English', true],
+      ['1392', 'CCB', 'Chinese Contemporary Bible (Traditional) · Mandarin', false],
+      ['2692', 'NASB 2020', 'New American Standard Bible 2020 · English', false],
+    ]);
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:bible-recent')), '[111,1392,2692]', 'at most three, newest first');
+    await typeQuery(page, 'web'); // the sheet is still open: picking one that is already in the list moves it to the front
+    await page.click('.vs-item[data-version="206"]');
+    await page.reload();
+    await waitVerse(page, 'WEB');
+    await openSheet(page);
+    assert.deepEqual((await resultsOf(page)).map((r) => r[0]), ['206', '111', '1392']);
+    await context.close();
+  });
+
+  it('finds versions as the member types: by abbreviation, full name, English language name and own-script name', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    await openSheet(page);
+    const ids = async (q) => { await typeQuery(page, q); return (await resultsOf(page)).map((r) => r[0]); };
+    assert.deepEqual(await ids('nasb 2020'), ['2692'], 'abbreviation, spaces ignored');
+    assert.deepEqual(await ids('NASB2020'), ['2692'], 'case ignored');
+    assert.deepEqual(await ids('TCV'), ['2730']);
+    assert.deepEqual(await ids('new american'), ['2692', '100'], 'full name, from the first letter');
+    assert.deepEqual(await ids('Chinese Contemporary Bible Simplified'), ['36']);
+    assert.deepEqual(await ids('tam'), ['2730', '1899'], 'language in English');
+    assert.deepEqual(await ids('mandarin'), ['36', '1392', '43']);
+    assert.deepEqual(await ids('chinese'), ['36', '1392', '43']);
+    assert.deepEqual(await ids('telu'), ['1895']);
+    assert.deepEqual(await ids('malay'), ['2431', '2333', '1912']);
+    assert.deepEqual(await ids('thai'), ['179', '175']);
+    assert.deepEqual(await ids('தமிழ்'), ['2730', '1899'], 'Tamil in its own script');
+    assert.deepEqual(await ids('తెలుగు'), ['1895'], 'Telugu in its own script');
+    assert.deepEqual(await ids('മലയാളം'), ['2431', '2333', '1912'], 'Malayalam in its own script');
+    assert.deepEqual(await ids('ไทย'), ['179', '175'], 'Thai in its own script');
+    assert.deepEqual(await ids('中文'), ['36', '1392', '43'], 'Chinese in its own script');
+    assert.deepEqual(await ids('ew american'), [], 'matches from the first letter only');
+    assert.deepEqual(await resultsOf(page), []);
+    await typeQuery(page, 'tam');
+    assert.deepEqual((await resultsOf(page))[0].slice(1, 3), ['TCV', 'Tamil Contemporary Version · Tamil'], 'abbreviation, full name and language');
+    await shot(page, 'sheet-tam');
+    await typeQuery(page, '中文');
+    await shot(page, 'sheet-zhongwen');
+    await typeQuery(page, '');
+    assert.equal((await resultsOf(page)).length, 3, 'clearing the box shows the three again');
+    await context.close();
+  });
+
+  it('shows at most six results, and says "No versions found" when nothing matches', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    await openSheet(page);
+    await typeQuery(page, 'e'); // English matches seven versions
+    assert.deepEqual((await resultsOf(page)).map((r) => r[0]), ['111', '2692', '100', '1588', '3034', '206']);
+    await typeQuery(page, 'zzz');
+    assert.deepEqual(await resultsOf(page), []);
+    assert.equal(await page.$eval('.vs-empty', (p) => [p.hidden, p.textContent]).then((r) => r.join('|')), 'false|No versions found');
+    assert.equal(await text(page, '.version-sheet [role=status]'), 'No versions found', 'announced to screen readers');
+    await typeQuery(page, 'tam');
+    assert.equal(await text(page, '.version-sheet [role=status]'), '2 versions');
+    assert.equal(await page.$eval('.vs-empty', (p) => p.hidden), true);
+    await context.close();
+  });
+
+  it('works from the keyboard: arrows move through the results, Enter picks, Escape closes', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    await page.focus('.verse-chip');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#vs-search');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.version), '111');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.version), '36');
+    await page.keyboard.press('ArrowDown'); // the last stays put
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.version), '36');
+    await page.keyboard.press('ArrowUp');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.version), '2730');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'vs-search', 'Up from the first goes back to the box');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'verse-chip');
+    // type, move down, Enter
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#vs-search');
+    await page.keyboard.type('chinese');
+    await page.waitForFunction(() => document.querySelectorAll('.vs-item').length === 3);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await waitVerse(page, 'CCB');
+    assert.equal((await verseCard(page)).reference, '約翰福音 3:16');
+    // Enter in the box picks the first result
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#vs-search');
+    await page.keyboard.type('nasb 1995');
+    await page.waitForFunction(() => document.querySelectorAll('.vs-item').length === 1);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:bible-version')), '100');
+    await context.close();
+  });
+
+  it('has a sheet that fits its content, never covers more than about half the screen, and passes the accessibility check', async () => {
+    await seedVotd();
+    for (const [width, height] of [[390, 844], [375, 667], [390, 500]]) {
+      const { page, context } = await open('#/', { width, height });
+      await waitVerse(page, 'NIV');
+      await openSheet(page);
+      const sheetHeight = () => page.$eval('.version-sheet .sheet', (s) => s.getBoundingClientRect().height);
+      const three = await sheetHeight();
+      assert.ok(three <= height * 0.55, `${width}x${height}: the sheet with three results is ${three}px`);
+      await typeQuery(page, 'e');
+      const six = await sheetHeight();
+      assert.ok(six <= height * 0.55, `${width}x${height}: the sheet with six results is ${six}px`);
+      assert.ok(six >= three, 'it grows with its content');
+      await typeQuery(page, 'zzz');
+      assert.ok(await sheetHeight() < three, 'and shrinks when there is nothing to show');
+      assert.equal(await page.$$eval('.vs-item', (els) => els.filter((e) => e.getBoundingClientRect().height < 44).length), 0);
+      assert.doesNotMatch(await text(page, '[role=dialog]'), /tap|swipe|click|drag|scroll|arrow|press/i, 'no how-to hint text');
+      if (width === 390 && height === 844) {
+        await checkAccessibility(page, 'Bible version sheet (three results)');
+        await typeQuery(page, 'e');
+        await checkAccessibility(page, 'Bible version sheet (six results)');
+        await typeQuery(page, 'zzz');
+        await checkAccessibility(page, 'Bible version sheet (no results)');
+      }
+      await context.close();
+    }
+  });
+
+  it('scrolls the results with the mouse when they are taller than the sheet', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/', { width: 390, height: 480 });
+    await waitVerse(page, 'NIV');
+    await openSheet(page);
+    await typeQuery(page, 'e');
+    assert.ok(await page.$eval('.vs-scroll', (l) => l.scrollHeight > l.clientHeight + 20), 'the six results are taller than the sheet');
+    const box = await (await page.$('.vs-scroll')).boundingBox();
+    await page.mouse.move(box.x + 200, box.y + box.height - 10);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 200, box.y + 10, { steps: 8 });
+    await page.mouse.up();
+    assert.ok(await page.$eval('.vs-scroll', (l) => l.scrollTop) > 20, 'dragging with the mouse scrolls the results');
+    await context.close();
+  });
+
+  it('sets Tamil, Telugu, Malayalam and Thai text at about 75 percent of the English size, and Chinese at the full size', async () => {
+    await seedVotd(manyVotd());
+    const sizeOf = async (id) => {
+      const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument((v) => localStorage.setItem('lc:v1:bible-version', v), String(id)) });
+      await page.waitForSelector('.verse-card blockquote');
+      await page.waitForFunction((v) => document.querySelector('.verse-card blockquote').lang !== '' && !!document.querySelector('.verse-chip'), {}, id);
+      const font = await page.$eval('.verse-card blockquote', (b) => parseFloat(getComputedStyle(b).fontSize));
+      await context.close();
+      return font;
+    };
+    const english = await sizeOf(206);
+    assert.equal(english, 28);
+    for (const id of [2730, 1895, 2431, 179]) {
+      const font = await sizeOf(id);
+      assert.ok(Math.abs(font / english - 0.75) < 0.03, `version ${id} is ${font}px`);
+    }
+    assert.equal(await sizeOf(1392), 28, 'Chinese keeps the current size');
+  });
+
+  it('shows only the version tag, as a link to Lockman, for NASB 2020, NASB 1995 and AMP on the card', async () => {
+    await seedVotd({ ...VOTD_VERSIONS, 100: { ...VOTD_VERSIONS[2692], abbr: 'NASB 1995' }, 1588: { ...VOTD_VERSIONS[2692], abbr: 'AMP' } });
+    for (const [id, abbr] of [[2692, 'NASB 2020'], [100, 'NASB 1995'], [1588, 'AMP']]) {
+      const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument((v) => localStorage.setItem('lc:v1:bible-version', v), String(id)) });
+      await waitVerse(page, abbr);
+      const card = await verseCard(page);
+      assert.deepEqual([card.notice, card.link], [abbr, [abbr, 'https://www.lockman.org/']], `${abbr}: just the tag, as a link`);
+      assert.doesNotMatch(await text(page, '.verse-card'), /Copyright|Used by permission/);
+      await context.close();
+    }
+  });
+
+  it('shows the notice one size smaller and lighter than the reference, readable, with its link', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    const style = await page.evaluate(() => {
+      const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+      const lum = (c) => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map((x) => { const v = x / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+      const cite = document.querySelector('.verse-card cite');
+      const notice = document.querySelector('.verse-notice');
+      return { cite: px(cite), notice: px(notice), citeLum: lum(getComputedStyle(cite).color), noticeLum: lum(getComputedStyle(notice).color), link: !!notice.querySelector('a[href="https://www.biblica.com"]') };
+    });
+    assert.ok(style.notice < style.cite && style.notice >= 11, `notice ${style.notice}px, reference ${style.cite}px`);
+    assert.ok(style.noticeLum > style.citeLum, 'lighter grey than the reference');
+    assert.ok(style.link);
+    assert.match(await text(page, '.verse-notice'), /Biblica, Inc\./, 'Biblica keeps the full notice');
+    await shot(page, 'home-niv');
     await context.close();
   });
 
@@ -2371,15 +2609,13 @@ describe('the verse of the day in Bible versions', () => {
     await context.close();
   });
 
-  it('shows Lockman versions with their notice and a link to Lockman, and other versions without a notice', async () => {
+  it('shows a Lockman version as a tag linking to Lockman, and other versions with only the link they supply', async () => {
     await seedVotd();
     const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:bible-version', '2692')) });
     await waitVerse(page, 'NASB 2020');
     const card = await verseCard(page);
-    assert.equal(card.notice, `${NASB_NOTICE} The Lockman Foundation`);
-    assert.deepEqual(card.link, ['The Lockman Foundation', 'https://www.lockman.org/']);
-    await page.click('.verse-chip');
-    await page.click('.vs-item[data-version="206"]');
+    assert.deepEqual([card.notice, card.link], ['NASB 2020', ['NASB 2020', 'https://www.lockman.org/']], 'the version tag, as a link');
+    await pickVersion(page, 'web', 206);
     await waitVerse(page, 'WEB');
     const web = await verseCard(page);
     assert.equal(web.notice, 'worldenglishbible.org', 'only the publisher link is shown: no notice is invented for a version that supplies none');
@@ -2397,12 +2633,10 @@ describe('the verse of the day in Bible versions', () => {
     const second = await open('#/');
     await waitVerse(second.page, 'KJV'); // NIV, the default, is missing
     assert.equal((await verseCard(second.page)).text, 'The LORD is my shepherd; I shall not want.');
-    await second.page.click('.verse-chip');
-    await second.page.click('.vs-item[data-version="206"]');
+    await pickVersion(second.page, 'web', 206);
     await waitVerse(second.page, 'WEB');
     assert.equal((await verseCard(second.page)).reference, 'John 3:16');
-    await second.page.click('.verse-chip');
-    await second.page.click('.vs-item[data-version="1392"]'); // not in today's text
+    await pickVersion(second.page, 'ccb', 1392); // not in today's text
     await waitVerse(second.page, 'KJV');
     assert.equal(await second.page.evaluate(() => localStorage.getItem('lc:v1:bible-version')), '1392', 'the choice is kept for the days that have it');
     await second.context.close();
@@ -2413,40 +2647,6 @@ describe('the verse of the day in Bible versions', () => {
     const { page, context } = await open('#/');
     await waitVerse(page, 'KJV');
     assert.equal((await verseCard(page)).notice, '');
-    await context.close();
-  });
-
-  it('has a sheet that scrolls by keyboard and by mouse drag, closes with Escape, and passes the accessibility check', async () => {
-    await seedVotd();
-    const { page, context } = await open('#/', { width: 390, height: 520 });
-    await waitVerse(page, 'NIV');
-    await page.click('.verse-chip');
-    await page.waitForSelector('.vs-list');
-    assert.ok(await page.$eval('.vs-list', (l) => l.scrollHeight > l.clientHeight + 50), 'the list is taller than the sheet');
-    await checkAccessibility(page, 'Bible version sheet');
-    // keyboard: focus the list and page down
-    await page.focus('.vs-list');
-    await page.keyboard.press('PageDown');
-    await page.waitForFunction(() => document.querySelector('.vs-list').scrollTop > 50);
-    await page.keyboard.press('Home');
-    await page.waitForFunction(() => document.querySelector('.vs-list').scrollTop === 0);
-    // tabbing reaches every version and stays inside the sheet
-    for (let i = 0; i < 30; i++) await page.keyboard.press('Tab');
-    assert.ok(await page.evaluate(() => !!document.activeElement.closest('[role=dialog]')), 'focus stays in the sheet');
-    // mouse drag
-    await page.$eval('.vs-list', (l) => { l.scrollTop = 0; });
-    const b2 = await (await page.$('.vs-list')).boundingBox();
-    await page.mouse.move(b2.x + 200, b2.y + b2.height - 20);
-    await page.mouse.down();
-    await page.mouse.move(b2.x + 200, b2.y + 20, { steps: 8 });
-    await page.mouse.up();
-    assert.ok(await page.$eval('.vs-list', (l) => l.scrollTop) > 50, 'dragging the list with the mouse scrolls it');
-    // every control is at least 44px tall
-    assert.deepEqual(await page.$$eval('.vs-item', (els) => els.filter((e) => e.getBoundingClientRect().height < 44).length), 0);
-    assert.doesNotMatch(await text(page, '[role=dialog]'), /tap|swipe|click|drag|scroll/i, 'no how-to hint text');
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
-    assert.equal(await page.evaluate(() => document.activeElement.className), 'verse-chip');
     await context.close();
   });
 
@@ -2504,14 +2704,27 @@ describe('the verse of the day in Bible versions', () => {
     assert.equal(await page.$('#verses-text'), null, 'the old Verse box is gone');
     assert.equal(await page.$('#verses-translation'), null, 'the old Translation menu is gone');
     await page.select('#verses-book', 'JHN');
-    assert.equal(await page.$eval('#verses-chapter', (i) => i.max), '21', 'the chapter limit follows the book');
+    const boxes = await page.$$eval('#verses-chapter, #verses-verseFrom, #verses-verseTo', (els) => els.map((e) => {
+      const cs = getComputedStyle(e);
+      const r = e.getBoundingClientRect();
+      return [e.type, e.getAttribute('inputmode'), Math.round(r.width), Math.round(r.height), cs.borderTopWidth, cs.borderRadius, cs.fontSize, cs.paddingLeft];
+    }));
+    assert.deepEqual(boxes[1], boxes[0], 'Verse from looks like Chapter');
+    assert.deepEqual(boxes[2], boxes[0], 'Verse to looks like Chapter');
+    assert.deepEqual([boxes[0][0], boxes[0][1]], ['text', 'numeric'], 'plain boxes: no up and down arrows');
+    await page.type('#verses-chapter', '22');
+    await page.type('#verses-verseFrom', '1');
+    await page.click('form button[type=submit]');
+    await waitText(page, 'John has 21 chapters.', '[role=status]');
+    await page.$eval('#verses-chapter', (i) => { i.value = ''; });
+    await page.$eval('#verses-verseFrom', (i) => { i.value = ''; });
     await page.type('#verses-chapter', '3');
     await page.type('#verses-verseFrom', '16');
     await page.type('#verses-verseTo', '17');
     await shot(page, 'staff-verse-form');
     await page.click('form button[type=submit]');
     const tomorrow = addDays(TODAY, 1);
-    await waitText(page, `${tomorrow} · John 3:16-17`, '.items');
+    await waitText(page, `${dayLabel(tomorrow)} · John 3:16-17`, '.items');
     assert.equal(await page.$eval('.items li:first-child .meta', (m) => m.textContent), '', 'the list shows the date and reference only');
     const saved = await readDoc('verses', tomorrow);
     assert.deepEqual([saved.passageId, saved.reference, saved.text, saved.translation, saved.updatedBy], ['JHN.3.16-17', 'John 3:16-17', undefined, undefined, STAFF]);
@@ -2536,7 +2749,7 @@ describe('the verse of the day in Bible versions', () => {
     await page.$eval('#verses-verseTo', (i) => { i.value = ''; });
     await page.type('#verses-verseTo', '25');
     await page.click('form button[type=submit]');
-    await waitText(page, `${tomorrow} · Psalm 119:1-25`, '.items');
+    await waitText(page, `${dayLabel(tomorrow)} · Psalm 119:1-25`, '.items');
     await context.close();
   });
 
@@ -2546,8 +2759,8 @@ describe('the verse of the day in Bible versions', () => {
     await signIn(page, STAFF);
     await waitText(page, `Signed in as ${STAFF}`);
     await page.click('button[aria-pressed]::-p-text(Verses)');
-    await waitText(page, `${TODAY} · Psalm 23:1`, '.items');
-    await page.click('button[aria-label="Edit ' + TODAY + ' · Psalm 23:1"]');
+    await waitText(page, `${dayLabel(TODAY)} · Psalm 23:1`, '.items');
+    await page.click('button[aria-label="Edit ' + dayLabel(TODAY) + ' · Psalm 23:1"]');
     await page.waitForSelector('#verses-book');
     assert.deepEqual(await page.evaluate(() => ['verses-book', 'verses-chapter', 'verses-verseFrom', 'verses-verseTo'].map((id) => document.getElementById(id).value)), ['PSA', '23', '1', '']);
     await page.click('form button[type=submit]');

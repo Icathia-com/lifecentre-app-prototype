@@ -5,6 +5,7 @@ import {
   BOOKS, MAX_VERSES, DEFAULT_VERSION, VERSIONS, LANGUAGES, LOCKMAN_NOTICES, BIBLICA, LOCKMAN,
   buildPassage, parsePassageId, parseReference, passageVerseCount, isUsablePassage,
   versionById, noticeFor, linkFor, usableEntry, cardFor, versionGroups, savedVersion, saveVersion,
+  shortlist, searchVersions, savedRecent, saveRecent, RESULT_MAX,
 } from '../js/bible.js';
 
 const memory = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), map: m }; };
@@ -189,5 +190,70 @@ describe('the choice saved on the phone', () => {
     const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
     assert.equal(savedVersion(blocked), 111);
     assert.doesNotThrow(() => saveVersion(206, blocked));
+  });
+});
+
+describe('the version search sheet', () => {
+  const ids = (list) => list.map((v) => v.id);
+  it('shows NIV, Tamil Contemporary Version and Chinese Contemporary Bible Simplified to a member who has picked nothing', () => {
+    assert.deepEqual(ids(shortlist([])), [111, 2730, 36]);
+    assert.deepEqual(ids(searchVersions('')), [111, 2730, 36]);
+    assert.deepEqual(ids(searchVersions('   ')), [111, 2730, 36]);
+  });
+  it('shows the recent picks first, newest first, and fills the rest from the usual three without repeats', () => {
+    assert.deepEqual(ids(shortlist([206])), [206, 111, 2730]);
+    assert.deepEqual(ids(shortlist([2730, 206])), [2730, 206, 111]);
+    assert.deepEqual(ids(shortlist([1392, 2692, 206])), [1392, 2692, 206]);
+    assert.deepEqual(ids(shortlist([111, 2730, 36, 206])), [111, 2730, 36]);
+    assert.deepEqual(ids(shortlist([999999, 206])), [206, 111, 2730], 'an unknown id is ignored');
+  });
+  it('keeps at most three recent ids under lc:v1:bible-recent, moving a pick to the front', () => {
+    const s = memory();
+    assert.deepEqual(savedRecent(s), []);
+    saveRecent(206, s); saveRecent(2692, s); saveRecent(1392, s);
+    assert.equal(s.map.get('lc:v1:bible-recent'), '[1392,2692,206]');
+    saveRecent(111, s);
+    assert.deepEqual(savedRecent(s), [111, 1392, 2692]);
+    saveRecent(2692, s);
+    assert.deepEqual(savedRecent(s), [2692, 111, 1392]);
+    s.map.set('lc:v1:bible-recent', 'not json');
+    assert.deepEqual(savedRecent(s), []);
+    s.map.set('lc:v1:bible-recent', '[206,206,999999,"111"]');
+    assert.deepEqual(savedRecent(s), [206, 111]);
+    const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+    assert.deepEqual(savedRecent(blocked), []);
+    assert.doesNotThrow(() => saveRecent(206, blocked));
+  });
+  it('matches from the first letter, ignoring case, spaces and punctuation', () => {
+    assert.deepEqual(ids(searchVersions('nasb 2020')), [2692]);
+    assert.deepEqual(ids(searchVersions('NASB2020')), [2692]);
+    assert.deepEqual(ids(searchVersions('nasb')), [2692, 100]);
+    assert.deepEqual(ids(searchVersions('new american')), [2692, 100]);
+    assert.deepEqual(ids(searchVersions('ew american')), []);
+    assert.deepEqual(ids(searchVersions('Chinese Contemporary Bible Simplified')), [36]);
+    assert.deepEqual(ids(searchVersions('tcv')), [2730]);
+  });
+  it('finds a version by its language in English or in its own script', () => {
+    const by = { tamil: [2730, 1899], tam: [2730, 1899], telugu: [1895], malayalam: [2431, 2333, 1912], thai: [179, 175], mandarin: [36, 1392, 43], chinese: [36, 1392, 43], 'தமிழ்': [2730, 1899], 'తెలుగు': [1895], 'മലയാളം': [2431, 2333, 1912], 'ไทย': [179, 175], '中文': [36, 1392, 43] };
+    for (const [q, expected] of Object.entries(by)) assert.deepEqual(ids(searchVersions(q)), expected, q);
+  });
+  it('gives at most six results, and none for nothing that matches', () => {
+    assert.equal(RESULT_MAX, 6);
+    assert.deepEqual(ids(searchVersions('english')), [111, 2692, 100, 1588, 3034, 206]);
+    assert.equal(VERSIONS.filter((v) => v.language === 'eng').length, 7);
+    assert.deepEqual(searchVersions('zzz'), []);
+  });
+  it('shows a Lockman version on the card as its tag, linked to Lockman, and keeps full notices for Contact', () => {
+    for (const id of [2692, 100, 1588]) {
+      const v = versionById(id);
+      const card = cardFor({ versions: { [id]: entry({ abbr: v.abbr, notice: '', link: '' }) } }, BUILT_IN, id);
+      assert.deepEqual([card.notice, card.link, card.tagOnly], ['', { href: 'https://www.lockman.org', label: v.abbr }, true]);
+      assert.equal(noticeFor(v, entry({ notice: '' })), LOCKMAN_NOTICES[id], 'the full notice is still there for the Contact page');
+    }
+    const biblica = cardFor({ versions: { 111: entry() } }, BUILT_IN, 111);
+    assert.deepEqual([biblica.notice, biblica.tagOnly], [NIV_NOTICE, undefined]);
+  });
+  it('marks wide scripts, not Chinese', () => {
+    assert.deepEqual(LANGUAGES.filter((l) => l.wide).map((l) => l.id), ['tam', 'tel', 'mal', 'tha']);
   });
 });
