@@ -38,6 +38,7 @@ export function render(root) {
   const query = new URLSearchParams(location.hash.split('?')[1] ?? '');
   const next = NEXT[query.get('next')] ?? null;
   const ended = query.get('ended') === '1';
+  const noGoogle = query.get('nogoogle') === '1'; // staff whose Google account the booking system did not accept
   let staff = null; // { email, role } from the Google sign-in, or null
   let member = null; // { token, name, email } from the emailed-code sign-in, or null
   let signin = null; // the member sign-in form, kept between redraws so what was typed survives
@@ -83,7 +84,7 @@ export function render(root) {
   const memberForm = () => {
     signin ??= memberSignIn({
       intro: 'We’ll email you a 6‑digit code. No password needed.',
-      notice: ended ? 'Your sign-in ended. Please sign in again.' : '',
+      notice: ended ? 'Your sign-in ended. Please sign in again.' : noGoogle ? 'Your Google account is not set up for bookings yet. Sign in with your email code instead.' : '',
       onDone: () => { signin = null; showMemberForm = false; if (next) location.replace(next); },
     });
     return signin.el;
@@ -103,6 +104,10 @@ export function render(root) {
         googleAlert()),
     ];
   }
+
+  const bookingsCard = () => h('section', { class: 'card', 'aria-labelledby': 'acct-add-member-h' },
+    h('h2', { id: 'acct-add-member-h', class: 'label' }, 'Bookings'),
+    showMemberForm ? memberForm() : h('button', { type: 'button', class: 'btn', onclick: () => { showMemberForm = true; draw(); host.querySelector('#bk-email')?.focus(); } }, 'Sign in for bookings'));
 
   function signedInView() {
     const name = member?.name || staff?.email || member?.email || '';
@@ -129,14 +134,14 @@ export function render(root) {
         h('div', { class: 'acct-rows' }, rows),
         member && staff ? h('button', { type: 'button', class: 'btn', disabled: busy ? '' : null, onclick: signOutAll }, busy ? 'Signing out…' : 'Sign out of both') : null),
 
+      next && !member ? bookingsCard() : null,
+
       tools ? h('section', { class: 'card acct-tools', 'aria-labelledby': 'acct-tools-h' },
         h('h2', { id: 'acct-tools-h', class: 'label' }, toolsTitle),
         h('nav', { class: 'acct-links', 'aria-label': toolsTitle },
           tools.map(([href, label]) => h('a', { href }, h('span', {}, label), ic('right', 18, 2.2))))) : null,
 
-      !member ? h('section', { class: 'card', 'aria-labelledby': 'acct-add-member-h' },
-        h('h2', { id: 'acct-add-member-h', class: 'label' }, 'Bookings'),
-        showMemberForm ? memberForm() : h('button', { type: 'button', class: 'btn', onclick: () => { showMemberForm = true; draw(); host.querySelector('#bk-email')?.focus(); } }, 'Sign in for bookings')) : null,
+      !member && !next ? bookingsCard() : null,
 
       !staff ? h('section', { class: 'card', 'aria-labelledby': 'acct-add-staff-h' },
         h('h2', { id: 'acct-add-staff-h', class: 'label' }, 'Staff'),
@@ -154,7 +159,15 @@ export function render(root) {
       h('a', { class: 'bk-contact acct-contact', href: '#/contact' }, h('span', {}, 'Need help?'), h('b', {}, 'Contact us')));
   }
 
-  const stopStaff = onSession((s) => { staff = s?.email ? s : null; if (staff) googleError = ''; draw(); });
+  let firstSession = true;
+  const stopStaff = onSession((s) => {
+    const was = staff;
+    staff = s?.email ? s : null;
+    if (staff) googleError = '';
+    if (!firstSession && !was && staff && next && !noGoogle) { location.replace(next); return; }
+    firstSession = false;
+    draw();
+  });
   const stopMember = onBookingSession((m) => { member = m; draw(); });
 
   return () => { stopStaff(); stopMember(); };
