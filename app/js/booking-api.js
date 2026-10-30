@@ -51,3 +51,21 @@ export async function api(action, fields = {}, { auth = true } = {}) {
   }
   return json;
 }
+
+// Staff signed in with Google get a booking session without an emailed code: the booking system checks the Google
+// sign-in itself (it is sent the Google ID token, verifies it with Google and looks the email up on its own lists).
+// Resolves with the session, or null when nobody is signed in with Google. Throws a BookingError when the booking
+// system says no (code "notstaff" when the Google account is not on its lists).
+export async function sessionFromGoogle() {
+  const { getAuthTools } = await import('./firebase.js');
+  const tools = await getAuthTools();
+  const user = tools.auth.currentUser ?? await new Promise((resolve) => {
+    const stop = tools.onAuthStateChanged(tools.auth, (u) => { stop(); resolve(u); });
+  });
+  if (!user) return null;
+  const idToken = await user.getIdToken();
+  const r = await api('staffSignIn', { idToken }, { auth: false });
+  const session = { token: r.token, name: r.user.name, email: r.user.email };
+  setSession(session);
+  return session;
+}

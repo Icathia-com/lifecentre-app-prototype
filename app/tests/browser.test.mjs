@@ -889,9 +889,9 @@ describe('mouse drag scrolling', () => {
 });
 
 // A stand-in for the church's booking system: it answers the app's calls the way the real one does, and records them.
-function fakeBooking({ blocks = [], failure = null, delays = {}, past = [] } = {}) {
+function fakeBooking({ blocks = [], failure = null, delays = {}, past = [], notStaff = false } = {}) {
   const TOKEN = 'a'.repeat(64);
-  const state = { calls: [], bookings: [], blocks, failure, past };
+  const state = { calls: [], bookings: [], blocks, failure, past, notStaff };
   const reply = (body) => {
     const { action, token } = body;
     if (state.failure?.[action]) return state.failure[action];
@@ -900,6 +900,11 @@ function fakeBooking({ blocks = [], failure = null, delays = {}, past = [] } = {
       return body.code === '123456'
         ? { ok: true, token: TOKEN, user: { name: 'Test Member', email: body.email } }
         : { ok: false, code: 'error', error: 'That code is not right. Check the email and try again.' };
+    }
+    if (action === 'staffSignIn') { // a Google sign-in from the staff list (the real system checks the token with Google)
+      return typeof body.idToken === 'string' && body.idToken && !state.notStaff
+        ? { ok: true, token: TOKEN, user: { name: 'Staff Member', email: 'staff@lifecentre.sg' } }
+        : { ok: false, code: 'notstaff', error: 'This Google account is not set up for bookings.' };
     }
     if (token !== TOKEN) return { ok: false, code: 'signin', error: 'Please sign in again.' };
     if (action === 'config') return { ok: true, rooms: ['Whole Church', 'Main Sanctuary', 'Empower Room', 'Foyer', 'Dining Area', 'Cry Room', 'Carpark'], today: TODAY, maxDate: addDays(TODAY, 365), dayStart: '07:00', dayEnd: '23:00' };
@@ -1096,11 +1101,23 @@ describe('Facilities booking', () => {
     const { page, context } = await open('#/', { setup: (p) => fake.install(p) });
     assert.equal(await page.$eval('#fab-menu a', (a) => a.getAttribute('href')), '#/booking');
     await context.close();
-    const staff = await openAsStaff('/booking');
-    await waitTitle(staff.page, 'Account');
-    await staff.page.waitForSelector('#bk-email'); // a staff member who is not signed in as a member gets the member form open
+    const staff = await openAsStaff('/booking', STAFF, { setup: (p) => fake.install(p) });
+    await waitTitle(staff.page, 'Book a space'); // signed in with Google: straight in, no emailed code
+    await staff.page.waitForSelector('.bs-pill');
+    assert.ok(fake.calls.some((c) => c.action === 'staffSignIn' && c.idToken));
+    assert.equal(await staff.page.$('#bk-email'), null);
     assert.equal((await fifthTab(staff.page)).label, 'Facilities Booking');
     await staff.context.close();
+  });
+
+  it('a staff Google account the booking system does not know gets the code form, with a notice', async () => {
+    const fake = fakeBooking({ notStaff: true });
+    const { page, errors, context } = await openAsStaff('/booking', STAFF, { setup: (p) => fake.install(p) });
+    await waitTitle(page, 'Account');
+    await page.waitForSelector('#bk-email');
+    assert.match(await text(page, '#main'), /Your Google account is not set up for bookings yet/);
+    assert.deepEqual(errors, []);
+    await context.close();
   });
 });
 
