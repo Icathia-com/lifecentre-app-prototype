@@ -134,7 +134,7 @@ export const VERSIONS = [
   { id: 179, abbr: 'TNCV', name: 'Thai New Contemporary Version', language: 'tha', publisher: 'biblica' },
   { id: 175, abbr: 'THAI KJV', name: 'Thai King James Version', language: 'tha', publisher: 'other' },
   { id: 36, abbr: 'CCB', name: 'Chinese Contemporary Bible (Simplified)', language: 'zho', publisher: 'biblica' },
-  { id: 1392, abbr: 'CCB', name: 'Chinese Contemporary Bible (Traditional)', language: 'zho', publisher: 'biblica' },
+  { id: 1392, abbr: 'CCBT', name: 'Chinese Contemporary Bible (Traditional)', language: 'zho', publisher: 'biblica' },
   { id: 43, abbr: 'CSB', name: 'Chinese Standard Bible', language: 'zho', publisher: 'other' },
 ];
 const VERSION_BY_ID = new Map(VERSIONS.map((v) => [v.id, v]));

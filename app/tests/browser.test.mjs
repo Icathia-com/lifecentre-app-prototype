@@ -2289,7 +2289,7 @@ const VOTD_VERSIONS = {
   2692: votdEntry('NASB 2020', 'New American Standard Bible 2020', 'eng', 'For God so loved the world, that He gave His only Son.', { notice: NASB_NOTICE, publisher: 'The Lockman Foundation', link: 'https://www.lockman.org' }),
   206: votdEntry('WEB', 'World English Bible', 'eng', 'For God so loved the world, that he gave his only born Son.', { publisher: 'worldenglishbible.org', link: 'https://worldenglishbible.org' }),
   2730: votdEntry('TCV', 'Tamil Contemporary Version', 'tam', 'தேவன் உலகத்தின்மீது அன்பாயிருந்தார்.', { reference: 'யோவான் 3:16', notice: 'Tamil notice © Biblica, Inc. TCV is a trademark of Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
-  1392: votdEntry('CCB', 'Chinese Contemporary Bible (Traditional)', 'zho', '神愛世人，甚至將他的獨生子賜給他們。', { reference: '約翰福音 3:16', notice: 'Chinese notice © Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
+  1392: votdEntry('CCBT', 'Chinese Contemporary Bible (Traditional)', 'zho', '神愛世人，甚至將他的獨生子賜給他們。', { reference: '約翰福音 3:16', notice: 'Chinese notice © Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
 };
 // A document as saved in the emulator (withSecurityRulesDisabled does not hand back what its callback returns).
 function dayLabel(key) { // '2026-11-01' -> 'Sun 1 Nov 2026', as the staff list shows it
@@ -2392,13 +2392,13 @@ describe('the verse of the day in Bible versions', () => {
     await pickVersion(page, 'nasb2020', 2692);
     await waitVerse(page, 'NASB 2020');
     await pickVersion(page, 'ccb', 1392);
-    await waitVerse(page, 'CCB');
+    await waitVerse(page, 'CCBT');
     await pickVersion(page, 'niv', 111);
     await waitVerse(page, 'NIV');
     await openSheet(page);
     assert.deepEqual(await resultsOf(page), [
       ['111', 'NIV', 'New International Version · English', true],
-      ['1392', 'CCB', 'Chinese Contemporary Bible (Traditional) · Mandarin', false],
+      ['1392', 'CCBT', 'Chinese Contemporary Bible (Traditional) · Mandarin', false],
       ['2692', 'NASB 2020', 'New American Standard Bible 2020 · English', false],
     ]);
     assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:bible-recent')), '[111,1392,2692]', 'at most three, newest first');
@@ -2492,7 +2492,7 @@ describe('the verse of the day in Bible versions', () => {
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
-    await waitVerse(page, 'CCB');
+    await waitVerse(page, 'CCBT');
     assert.equal((await verseCard(page)).reference, '約翰福音 3:16');
     // Enter in the box picks the first result
     await page.keyboard.press('Enter');
@@ -2602,7 +2602,7 @@ describe('the verse of the day in Bible versions', () => {
   it('shows the Chinese version with its Biblica notice and link', async () => {
     await seedVotd();
     const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:bible-version', '1392')) });
-    await waitVerse(page, 'CCB');
+    await waitVerse(page, 'CCBT');
     const card = await verseCard(page);
     assert.deepEqual([card.text, card.reference, card.notice, card.link], ['神愛世人，甚至將他的獨生子賜給他們。', '約翰福音 3:16', 'Chinese notice © Biblica, Inc. Biblica', ['Biblica', 'https://www.biblica.com/']]);
     assert.equal(await page.$eval('.verse-card blockquote', (b) => b.lang), 'zh-Hant');
