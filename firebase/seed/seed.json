@@ -27,45 +27,38 @@
   },
   "verses": {
     "2026-10-27": {
+      "passageId": "PSA.46.10",
       "reference": "Psalm 46:10",
-      "text": "Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth.",
-      "translation": "KJV",
       "sample": true
     },
     "2026-10-28": {
+      "passageId": "PRO.3.5",
       "reference": "Proverbs 3:5",
-      "text": "Trust in the LORD with all thine heart; and lean not unto thine own understanding.",
-      "translation": "KJV",
       "sample": true
     },
     "2026-10-29": {
+      "passageId": "PHP.4.13",
       "reference": "Philippians 4:13",
-      "text": "I can do all things through Christ which strengtheneth me.",
-      "translation": "KJV",
       "sample": true
     },
     "2026-10-30": {
+      "passageId": "PSA.23.1",
       "reference": "Psalm 23:1",
-      "text": "The LORD is my shepherd; I shall not want.",
-      "translation": "KJV",
       "sample": true
     },
     "2026-10-31": {
+      "passageId": "JOS.1.9",
       "reference": "Joshua 1:9",
-      "text": "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.",
-      "translation": "KJV",
       "sample": true
     },
     "2026-11-01": {
+      "passageId": "ISA.41.10",
       "reference": "Isaiah 41:10",
-      "text": "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee; yea, I will uphold thee with the right hand of my righteousness.",
-      "translation": "KJV",
       "sample": true
     },
     "2026-11-02": {
+      "passageId": "MAT.11.28",
       "reference": "Matthew 11:28",
-      "text": "Come unto me, all ye that labour and are heavy laden, and I will give you rest.",
-      "translation": "KJV",
       "sample": true
     }
   },

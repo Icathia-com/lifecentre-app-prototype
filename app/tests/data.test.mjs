@@ -56,9 +56,9 @@ describe('reading as the public', () => {
   it('gets the verse scheduled for today', async () => {
     const { value, source } = await publicData().getVerse(TODAY);
     assert.equal(source, 'live');
-    assert.equal(value.reference, 'Psalm 46:10');
+    assert.equal(value.reference, 'Psalm 46:10'); // a scheduled passage: the built-in KJV text for it
     assert.equal(value.translation, 'KJV');
-    assert.equal(value.sample, true);
+    assert.match(value.text, /^Be still, and know that I am God/);
   });
   it('gets a backup verse when none is scheduled', async () => {
     const { value, source } = await publicData().getVerse('2030-01-01');
@@ -154,8 +154,10 @@ describe('staff writes', () => {
   });
   it('schedules a verse by date', async () => {
     const data = staffData();
-    await data.admin.save('verses', STAFF, { date: '2026-12-25', reference: 'Luke 2:11', text: 'For unto you is born this day in the city of David a Saviour, which is Christ the Lord.', translation: 'KJV' }, '2026-12-25');
-    assert.equal((await publicData().getVerse('2026-12-25')).value.reference, 'Luke 2:11');
+    await data.admin.save('verses', STAFF, { date: '2026-12-25', passageId: 'LUK.2.11', reference: 'Luke 2:11' }, '2026-12-25');
+    const saved = (await data.admin.list('verses')).find((v) => v.id === '2026-12-25');
+    assert.deepEqual([saved.passageId, saved.reference, saved.text, saved.translation], ['LUK.2.11', 'Luke 2:11', undefined, undefined]);
+    assert.ok((await publicData().getVerse('2026-12-25')).value.text, 'the built-in verse stands in until the daily job has the text');
   });
   it('creates an event with only the required fields, and leaves the optional ones out', async () => {
     const data = staffData();

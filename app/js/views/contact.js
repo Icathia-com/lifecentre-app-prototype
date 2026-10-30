@@ -3,6 +3,9 @@
 import { h, fill } from '../util.js';
 import { ic } from '../ui.js';
 import { CHURCH, SITES, SITE_IDS, telHref, whatsappHref, mapsHref } from '../sites.js';
+import { data } from '../firebase.js';
+import { dateKey } from '../util.js';
+import { linkFor, noticeFor, versionGroups } from '../bible.js';
 
 const TYPE_ORDER = ['service', 'kids', 'youth'];
 
@@ -29,6 +32,24 @@ function siteTimes(site) {
       h('span', { class: 'ct-time-when' }, `${l.when}, ${l.time}`)))));
 }
 
+// Every Bible version the verse of the day can show, with its notice and publisher link. The notices the publishers supply come with
+// the day's text, so they appear once it has loaded; the Lockman notices are fixed.
+function bibleVersions(votd) {
+  return h('section', { class: 'card ct-bibles', id: 'bible-versions', 'aria-labelledby': 'bv-h' },
+    h('h2', { id: 'bv-h' }, 'About Bible versions'),
+    versionGroups(votd).map((g) => h('div', { class: 'ct-bv-group' },
+      h('h3', {}, g.label),
+      h('ul', {}, g.versions.map((v) => {
+        const entry = votd?.versions?.[String(v.id)];
+        const notice = noticeFor(v, entry);
+        const link = linkFor(v, entry);
+        return h('li', { 'data-version': String(v.id) },
+          h('b', {}, v.abbr), ' ', v.name,
+          notice ? h('p', { class: 'ct-bv-notice' }, notice) : null,
+          link ? h('a', { href: link.href, target: '_blank', rel: 'noopener' }, link.label) : null);
+      })))));
+}
+
 export function render(root) {
   const whatsapp = whatsappHref(CHURCH.whatsapp);
   const phone = telHref(CHURCH.phone);
@@ -45,6 +66,7 @@ export function render(root) {
   h('span', { class: 'ct-row-text' }, h('span', { class: 'ct-row-title' }, 'Plan a visit'), h('span', { class: 'ct-row-sub' }, 'Service times and addresses at all four sites')),
   ic('right', 18, 2));
 
+  const bibleBox = bibleVersions(null);
   const reach = [whatsapp && reachCard(whatsapp, 'chat', 'WhatsApp', CHURCH.whatsapp), phone && reachCard(phone, 'phone', 'Call', CHURCH.phone)].filter(Boolean);
 
   fill(root,
@@ -58,5 +80,7 @@ export function render(root) {
     h('a', { class: 'card ct-map', href: mapsHref(main.address), target: '_blank', rel: 'noopener' },
       h('span', { class: 'ct-map-art', 'aria-hidden': 'true' }, ic('pin', 28, 1.8)),
       h('span', { class: 'ct-find' }, h('span', { class: 'ct-find-label' }, 'Find us'), h('span', { class: 'ct-find-addr' }, main.address)),
-      h('span', { class: 'sr' }, ' Opens in Maps')));
+      h('span', { class: 'sr' }, ' Opens in Maps')),
+    bibleBox);
+  data.getVotd(dateKey()).then(({ value }) => { if (value) bibleBox.replaceChildren(...bibleVersions(value).childNodes); });
 }

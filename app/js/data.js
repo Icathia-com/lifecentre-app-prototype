@@ -4,7 +4,7 @@
 import {
   collection, doc, getDocFromServer, getDocsFromServer, query, where, orderBy, setDoc, deleteDoc, Timestamp, serverTimestamp,
 } from 'firebase/firestore';
-import { backupVerse, sampleAnnouncements, sampleEvents } from './sample-data.js';
+import { BACKUP_VERSES, backupVerse, sampleAnnouncements, sampleEvents } from './sample-data.js';
 import { dateKey } from './util.js';
 
 const ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : undefined);
@@ -13,7 +13,8 @@ const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !=
 // Firestore document -> plain object (times as epoch milliseconds, so it can be saved as JSON).
 const readers = {
   announcements: (id, d) => clean({ id, title: d.title, body: d.body, pinned: !!d.pinned, published: !!d.published, publishedAt: ms(d.publishedAt), expiresAt: ms(d.expiresAt), linkUrl: d.linkUrl, linkLabel: d.linkLabel, sample: d.sample }),
-  verses: (id, d) => clean({ id, reference: d.reference, text: d.text, translation: d.translation, sample: d.sample }),
+  verses: (id, d) => clean({ id, passageId: d.passageId, reference: d.reference, text: d.text, translation: d.translation, sample: d.sample }),
+  votd: (id, d) => clean({ id, date: d.date, passageId: d.passageId, source: d.source, versions: d.versions }),
   events: (id, d) => clean({
     id, title: d.title, start: ms(d.start), end: ms(d.end), allDay: d.allDay, location: d.location, place: d.place, type: d.type, host: d.host,
     description: d.description, cover: d.cover, pinned: d.pinned, registerUrl: d.registerUrl, requireApproval: d.requireApproval, price: d.price,
@@ -26,7 +27,7 @@ const readers = {
 // Form values -> document fields. Fields left empty are left out, which is what the rules expect.
 const writers = {
   announcements: (v) => ({ title: v.title, body: v.body ?? '', pinned: !!v.pinned, published: !!v.published, publishedAt: Timestamp.fromMillis(v.publishedAt), ...clean({ linkUrl: v.linkUrl, linkLabel: v.linkLabel }) }),
-  verses: (v) => ({ reference: v.reference, text: v.text, translation: v.translation }),
+  verses: (v) => ({ passageId: v.passageId, reference: v.reference }),
   events: (v) => ({
     title: v.title, start: Timestamp.fromMillis(v.start), ...(v.end ? { end: Timestamp.fromMillis(v.end) } : {}), location: v.location, type: v.type,
     ...clean({ place: v.place, host: v.host, description: v.description, cover: v.cover, registerUrl: v.registerUrl, price: v.price, capacity: v.capacity }),
@@ -80,8 +81,22 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
     getVerse(key = dateKey(now())) {
       return load(`verse:${key}`, async () => {
         const snap = await getDocFromServer(doc(db, 'verses', key));
-        return snap.exists() ? readers.verses(snap.id, snap.data()) : backupVerse(key);
+        // A verse saved before Bible versions has its own KJV text. A newer one has only a passage, so the built-in KJV verse for the same
+        // reference stands in (or the day's backup verse when there is none).
+        if (!snap.exists()) return backupVerse(key);
+        const saved = readers.verses(snap.id, snap.data());
+        if (saved.text) return saved;
+        const known = BACKUP_VERSES.find((v) => v.reference === saved.reference);
+        return known ? { id: key, translation: 'KJV', ...known } : backupVerse(key);
       }, (v) => v, () => backupVerse(key));
+    },
+
+    // The day's text in each Bible version, written by the daily job. value is null when the day has none.
+    getVotd(key = dateKey(now())) {
+      return load(`votd:${key}`, async () => {
+        const snap = await getDocFromServer(doc(db, 'votd', key));
+        return snap.exists() ? readers.votd(snap.id, snap.data()) : null;
+      }, (v) => v, () => null);
     },
 
     // Published announcements, pinned first, newest first, expired ones left out.

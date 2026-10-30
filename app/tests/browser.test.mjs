@@ -6,7 +6,7 @@ import { before, after, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer-core';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { serve } from '../../scripts/serve.mjs';
 import { dateKey, addDays, dayStart } from '../js/util.js';
 
@@ -1512,9 +1512,10 @@ describe('Staff page', () => {
 
     await page.click('button[aria-pressed]::-p-text(Verses)');
     const tomorrow = addDays(TODAY, 1);
-    await page.waitForSelector('#verses-reference');
-    await page.type('#verses-reference', 'John 3:16');
-    await page.type('#verses-text', 'For God so loved the world, that he gave his only begotten Son.');
+    await page.waitForSelector('#verses-book');
+    await page.select('#verses-book', 'JHN');
+    await page.type('#verses-chapter', '3');
+    await page.type('#verses-verseFrom', '16');
     await page.click('form button[type=submit]');
     await waitText(page, `${tomorrow} · John 3:16`, '.items');
 
@@ -2276,4 +2277,283 @@ describe('Accessibility sweep: menus, sheets, roles and the small phone', () => 
       await context.close();
     });
   }
+});
+
+// ---- Verse of the day in Bible versions ----
+
+const NIV_NOTICE = 'Scripture quotations taken from The Holy Bible, New International Version® NIV® Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by permission. All rights reserved worldwide. NIV is a registered trademark of Biblica, Inc.';
+const NASB_NOTICE = 'Scripture quotations from the New American Standard Bible – NASB 2020 Copyright © 1960, 1971, 1977, 1995, 2020 by The Lockman Foundation. All rights reserved. Used by permission.';
+const votdEntry = (abbr, name, language, text, extra = {}) => ({ abbr, name, language, reference: 'John 3:16', text, footnotes: [], notice: '', publisher: '', link: '', ...extra });
+const VOTD_VERSIONS = {
+  111: votdEntry('NIV', 'New International Version', 'eng', 'For God so loved the world that he gave his one and only Son.', { notice: NIV_NOTICE, publisher: 'Biblica', link: 'https://www.biblica.com', footnotes: ['Or *his only begotten Son*'] }),
+  2692: votdEntry('NASB 2020', 'New American Standard Bible 2020', 'eng', 'For God so loved the world, that He gave His only Son.', { notice: NASB_NOTICE, publisher: 'The Lockman Foundation', link: 'https://www.lockman.org' }),
+  206: votdEntry('WEB', 'World English Bible', 'eng', 'For God so loved the world, that he gave his only born Son.', { publisher: 'worldenglishbible.org', link: 'https://worldenglishbible.org' }),
+  2730: votdEntry('TCV', 'Tamil Contemporary Version', 'tam', 'தேவன் உலகத்தின்மீது அன்பாயிருந்தார்.', { reference: 'யோவான் 3:16', notice: 'Tamil notice © Biblica, Inc. TCV is a trademark of Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
+  1392: votdEntry('CCB', 'Chinese Contemporary Bible (Traditional)', 'zho', '神愛世人，甚至將他的獨生子賜給他們。', { reference: '約翰福音 3:16', notice: 'Chinese notice © Biblica, Inc.', publisher: 'Biblica', link: 'https://www.biblica.com' }),
+};
+// A document as saved in the emulator (withSecurityRulesDisabled does not hand back what its callback returns).
+async function readDoc(col, id) {
+  let snap;
+  await env.withSecurityRulesDisabled(async (ctx) => { snap = await getDoc(doc(ctx.firestore(), col, id)); });
+  return snap.exists() ? snap.data() : undefined;
+}
+async function seedVotd(versions = VOTD_VERSIONS, date = TODAY) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'votd', date), { date, passageId: 'JHN.3.16', source: 'staff', versions });
+  });
+}
+const verseCard = (page) => page.$eval('.verse-card', (c) => ({
+  chip: c.querySelector('.verse-chip .chip').textContent.trim(),
+  text: c.querySelector('blockquote').textContent,
+  reference: c.querySelector('cite').textContent,
+  notice: c.querySelector('.verse-notice')?.textContent ?? '',
+  link: c.querySelector('.verse-notice a') ? [c.querySelector('.verse-notice a').textContent, c.querySelector('.verse-notice a').href] : null,
+  notes: [...c.querySelectorAll('.verse-notes li')].map((li) => li.textContent),
+}));
+const waitVerse = (page, chip) => page.waitForFunction((x) => document.querySelector('.verse-card .verse-chip .chip')?.textContent.trim() === x, { timeout: 15000 }, chip);
+
+describe('the verse of the day in Bible versions', () => {
+  it('shows NIV at first: the text as supplied, the reference once, the notice with its Biblica link, and the footnotes', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    assert.deepEqual(await verseCard(page), {
+      chip: 'NIV', text: 'For God so loved the world that he gave his one and only Son.', reference: 'John 3:16',
+      notice: `${NIV_NOTICE} Biblica`, link: ['Biblica', 'https://www.biblica.com/'], notes: ['Or *his only begotten Son*'],
+    });
+    assert.equal((await text(page, '.verse-card')).match(/John 3:16/g).length, 1, 'the reference appears once');
+    assert.doesNotMatch(await text(page, '.verse-card'), /·/, 'no "reference · translation" line');
+    assert.equal(await page.$('.verse-card .badge'), null);
+    const chip = await (await page.$('.verse-chip')).boundingBox();
+    assert.ok(chip.height >= 44, `the chip is ${chip.height}px tall`);
+    assert.doesNotMatch(await page.evaluate(() => document.body.innerHTML), /youversion/i);
+    await context.close();
+  });
+
+  it('opens a sheet listing the versions by language, current one marked, and swaps the verse at once, remembering the choice', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    await page.click('.verse-chip');
+    await page.waitForSelector('[role=dialog] .vs-item');
+    assert.equal(await text(page, '[role=dialog] h2'), 'Bible version');
+    assert.deepEqual(await page.$$eval('[role=dialog] .vs-group h3', (els) => els.map((e) => e.textContent)), ['English', 'Tamil', 'Telugu', 'Malayalam', 'Thai', 'Mandarin']);
+    assert.deepEqual(await page.$$eval('[role=dialog] .vs-group', (els) => els.map((g) => [...g.querySelectorAll('.vs-item b')].map((b) => b.textContent))), [
+      ['NIV', 'NASB 2020', 'NASB 1995', 'AMP', 'BSB', 'WEB', 'ASV'], ['TCV', 'IRV'], ['IRV'], ['MCV', 'SVP', 'IRV'], ['TNCV', 'THAI KJV'], ['CCB', 'CCB', 'CSB'],
+    ]);
+    assert.deepEqual(await page.$$eval('[role=dialog] .vs-item[aria-current=true]', (els) => els.map((e) => e.dataset.version)), ['111']);
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.version), '111', 'focus starts on the current version');
+    await page.click('.vs-item[data-version="2730"]');
+    await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
+    assert.deepEqual((await verseCard(page)).chip, 'TCV');
+    assert.equal((await verseCard(page)).text, 'தேவன் உலகத்தின்மீது அன்பாயிருந்தார்.');
+    assert.equal((await verseCard(page)).reference, 'யோவான் 3:16');
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'verse-chip', 'focus returns to the chip');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:bible-version')), '2730');
+    assert.equal(await page.evaluate(() => localStorage.getItem('lc:v1:session')), null, 'no sign-in was needed');
+    await page.reload();
+    await waitVerse(page, 'TCV');
+    assert.equal((await verseCard(page)).reference, 'யோவான் 3:16');
+    await page.click('.verse-chip');
+    await page.waitForSelector('.vs-item[aria-current=true]');
+    assert.deepEqual(await page.$$eval('.vs-item[aria-current=true]', (els) => els.map((e) => e.dataset.version)), ['2730']);
+    await shot(page, 'home-verse-tamil');
+    await context.close();
+  });
+
+  it('shows the Chinese version with its Biblica notice and link', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:bible-version', '1392')) });
+    await waitVerse(page, 'CCB');
+    const card = await verseCard(page);
+    assert.deepEqual([card.text, card.reference, card.notice, card.link], ['神愛世人，甚至將他的獨生子賜給他們。', '約翰福音 3:16', 'Chinese notice © Biblica, Inc. Biblica', ['Biblica', 'https://www.biblica.com/']]);
+    assert.equal(await page.$eval('.verse-card blockquote', (b) => b.lang), 'zh-Hant');
+    await context.close();
+  });
+
+  it('shows Lockman versions with their notice and a link to Lockman, and other versions without a notice', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:bible-version', '2692')) });
+    await waitVerse(page, 'NASB 2020');
+    const card = await verseCard(page);
+    assert.equal(card.notice, `${NASB_NOTICE} The Lockman Foundation`);
+    assert.deepEqual(card.link, ['The Lockman Foundation', 'https://www.lockman.org/']);
+    await page.click('.verse-chip');
+    await page.click('.vs-item[data-version="206"]');
+    await waitVerse(page, 'WEB');
+    const web = await verseCard(page);
+    assert.equal(web.notice, 'worldenglishbible.org', 'only the publisher link is shown: no notice is invented for a version that supplies none');
+    assert.deepEqual(web.link, ['worldenglishbible.org', 'https://worldenglishbible.org/']);
+    await context.close();
+  });
+
+  it('falls back to the built-in KJV verse, labelled KJV, when the day has no text or lacks the chosen version', async () => {
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'KJV'); // nothing is saved in votd for today
+    assert.deepEqual(await verseCard(page), { chip: 'KJV', text: 'The LORD is my shepherd; I shall not want.', reference: 'Psalm 23:1', notice: '', link: null, notes: [] });
+    await context.close();
+
+    await seedVotd({ 206: VOTD_VERSIONS[206] }); // today has WEB only
+    const second = await open('#/');
+    await waitVerse(second.page, 'KJV'); // NIV, the default, is missing
+    assert.equal((await verseCard(second.page)).text, 'The LORD is my shepherd; I shall not want.');
+    await second.page.click('.verse-chip');
+    await second.page.click('.vs-item[data-version="206"]');
+    await waitVerse(second.page, 'WEB');
+    assert.equal((await verseCard(second.page)).reference, 'John 3:16');
+    await second.page.click('.verse-chip');
+    await second.page.click('.vs-item[data-version="1392"]'); // not in today's text
+    await waitVerse(second.page, 'KJV');
+    assert.equal(await second.page.evaluate(() => localStorage.getItem('lc:v1:bible-version')), '1392', 'the choice is kept for the days that have it');
+    await second.context.close();
+  });
+
+  it('falls back when a Biblica text arrives without its notice', async () => {
+    await seedVotd({ 111: { ...VOTD_VERSIONS[111], notice: '' } });
+    const { page, context } = await open('#/');
+    await waitVerse(page, 'KJV');
+    assert.equal((await verseCard(page)).notice, '');
+    await context.close();
+  });
+
+  it('has a sheet that scrolls by keyboard and by mouse drag, closes with Escape, and passes the accessibility check', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/', { width: 390, height: 520 });
+    await waitVerse(page, 'NIV');
+    await page.click('.verse-chip');
+    await page.waitForSelector('.vs-list');
+    assert.ok(await page.$eval('.vs-list', (l) => l.scrollHeight > l.clientHeight + 50), 'the list is taller than the sheet');
+    await checkAccessibility(page, 'Bible version sheet');
+    // keyboard: focus the list and page down
+    await page.focus('.vs-list');
+    await page.keyboard.press('PageDown');
+    await page.waitForFunction(() => document.querySelector('.vs-list').scrollTop > 50);
+    await page.keyboard.press('Home');
+    await page.waitForFunction(() => document.querySelector('.vs-list').scrollTop === 0);
+    // tabbing reaches every version and stays inside the sheet
+    for (let i = 0; i < 30; i++) await page.keyboard.press('Tab');
+    assert.ok(await page.evaluate(() => !!document.activeElement.closest('[role=dialog]')), 'focus stays in the sheet');
+    // mouse drag
+    await page.$eval('.vs-list', (l) => { l.scrollTop = 0; });
+    const b2 = await (await page.$('.vs-list')).boundingBox();
+    await page.mouse.move(b2.x + 200, b2.y + b2.height - 20);
+    await page.mouse.down();
+    await page.mouse.move(b2.x + 200, b2.y + 20, { steps: 8 });
+    await page.mouse.up();
+    assert.ok(await page.$eval('.vs-list', (l) => l.scrollTop) > 50, 'dragging the list with the mouse scrolls it');
+    // every control is at least 44px tall
+    assert.deepEqual(await page.$$eval('.vs-item', (els) => els.filter((e) => e.getBoundingClientRect().height < 44).length), 0);
+    assert.doesNotMatch(await text(page, '[role=dialog]'), /tap|swipe|click|drag|scroll/i, 'no how-to hint text');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'verse-chip');
+    await context.close();
+  });
+
+  it('sets a long passage smaller so the card stays readable, and keeps its line breaks', async () => {
+    const long = Array.from({ length: 25 }, (_, i) => `${i + 16} For God so loved the world, that he gave his only Son.`).join('\n');
+    await seedVotd({ 206: { ...VOTD_VERSIONS[206], text: long } });
+    const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument(() => localStorage.setItem('lc:v1:bible-version', '206')) });
+    await waitVerse(page, 'WEB');
+    const size = await page.$eval('.verse-card blockquote', (b) => ({ font: parseFloat(getComputedStyle(b).fontSize), cls: b.className, lines: b.innerText.split('\n').length, overflow: b.scrollWidth > b.clientWidth }));
+    assert.deepEqual([size.cls, size.font < 28, size.lines >= 25, size.overflow], ['xlong', true, true, false]);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'no sideways scroll');
+    await checkAccessibility(page, 'Home with a long passage');
+    await context.close();
+  });
+  it('has an accessible Home card in every language', async () => {
+    await seedVotd();
+    for (const id of ['111', '2730', '1392']) {
+      const { page, context } = await open('#/', { setup: (p) => p.evaluateOnNewDocument((v) => localStorage.setItem('lc:v1:bible-version', v), id) });
+      await page.waitForSelector('.verse-notice');
+      await checkAccessibility(page, `Home verse card ${id}`);
+      await context.close();
+    }
+  });
+
+  it('lists every version with its notice and publisher link on the Contact page', async () => {
+    await seedVotd();
+    const { page, context } = await open('#/contact');
+    await page.waitForFunction(() => document.querySelectorAll('#bible-versions li .ct-bv-notice').length >= 5, { timeout: 15000 });
+    assert.equal(await text(page, '#bible-versions h2'), 'About Bible versions');
+    assert.equal((await page.$$('#bible-versions li')).length, 18);
+    const row = (id) => page.$eval(`#bible-versions li[data-version="${id}"]`, (li) => ({ notice: li.querySelector('.ct-bv-notice')?.textContent ?? '', link: li.querySelector('a') ? [li.querySelector('a').textContent, li.querySelector('a').href] : null }));
+    assert.deepEqual(await row(111), { notice: NIV_NOTICE, link: ['Biblica', 'https://www.biblica.com/'] });
+    assert.deepEqual(await row(2692), { notice: NASB_NOTICE, link: ['The Lockman Foundation', 'https://www.lockman.org/'] });
+    assert.match((await row(100)).notice, /NASB 1995 Copyright © 1960, 1971, 1977, 1995 by The Lockman Foundation/); // the fixed Lockman notice, even when the day has no text for it
+    assert.match((await row(1588)).notice, /^Scripture quotations from the Amplified® Bible – AMP Copyright © 2015/);
+    assert.deepEqual((await row(1588)).link, ['The Lockman Foundation', 'https://www.lockman.org/']);
+    for (const id of [111, 2730, 2431, 179, 36, 1392]) assert.match((await row(id)).link[0], /Biblica/, `version ${id}`);
+    assert.equal(await page.$$eval('#bible-versions h3', (els) => els.map((e) => e.textContent).join(',')), 'English,Tamil,Telugu,Malayalam,Thai,Mandarin');
+    await checkAccessibility(page, 'Contact with Bible versions');
+    await context.close();
+  });
+
+  it('lets staff schedule a passage from a book, chapter and verses, and lists only the date and reference', async () => {
+    const { page, context } = await open('#/staff');
+    await waitText(page, 'Sign in with Google');
+    await signIn(page, STAFF);
+    await waitText(page, `Signed in as ${STAFF}`);
+    await page.click('button[aria-pressed]::-p-text(Verses)');
+    await page.waitForSelector('#verses-book');
+    assert.deepEqual(await page.$$eval('form .field label', (els) => els.map((e) => e.textContent)), ['Date', 'Book', 'Chapter', 'Verse from', 'Verse to (optional)']);
+    const books = await page.$$eval('#verses-book option', (els) => els.map((e) => e.textContent));
+    assert.equal(books.length, 66);
+    assert.deepEqual([books[0], books[38], books[39], books[65]], ['Genesis', 'Malachi', 'Matthew', 'Revelation']);
+    assert.equal(await page.$('#verses-reference'), null, 'the old Reference box is gone');
+    assert.equal(await page.$('#verses-text'), null, 'the old Verse box is gone');
+    assert.equal(await page.$('#verses-translation'), null, 'the old Translation menu is gone');
+    await page.select('#verses-book', 'JHN');
+    assert.equal(await page.$eval('#verses-chapter', (i) => i.max), '21', 'the chapter limit follows the book');
+    await page.type('#verses-chapter', '3');
+    await page.type('#verses-verseFrom', '16');
+    await page.type('#verses-verseTo', '17');
+    await shot(page, 'staff-verse-form');
+    await page.click('form button[type=submit]');
+    const tomorrow = addDays(TODAY, 1);
+    await waitText(page, `${tomorrow} · John 3:16-17`, '.items');
+    assert.equal(await page.$eval('.items li:first-child .meta', (m) => m.textContent), '', 'the list shows the date and reference only');
+    const saved = await readDoc('verses', tomorrow);
+    assert.deepEqual([saved.passageId, saved.reference, saved.text, saved.translation, saved.updatedBy], ['JHN.3.16-17', 'John 3:16-17', undefined, undefined, STAFF]);
+    await context.close();
+  });
+
+  it('refuses a passage of more than 25 verses, and accepts exactly 25', async () => {
+    const { page, context } = await open('#/staff');
+    await waitText(page, 'Sign in with Google');
+    await signIn(page, STAFF);
+    await waitText(page, `Signed in as ${STAFF}`);
+    await page.click('button[aria-pressed]::-p-text(Verses)');
+    await page.waitForSelector('#verses-book');
+    await page.select('#verses-book', 'PSA');
+    await page.type('#verses-chapter', '119');
+    await page.type('#verses-verseFrom', '1');
+    await page.type('#verses-verseTo', '26');
+    await page.click('form button[type=submit]');
+    await waitText(page, 'Choose 25 verses or fewer.', '[role=status]');
+    const tomorrow = addDays(TODAY, 1);
+    assert.equal((await readDoc('verses', tomorrow)) !== undefined, false);
+    await page.$eval('#verses-verseTo', (i) => { i.value = ''; });
+    await page.type('#verses-verseTo', '25');
+    await page.click('form button[type=submit]');
+    await waitText(page, `${tomorrow} · Psalm 119:1-25`, '.items');
+    await context.close();
+  });
+
+  it('opens an old-style scheduled verse as a book, chapter and verse', async () => {
+    const { page, context } = await open('#/staff');
+    await waitText(page, 'Sign in with Google');
+    await signIn(page, STAFF);
+    await waitText(page, `Signed in as ${STAFF}`);
+    await page.click('button[aria-pressed]::-p-text(Verses)');
+    await waitText(page, `${TODAY} · Psalm 23:1`, '.items');
+    await page.click('button[aria-label="Edit ' + TODAY + ' · Psalm 23:1"]');
+    await page.waitForSelector('#verses-book');
+    assert.deepEqual(await page.evaluate(() => ['verses-book', 'verses-chapter', 'verses-verseFrom', 'verses-verseTo'].map((id) => document.getElementById(id).value)), ['PSA', '23', '1', '']);
+    await page.click('form button[type=submit]');
+    await waitText(page, 'Saved.', '[role=status]');
+    const saved = await readDoc('verses', TODAY);
+    assert.deepEqual([saved.passageId, saved.reference], ['PSA.23.1', 'Psalm 23:1']);
+    await context.close();
+  });
 });

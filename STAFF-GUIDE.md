@@ -40,12 +40,13 @@ To change a notice, tap it in the list, edit it, and tap **Save**. To remove it,
 
 ## Add a verse
 
-The verse shows on the Home screen on the day you pick. If no verse is set for a day, the app shows a backup verse.
+You choose the passage. The app shows its text on the Home screen on the day you pick, in the Bible version each person has chosen (NIV to begin with, or the version chosen on that phone). If no passage is set for a day, the app uses the day's regular verse.
 
 1. Sign in, then tap **Verses**.
-2. Pick the **Date**, then type the **Reference** (for example "Psalm 23:1") and the **Verse**.
-3. Choose **KJV** or **WEB**. These are the two translations we can show for free.
-4. Tap **Save**.
+2. Pick the **Date**, the **Book**, the **Chapter** and **Verse from**. For more than one verse, also fill in **Verse to**.
+3. Tap **Save**.
+
+A passage can be up to 25 verses. The list shows each verse by its date and reference only; the text is filled in for you, usually within the hour, and only for today and tomorrow.
 
 To change a verse, tap it in the list, edit it, and tap **Save**. You cannot change its date; delete it and add a new one instead.
 

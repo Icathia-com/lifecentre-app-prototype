@@ -596,3 +596,24 @@ body[data-route='watch'] .screen { padding: 0; gap: 0; overflow: hidden; color: 
 .bs-badge.is-off { background: rgba(11, 18, 32, 0.06); color: #4A5468; } .bs-badge.is-off .bs-dot { background: #8E98AA; }
 .bs-dot { width: 7px; height: 7px; border-radius: 50%; }
 .bs-rebook-btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 22px; border: 0; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+
+/* ---- Bible version sheet (Home verse card) ---- */
+.version-sheet .sheet { max-height: 82%; gap: 8px; }
+.vs-list { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; padding-bottom: 4px; overscroll-behavior: contain; }
+.vs-list.is-dragging { cursor: grabbing; user-select: none; }
+.vs-group h3 { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #3A4558; margin: 0 0 6px 4px; }
+.vs-group ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.vs-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 8px 14px; border: 0; border-radius: 18px; background: rgba(11, 18, 32, 0.04); color: var(--ink); text-align: left; font: inherit; cursor: pointer; }
+.vs-item[aria-current='true'] { background: rgba(53, 88, 200, 0.12); box-shadow: inset 0 0 0 2px #3558C8; }
+.vs-text { display: flex; flex-direction: column; gap: 1px; }
+.vs-text b { font-size: 15px; font-weight: 700; }
+.vs-text small { font-size: 13px; color: #3A4558; }
+.vs-check { display: flex; color: #3558C8; }
+
+/* ---- Contact: About Bible versions ---- */
+.ct-bibles { gap: 12px; }
+.ct-bibles h2 { font-size: 17px; font-weight: 700; }
+.ct-bv-group h3 { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #3A4558; margin: 0 0 6px; }
+.ct-bv-group ul { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.ct-bv-notice { margin: 4px 0 2px; font-size: 12px; line-height: 1.45; color: #3A4558; }
+.ct-bv-group li a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; box-sizing: border-box; font-size: 13px; color: #1F3F9E; text-decoration: underline; margin: -4px 0; }

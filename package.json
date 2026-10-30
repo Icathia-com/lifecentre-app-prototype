@@ -9,7 +9,7 @@
     "url": "git+https://github.com/Icathia-com/lifecentre-app-prototype.git"
   },
   "scripts": {
-    "test": "firebase emulators:exec --only firestore,auth --project lifecentre-app \"node --test --test-concurrency=1 firebase/tests/rules.test.mjs app/tests/util.test.mjs app/tests/data.test.mjs app/tests/planner.test.mjs app/tests/sites.test.mjs app/tests/youtube.test.mjs app/tests/pwa.test.mjs app/tests/twa.test.mjs\"",
+    "test": "firebase emulators:exec --only firestore,auth --project lifecentre-app \"node --test --test-concurrency=1 firebase/tests/rules.test.mjs app/tests/util.test.mjs app/tests/data.test.mjs app/tests/planner.test.mjs app/tests/sites.test.mjs app/tests/bible.test.mjs app/tests/secrets.test.mjs app/tests/youtube.test.mjs app/tests/pwa.test.mjs app/tests/twa.test.mjs\"",
     "test:browser": "firebase emulators:exec --only firestore,auth --project lifecentre-app \"node --test --test-concurrency=1 app/tests/browser.test.mjs\"",
     "emulators": "firebase emulators:start --project lifecentre-app",
     "seed:emulator": "node firebase/seed/seed-emulator.mjs",

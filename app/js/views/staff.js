@@ -4,6 +4,7 @@
 import { data, getAuthTools } from '../firebase.js';
 import { h, dateKey, addDays, formatDay, msToSgInput, sgInputToMs } from '../util.js';
 import { TYPES, siteName } from '../sites.js';
+import { BOOKS, buildPassage, parsePassageId, parseReference } from '../bible.js';
 
 // Admins and staff post content; leaders are on the staff list but cannot (the security rules enforce this too).
 const POSTERS = ['admin', 'staff'];
@@ -27,13 +28,23 @@ const PANELS = {
     label: 'Verses', noun: 'verse', idField: 'date', roles: POSTERS,
     fields: [
       { name: 'date', label: 'Date', type: 'date', required: true, lockWhenEditing: true },
-      { name: 'reference', label: 'Reference', type: 'text', required: true, max: 60 },
-      { name: 'text', label: 'Verse', type: 'textarea', required: true, max: 1000 },
-      { name: 'translation', label: 'Translation (public domain)', type: 'select', options: ['KJV', 'WEB'] },
+      { name: 'book', label: 'Book', type: 'select', required: true, options: BOOKS.map((b) => ({ value: b.code, label: b.name })) },
+      { name: 'chapter', label: 'Chapter', type: 'number', required: true, min: 1, max: 150, step: 1 },
+      { name: 'verseFrom', label: 'Verse from', type: 'number', required: true, min: 1, max: 176, step: 1 },
+      { name: 'verseTo', label: 'Verse to (optional)', type: 'number', min: 2, max: 176, step: 1 },
     ],
-    blank: () => ({ date: addDays(dateKey(), 1), translation: 'KJV' }),
-    fromItem: (v) => ({ ...v, date: v.id }),
-    show: (v) => [`${v.id} · ${v.reference}`, [v.translation]],
+    blank: () => ({ date: addDays(dateKey(), 1), book: 'GEN' }),
+    // A saved verse is a passage; one saved before Bible versions has only its typed reference, which is read back where it can be.
+    fromItem: (v) => {
+      const p = parsePassageId(v.passageId) ?? parsePassageId(parseReference(v.reference)?.passageId);
+      return { date: v.id, ...(p ? { book: p.code, chapter: p.chapter, verseFrom: p.from, verseTo: p.to ?? undefined } : { book: 'GEN' }) };
+    },
+    // The form's choices become the saved passage (or a message). The text for each Bible version comes from the daily job.
+    prepare: (v) => {
+      const built = buildPassage(v.book, v.chapter, v.verseFrom, v.verseTo);
+      return built.ok ? { values: { date: v.date, passageId: built.passageId, reference: built.reference } } : { error: built.error };
+    },
+    show: (v) => [`${v.id} · ${v.reference}`, []],
   },
   events: {
     label: 'Events', noun: 'event', roles: POSTERS, external: true, // created and edited in the app (#/events/new)
@@ -63,10 +74,15 @@ function fieldEl(f, value, id, editing) {
   const common = { id, name: f.name, required: f.required, maxlength: f.max };
   let input;
   if (f.type === 'textarea') input = h('textarea', { ...common, rows: 5 }, value ?? '');
-  else if (f.type === 'select') input = h('select', common, f.options.map((o) => h('option', { value: o, selected: o === value }, o)));
+  else if (f.type === 'select') {
+    input = h('select', common, f.options.map((o) => {
+      const [v, label] = typeof o === 'string' ? [o, o] : [o.value, o.label];
+      return h('option', { value: v, selected: v === value }, label);
+    }));
+  }
   else {
     input = h('input', {
-      ...common, type: f.type === 'datetime' ? 'datetime-local' : f.type, pattern: f.pattern,
+      ...common, type: f.type === 'datetime' ? 'datetime-local' : f.type, pattern: f.pattern, min: f.min, max: f.max, step: f.step,
       value: f.type === 'datetime' ? (value ? msToSgInput(value) : '') : (value ?? ''),
       readonly: f.lockWhenEditing && editing,
     });
@@ -108,13 +124,23 @@ function panel(col, spec, user) {
         h('button', { class: 'btn primary', type: 'submit' }, 'Save'),
         editing ? h('button', { class: 'btn', type: 'button', onclick: () => { editing = null; say(''); drawForm(); } }, 'Cancel') : null));
     form.addEventListener('submit', onSubmit);
+    if (col === 'verses') { // a chapter can't be past the book's last
+      const syncChapters = () => { form.elements.chapter.max = BOOKS.find((b) => b.code === form.elements.book.value)?.chapters ?? 150; };
+      form.elements.book.addEventListener('change', syncChapters);
+      syncChapters();
+    }
     formBox.replaceChildren(form);
   }
 
   async function onSubmit(e) {
     e.preventDefault();
-    const values = readValues(e.currentTarget, spec.fields);
+    let values = readValues(e.currentTarget, spec.fields);
     if (values.end && values.end < values.start) return say('The end must be after the start.', true);
+    if (spec.prepare) {
+      const prepared = spec.prepare(values);
+      if (prepared.error) return say(prepared.error, true);
+      values = prepared.values;
+    }
     const id = spec.idField ? String(values[spec.idField]).toLowerCase() : editing?.id;
     try {
       await data.admin.save(col, user.email, values, id);

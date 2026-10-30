@@ -9,6 +9,7 @@ import { loadTasks, loadDailyTicks, itemsFor, progress, EVENT_WINDOW } from '../
 import { myBookings } from '../my-bookings.js';
 import { onBookingSession } from '../booking-api.js';
 import { openTaskSheet } from '../task-sheet.js';
+import { createVerseCard } from '../verse-card.js';
 
 const COLW = 100;    // every day column is 100px wide, so a wider screen simply shows more days
 const TOTAL = 553;   // 26 weeks back and the year ahead, drawn only a few columns at a time
@@ -27,14 +28,6 @@ const PERSON = '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 2
 
 const sampleBadge = (item) => (item.sample ? h('span', { class: 'badge' }, 'Sample') : null);
 
-function verseCard(verse) {
-  return h('section', { class: 'soft', 'aria-labelledby': 'verse-h' },
-    h('div', { class: 'verse-card' },
-      h('div', { class: 'verse-top' }, h('h2', { id: 'verse-h' }, 'Verse of the day'), h('span', { class: 'chip' }, verse.translation)),
-      h('blockquote', {}, `“${verse.text}”`),
-      h('cite', {}, `${verse.reference} · ${verse.translation}`),
-      sampleBadge(verse)));
-}
 
 // The pinned event (the conference), shown as the "Coming up" banner.
 function banner(ev) {
@@ -314,8 +307,9 @@ export function render(root) {
     if (states.length) note.textContent = states.includes('fallback') ? "You're offline. Showing sample content." : "You're offline. Showing what was saved on this phone.";
   };
 
-  data.getVerse(today).then(({ value, source }) => {
-    verseBox.replaceChildren(verseCard(value));
+  // The day's text in each Bible version (written by the daily job) and the app's own KJV verse, which stands in when it is missing.
+  Promise.all([data.getVerse(today), data.getVotd(today)]).then(([{ value, source }, votd]) => {
+    verseBox.replaceChildren(createVerseCard({ builtIn: value, votd: votd.value }));
     verseBox.removeAttribute('aria-busy');
     noteSource('verse', source === 'fallback' ? 'live' : source); // a backup verse is real content, not sample
   });

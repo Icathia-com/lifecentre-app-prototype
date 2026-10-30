@@ -40,7 +40,7 @@ const anon = () => env.unauthenticatedContext().firestore();
 const user = (email, verified = true) => env.authenticatedContext(`u-${email}`, { email, email_verified: verified }).firestore();
 
 const announcement = (email, extra = {}) => ({ title: 'New', body: 'Body', pinned: false, published: true, publishedAt: T('2026-10-28T00:00:00Z'), updatedBy: email, ...extra });
-const verse = (email, extra = {}) => ({ reference: 'John 3:16', text: 'For God so loved the world…', translation: 'WEB', updatedBy: email, ...extra });
+const verse = (email, extra = {}) => ({ passageId: 'JHN.3.16', reference: 'John 3:16', updatedBy: email, ...extra });
 const event = (email, extra = {}) => ({ title: 'Prayer', start: T('2026-11-04T11:30:00Z'), location: 'yishun', type: 'prayer', published: true, updatedBy: email, ...extra });
 
 describe('public (signed out)', () => {
@@ -107,13 +107,38 @@ describe('staff', () => {
     const { title, ...noTitle } = announcement(STAFF);
     await assertFails(setDoc(doc(db, 'announcements', 'a'), noTitle));
   });
-  it('can schedule a verse for a date, only with a date id and KJV or WEB', async () => {
+  it('can schedule a verse for a date, as a passage with a date id', async () => {
     const db = user(STAFF);
     await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-01'), verse(STAFF)));
-    await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-02'), verse(STAFF, { translation: 'KJV', sample: true })));
+    await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-02'), verse(STAFF, { passageId: 'PSA.23.1-6', reference: 'Psalm 23:1-6', sample: true })));
+    await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-04'), verse(STAFF, { passageId: '1JN.1.9', reference: '1 John 1:9' })));
     await assertFails(setDoc(doc(db, 'verses', 'tomorrow'), verse(STAFF)));
-    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { translation: 'NIV' })));
-    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { text: '' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { passageId: '' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { passageId: 'John 3:16' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-03'), verse(STAFF, { reference: '' })));
+  });
+  it('limits a scheduled verse to 25 verses', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(setDoc(doc(db, 'verses', '2026-11-05'), verse(STAFF, { passageId: 'PSA.119.1-25', reference: 'Psalm 119:1-25' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-06'), verse(STAFF, { passageId: 'PSA.119.1-26', reference: 'Psalm 119:1-26' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-06'), verse(STAFF, { passageId: 'PSA.119.1-176', reference: 'Psalm 119:1-176' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-06'), verse(STAFF, { passageId: 'PSA.119.30-20', reference: 'Psalm 119:30-20' })));
+  });
+  it('cannot write the old text fields: the text comes from the daily job', async () => {
+    const db = user(STAFF);
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-07'), verse(STAFF, { text: 'For God so loved the world…', translation: 'KJV' })));
+    await assertFails(setDoc(doc(db, 'verses', '2026-11-07'), verse(STAFF, { translation: 'NIV' })));
+  });
+  it('the Bible text for a day (votd) is readable by anyone and writable by no one', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'votd', '2026-10-27'), { date: '2026-10-27', passageId: 'JHN.3.16', source: 'staff', versions: {} });
+    });
+    await assertSucceeds(getDoc(doc(anon(), 'votd', '2026-10-27')));
+    for (const db of [anon(), user(STAFF), user(ADMIN)]) {
+      await assertFails(setDoc(doc(db, 'votd', '2026-10-28'), { date: '2026-10-28', passageId: 'JHN.3.16', versions: {} }));
+      await assertFails(setDoc(doc(db, 'votd', '2026-10-27'), { date: '2026-10-27', passageId: 'JHN.3.17', versions: {} }));
+      await assertFails(deleteDoc(doc(db, 'votd', '2026-10-27')));
+    }
   });
   it('can post an event, and the end cannot be before the start', async () => {
     const db = user(STAFF);
