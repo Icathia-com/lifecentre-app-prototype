@@ -159,7 +159,7 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
       async save(col, email, values, id) {
         const ref = id ? doc(db, col, id) : doc(collection(db, col));
         const created = (col === 'events' || col === 'videos') && !id && !values.createdAt ? { createdAt: serverTimestamp() } : {};
-        await setDoc(ref, { ...writers[col](values), ...created, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() });
+        await setDoc(ref, clean({ ...writers[col](values), ...created, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() })); // setDoc refuses undefined, so a missing value is simply not written
         return ref.id;
       },
       remove: (col, id) => deleteDoc(doc(db, col, id)),

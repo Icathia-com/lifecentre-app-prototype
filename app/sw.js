@@ -2,7 +2,7 @@
 // It never touches data. Firestore, sign-in, the booking system, YouTube and anything else not listed below are left to the browser.
 // Files are fetched from the network first (so a new version shows up straight away) and fall back to the saved copy.
 // When the shell changes, raise VERSION: old copies are deleted when the new worker starts.
-const VERSION = 'v5';
+const VERSION = 'v6';
 const CACHE = `lc-shell-${VERSION}`;
 
 // Every file the app needs to open. app/tests/pwa.test.mjs fails if a file is missing from this list.
@@ -41,10 +41,11 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
-async function networkFirst(request, fallbackKey) {
+// Same-site files are revalidated with the server every time (a cheap check when nothing changed): the browser's own copy can be up to ten minutes old, which let a new screen run beside an old script after an update.
+async function networkFirst(request, fallbackKey, revalidate = false) {
   const cache = await caches.open(CACHE);
   try {
-    const response = await Promise.race([fetch(request), new Promise((_, reject) => setTimeout(() => reject(new Error('slow')), 5000))]);
+    const response = await Promise.race([fetch(request, revalidate ? { cache: 'no-cache' } : undefined), new Promise((_, reject) => setTimeout(() => reject(new Error('slow')), 5000))]);
     if (response.ok || response.type === 'opaque') cache.put(request, response.clone());
     return response;
   } catch (error) {
@@ -61,7 +62,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin === self.location.origin) {
     // Only files inside the app folder: nothing else on this site is kept.
     if (!url.pathname.startsWith(new URL('./', self.location).pathname)) return;
-    event.respondWith(networkFirst(request, request.mode === 'navigate' ? 'index.html' : undefined));
+    event.respondWith(networkFirst(request, request.mode === 'navigate' ? 'index.html' : undefined, true));
   } else if (SHELL_HOSTS.some((re) => re.test(request.url))) {
     event.respondWith(networkFirst(request));
   }

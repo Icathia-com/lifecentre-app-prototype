@@ -2223,6 +2223,12 @@ describe('Installable app and offline use', () => {
     }
     assert.ok(saved.some((u) => /gstatic\.com\/firebasejs\/.*firebase-firestore\.js$/.test(u)), 'the Firebase code is saved');
     assert.deepEqual(saved.filter((u) => /firestore\.googleapis|127\.0\.0\.1|identitytoolkit|script\.google|youtube\.com|youtube-nocookie|ytimg/.test(u)), [], 'no data or sign-in or booking requests are saved');
+    // a file that changed on the server must never be served from the browser's own copy beside newer ones: the worker asks the server every time
+    const asked = [];
+    own.on('request', (req) => asked.push([req.url, req.headers['cache-control'], req.headers['if-none-match'] || req.headers['if-modified-since']]));
+    await page.evaluate(() => fetch('/app/js/data.js').then((r) => r.text()));
+    const data = asked.filter(([u]) => u.endsWith('/app/js/data.js'));
+    assert.ok(data.length > 0 && data.every(([, cc, cond]) => /max-age=0|no-cache/.test(cc || '') || cond), `data.js is revalidated, not taken from the browser's copy (${JSON.stringify(data)})`);
     own.closeAllConnections(); own.close(); // the network is gone for this app
     await page.reload();
     await page.waitForSelector('#page-title', { timeout: 15000 });
@@ -2745,6 +2751,7 @@ describe('the verse of the day in Bible versions', () => {
     assert.equal(await page.$eval('.items li:first-child .meta', (m) => m.textContent), '', 'the list shows the date and reference only');
     const saved = await readDoc('verses', tomorrow);
     assert.deepEqual([saved.passageId, saved.reference, saved.text, saved.translation, saved.updatedBy], ['JHN.3.16-17', 'John 3:16-17', undefined, undefined, STAFF]);
+    assert.deepEqual(Object.keys(saved).sort(), ['passageId', 'reference', 'updatedAt', 'updatedBy'], 'a new verse is saved with only its passage');
     await context.close();
   });
 
@@ -2784,6 +2791,30 @@ describe('the verse of the day in Bible versions', () => {
     await waitText(page, 'Saved.', '[role=status]');
     const saved = await readDoc('verses', TODAY);
     assert.deepEqual([saved.passageId, saved.reference], ['PSA.23.1', 'Psalm 23:1']);
+    assert.deepEqual(Object.keys(saved).sort(), ['passageId', 'reference', 'updatedAt', 'updatedBy'], 'the old text and translation are gone');
+    await context.close();
+  });
+
+  it('edits a verse saved as it was live before Bible versions, through the form and the rules, and drops the old text', async () => {
+    const day = addDays(TODAY, 4);
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'verses', day), { reference: 'Psalms 139:23 NKJV', text: 'Search me, O God, and know my heart; try me, and know my anxieties.', translation: 'NKJV', updatedBy: STAFF }));
+    const { page, context } = await open('#/staff');
+    await waitText(page, 'Sign in with Google');
+    await signIn(page, STAFF);
+    await waitText(page, `Signed in as ${STAFF}`);
+    await page.click('button[aria-pressed]::-p-text(Verses)');
+    await waitText(page, `${dayLabel(day)} · Psalms 139:23 NKJV`, '.items');
+    await page.click('button[aria-label="Edit ' + dayLabel(day) + ' · Psalms 139:23 NKJV"]');
+    await page.waitForSelector('#verses-book');
+    assert.deepEqual(await page.evaluate(() => ['verses-book', 'verses-chapter', 'verses-verseFrom', 'verses-verseTo'].map((id) => document.getElementById(id).value)), ['PSA', '139', '23', '']);
+    assert.equal(await page.$('#verses-text'), null, 'no old Verse box to carry the old text');
+    await page.type('#verses-verseTo', '24');
+    await page.click('form button[type=submit]');
+    await waitText(page, 'Saved.', '[role=status]');
+    await waitText(page, `${dayLabel(day)} · Psalm 139:23-24`, '.items');
+    const saved = await readDoc('verses', day);
+    assert.deepEqual(Object.keys(saved).sort(), ['passageId', 'reference', 'updatedAt', 'updatedBy']);
+    assert.deepEqual([saved.passageId, saved.reference], ['PSA.139.23-24', 'Psalm 139:23-24']);
     await context.close();
   });
 });

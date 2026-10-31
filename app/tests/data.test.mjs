@@ -159,6 +159,15 @@ describe('staff writes', () => {
     assert.deepEqual([saved.passageId, saved.reference, saved.text, saved.translation], ['LUK.2.11', 'Luke 2:11', undefined, undefined]);
     assert.ok((await publicData().getVerse('2026-12-25')).value.text, 'the built-in verse stands in until the daily job has the text');
   });
+  it('saves a verse with only its passage, never an undefined value, and replaces a verse saved in the old shape', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'verses', '2026-11-01'), { reference: 'Psalms 139:23 NKJV', text: 'Search me, O God, and know my heart.', translation: 'NKJV', updatedBy: STAFF }));
+    // the values carry stray old fields and undefined ones, as a mixed-up old form could send them
+    await staffData().admin.save('verses', STAFF, { date: '2026-11-01', passageId: 'PSA.139.23', reference: 'Psalm 139:23', text: undefined, translation: undefined, sample: undefined }, '2026-11-01');
+    let saved;
+    await env.withSecurityRulesDisabled(async (ctx) => { saved = (await getDoc(doc(ctx.firestore(), 'verses', '2026-11-01'))).data(); });
+    assert.deepEqual(Object.keys(saved).sort(), ['passageId', 'reference', 'updatedAt', 'updatedBy']);
+    assert.deepEqual([saved.passageId, saved.reference], ['PSA.139.23', 'Psalm 139:23']);
+  });
   it('creates an event with only the required fields, and leaves the optional ones out', async () => {
     const data = staffData();
     const id = await data.admin.save('events', STAFF, { title: 'Carols', start: dayStart('2026-12-24') + 19 * 3600000, location: 'yishun', type: 'special', published: true });
