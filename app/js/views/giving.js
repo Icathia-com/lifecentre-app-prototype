@@ -8,8 +8,8 @@ import { GIVING_TEXT } from '../giving-text.js';
 
 // The official codes, redrawn sharp from the church's own. Each one decodes to the UEN of its fund.
 const QR_BY_UEN = {
-  S87SS0049C: 'images/paynow-tithes.png',
-  S87SS0049CBLD: 'images/paynow-building.png',
+  S87SS0049C: { src: 'images/paynow-tithes.png', file: 'life-centre-paynow-tithes-offering.png' },
+  S87SS0049CBLD: { src: 'images/paynow-building.png', file: 'life-centre-paynow-building-fund.png' },
 };
 
 async function copyText(text) {
@@ -46,30 +46,49 @@ function copyButton(value, noun, short, owner, status) {
   return button;
 }
 
-// Save QR code: the picture goes to the share sheet as a PNG file where the phone can share files (the person picks Save image, or
-// their banking app), and downloads as the same file where it cannot. A cancelled share sheet does nothing.
-function saveButton(fund, src, status) {
-  const name = `Life Centre PayNow - ${fund.title}.png`;
+// Save QR code and Share, under each code. Save downloads the PNG under a clear file name, except on an iPhone or iPad, where the
+// share sheet is the place with "Save Image" (Android's share sheet has no save option, so it is never used for saving). Share opens
+// the share sheet with the same file, for sending the code to someone. A cancelled share sheet does nothing.
+const onApple = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function qrButtons(fund, qr, status) {
   let file = null;
   // Fetched ahead of the tap: a phone only opens the share sheet straight after a tap.
-  const ready = fetch(src).then((r) => r.blob()).then((blob) => { file = new File([blob], name, { type: 'image/png' }); return file; }).catch(() => null);
-  return h('button', {
+  const ready = fetch(qr.src).then((r) => r.blob()).then((blob) => { file = new File([blob], qr.file, { type: 'image/png' }); return file; }).catch(() => null);
+  const note = h('p', { class: 'gv-note' });
+  let timer = 0;
+  const say = (text) => { // shown under the buttons, and read out through the page's status line
+    note.textContent = text;
+    status.textContent = text;
+    clearTimeout(timer);
+    timer = setTimeout(() => { note.textContent = ''; status.textContent = ''; }, 4000);
+  };
+  const png = async () => {
+    const f = file ?? await ready;
+    if (!f) say('Could not load the QR code. Please try again.');
+    return f;
+  };
+  const share = async (f) => { // true once the share sheet has opened, even if the person then cancels it
+    if (!navigator.canShare?.({ files: [f] })) return false;
+    try { await navigator.share({ files: [f] }); } catch (err) { if (err.name !== 'AbortError') return false; }
+    return true;
+  };
+  const download = (f) => {
+    const link = h('a', { href: URL.createObjectURL(f), download: qr.file });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    say('Saved to your Downloads');
+  };
+  const save = h('button', {
     type: 'button', class: 'gv-save',
-    onclick: async () => {
-      const png = file ?? await ready;
-      if (!png) { status.textContent = 'Could not save the QR code. Please try again.'; return; }
-      if (navigator.canShare?.({ files: [png] })) {
-        try { await navigator.share({ files: [png] }); return; } catch (err) { if (err.name === 'AbortError') return; }
-      }
-      const link = h('a', { href: URL.createObjectURL(png), download: name });
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
-      status.textContent = 'QR code downloaded.';
-      setTimeout(() => { status.textContent = ''; }, 4000);
-    },
+    onclick: async () => { const f = await png(); if (!f) return; if (onApple() && await share(f)) return; download(f); },
   }, ic('image', 16, 2), 'Save QR code');
+  const send = h('button', {
+    type: 'button', class: 'gv-share', 'aria-label': `Share the QR code for ${fund.title}`,
+    onclick: async () => { const f = await png(); if (!f) return; if (!await share(f)) say('Sharing is not available on this device.'); },
+  }, ic('share', 15, 2), 'Share');
+  return [h('div', { class: 'gv-qr-actions' }, save, send), note];
 }
 
 // Text with **bold** parts.
@@ -116,6 +135,7 @@ function cashBody({ toPayNow, toBank }) {
 
 function fundCard(fund, status) {
   const button = copyButton(fund.uen, 'UEN number', 'UEN', fund.title, status);
+  const qr = QR_BY_UEN[fund.uen];
   return h('section', { class: 'card gv-fund', 'aria-label': fund.title, tabindex: '-1' },
     h('h2', { class: 'gv-title' }, fund.title),
     h('div', { class: 'gv-line' },
@@ -123,10 +143,10 @@ function fundCard(fund, status) {
       button),
     h('div', { class: 'gv-qr-wrap' },
       h('span', { class: 'gv-small' }, 'QR Code'),
-      QR_BY_UEN[fund.uen]
-        ? h('div', { class: 'gv-qr has-code' }, h('img', { src: QR_BY_UEN[fund.uen], alt: `PayNow QR code for ${fund.title}`, width: '200', height: '200' }))
+      qr
+        ? h('div', { class: 'gv-qr has-code' }, h('img', { src: qr.src, alt: `PayNow QR code for ${fund.title}`, width: '200', height: '200' }))
         : h('div', { class: 'gv-qr', role: 'img', 'aria-label': 'Space for the official PayNow QR code' }, ic('qr', 34, 1.6)),
-      QR_BY_UEN[fund.uen] ? saveButton(fund, QR_BY_UEN[fund.uen], status) : null),
+      qr ? qrButtons(fund, qr, status) : null),
     h('div', { class: 'gv-line gv-ref' }, h('span', { class: 'gv-line-text' }, h('span', { class: 'gv-small' }, 'Reference number / Description'), h('span', { class: 'gv-ref-text' }, 'Your contact number'))),
     h('p', { class: 'gv-foot' }, 'If your contact number is not entered, the giving will be recorded as anonymous.'));
 }

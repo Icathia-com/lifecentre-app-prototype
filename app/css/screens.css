@@ -426,6 +426,9 @@ body[data-route='contact'] .screen, body[data-route='giving'] .screen { gap: 14p
 .gv-qr.has-code { width: auto; height: auto; padding: 10px; border: 0; background: #fff; }
 .gv-qr.has-code img { display: block; width: 200px; height: 200px; max-width: 100%; object-fit: contain; }
 .gv-save { min-height: 44px; padding: 0 18px; border-radius: 22px; border: 1px solid rgba(11, 18, 32, 0.2); background: #fff; color: var(--ink); display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; }
+.gv-qr-actions { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.gv-share { min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid rgba(11, 18, 32, 0.12); background: transparent; color: var(--ink); display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+.gv-note { margin: 0; min-height: 16px; font-size: 12px; line-height: 16px; color: var(--muted); text-align: center; }
 .gv-acc { padding: 4px 18px; gap: 0; }
 .gv-acc-title { margin: 0; }
 .gv-acc-btn { width: 100%; min-height: 56px; padding: 0; border: 0; background: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; text-align: left; cursor: pointer; }

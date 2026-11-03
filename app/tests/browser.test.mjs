@@ -1683,43 +1683,88 @@ describe('Giving', () => {
     for (const b of saves) { assert.ok(b.height >= 44, `the button is ${b.height}px tall`); assert.ok(b.below, 'the button sits under the code'); }
     await context.close();
   });
-  it('shares the QR picture as a PNG named for its fund, and does nothing if the share sheet is cancelled', async () => {
-    const { page, context } = await open('#/giving', {
-      setup: (p) => p.evaluateOnNewDocument(() => {
-        window.__shared = []; window.__clicks = [];
-        navigator.canShare = () => true;
-        navigator.share = async (data) => { window.__shared.push(data.files.map((f) => [f.name, f.type, f.size])); if (window.__cancel) throw new DOMException('cancelled', 'AbortError'); };
-        HTMLAnchorElement.prototype.click = function () { window.__clicks.push([this.download, this.href.slice(0, 5)]); };
-      }),
-    });
+  // A share sheet that records what it was given, and a download link that records its file name instead of downloading.
+  const qrStubs = (p) => p.evaluateOnNewDocument(() => {
+    window.__shared = []; window.__clicks = [];
+    navigator.canShare = () => true;
+    navigator.share = async (data) => { window.__shared.push(data.files.map((f) => [f.name, f.type, f.size])); if (window.__cancel) throw new DOMException('cancelled', 'AbortError'); };
+    HTMLAnchorElement.prototype.click = function () { window.__clicks.push([this.download, this.href.slice(0, 5)]); };
+  });
+  const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+  const PNG_SIZE = { tithes: readFileSync(new URL('../images/paynow-tithes.png', import.meta.url)).length, building: readFileSync(new URL('../images/paynow-building.png', import.meta.url)).length };
+  const notes = (page) => page.$$eval('.gv-fund .gv-note', (els) => els.map((e) => e.textContent));
+
+  it('on Android, Save QR code downloads the PNG under a clear file name and says "Saved to your Downloads", never the share sheet', async () => {
+    const { page, context } = await open('#/giving', { setup: async (p) => { await p.setUserAgent(ANDROID_UA); await qrStubs(p); } });
     await page.waitForSelector('.gv-save');
     const saves = await page.$$('.gv-save');
     await saves[1].click();
-    await page.waitForFunction(() => window.__shared.length === 1);
-    assert.deepEqual(await page.evaluate(() => window.__shared), [[['Life Centre PayNow - Life Centre (Building Fund).png', 'image/png', readFileSync(new URL('../images/paynow-building.png', import.meta.url)).length]]]);
+    await page.waitForFunction(() => window.__clicks.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.__clicks), [['life-centre-paynow-building-fund.png', 'blob:']]);
+    assert.deepEqual(await notes(page), ['', 'Saved to your Downloads'], 'the note sits under that card\'s buttons');
+    assert.equal(await text(page, '[role=status]'), 'Saved to your Downloads', 'and is read out');
     await saves[0].click();
-    await page.waitForFunction(() => window.__shared.length === 2);
-    assert.equal(await page.evaluate(() => window.__shared[1][0][0]), 'Life Centre PayNow - Life Centre (Tithes, Offering).png');
-    await page.evaluate(() => { window.__cancel = true; });
-    await saves[0].click();
-    await page.waitForFunction(() => window.__shared.length === 3);
-    await new Promise((r) => setTimeout(r, 300));
-    assert.deepEqual(await page.evaluate(() => window.__clicks), [], 'no download after a share');
-    assert.equal(await text(page, '[role=status]'), '', 'nothing is said when the share sheet is cancelled');
+    await page.waitForFunction(() => window.__clicks.length === 2);
+    assert.equal(await page.evaluate(() => window.__clicks[1][0]), 'life-centre-paynow-tithes-offering.png');
+    assert.deepEqual(await page.evaluate(() => window.__shared), [], 'Save never opens the share sheet on Android');
+    await page.waitForFunction(() => document.querySelectorAll('.gv-note')[1].textContent === '', { timeout: 6000 });
     await context.close();
   });
-  it('downloads the same PNG where files cannot be shared', async () => {
+  it('on a computer, Save QR code downloads the PNG the same way', async () => {
+    const { page, context } = await open('#/giving', { setup: qrStubs }); // headless Edge: a desktop user agent
+    await page.waitForSelector('.gv-save');
+    await (await page.$$('.gv-save'))[0].click();
+    await page.waitForFunction(() => window.__clicks.length === 1);
+    assert.deepEqual(await page.evaluate(() => [window.__clicks, window.__shared]), [[['life-centre-paynow-tithes-offering.png', 'blob:']], []]);
+    await context.close();
+  });
+  it('Share opens the share sheet with the same full PNG, and does nothing more if it is cancelled', async () => {
+    const { page, context } = await open('#/giving', { setup: async (p) => { await p.setUserAgent(ANDROID_UA); await qrStubs(p); } });
+    await page.waitForSelector('.gv-share');
+    const shares = await page.$$('.gv-share');
+    assert.deepEqual(await page.$$eval('.gv-share', (els) => els.map((b) => [b.textContent.trim(), b.getAttribute('aria-label'), Math.round(b.getBoundingClientRect().height) >= 44, b.previousElementSibling?.className])),
+      [['Share', 'Share the QR code for Life Centre (Tithes, Offering)', true, 'gv-save'], ['Share', 'Share the QR code for Life Centre (Building Fund)', true, 'gv-save']], 'a Share button beside each Save QR code');
+    assert.ok(await page.$$eval('.gv-share', (els) => els.every((b) => b.getBoundingClientRect().width < b.previousElementSibling.getBoundingClientRect().width)), 'Share is the smaller button');
+    await shares[1].click();
+    await page.waitForFunction(() => window.__shared.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.__shared), [[['life-centre-paynow-building-fund.png', 'image/png', PNG_SIZE.building]]]);
+    await shares[0].click();
+    await page.waitForFunction(() => window.__shared.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.__shared[1]), [['life-centre-paynow-tithes-offering.png', 'image/png', PNG_SIZE.tithes]]);
+    await page.evaluate(() => { window.__cancel = true; });
+    await shares[0].click();
+    await page.waitForFunction(() => window.__shared.length === 3);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(await page.evaluate(() => window.__clicks), [], 'no download from Share');
+    assert.deepEqual([await text(page, '[role=status]'), ...(await notes(page))], ['', '', ''], 'nothing is said when the share sheet is cancelled');
+    await context.close();
+  });
+  it('on an iPhone, Save QR code uses the share sheet, which is where Save Image lives', async () => {
+    const { page, context } = await open('#/giving', { setup: async (p) => { await p.setUserAgent(IPHONE_UA); await qrStubs(p); } });
+    await page.waitForSelector('.gv-save');
+    await (await page.$$('.gv-save'))[1].click();
+    await page.waitForFunction(() => window.__shared.length === 1);
+    assert.deepEqual(await page.evaluate(() => [window.__shared, window.__clicks]), [[[['life-centre-paynow-building-fund.png', 'image/png', PNG_SIZE.building]]], []]);
+    assert.deepEqual(await notes(page), ['', ''], 'no download note after a share');
+    await context.close();
+  });
+  it('on an iPhone that cannot share files, Save QR code falls back to the download', async () => {
     const { page, context } = await open('#/giving', {
-      setup: (p) => p.evaluateOnNewDocument(() => {
-        window.__clicks = [];
-        navigator.canShare = undefined;
-        HTMLAnchorElement.prototype.click = function () { window.__clicks.push([this.download, this.href.slice(0, 5)]); };
-      }),
+      setup: async (p) => {
+        await p.setUserAgent(IPHONE_UA);
+        await p.evaluateOnNewDocument(() => {
+          window.__clicks = [];
+          navigator.canShare = undefined;
+          HTMLAnchorElement.prototype.click = function () { window.__clicks.push([this.download, this.href.slice(0, 5)]); };
+        });
+      },
     });
     await page.waitForSelector('.gv-save');
     await (await page.$$('.gv-save'))[0].click();
     await page.waitForFunction(() => window.__clicks.length === 1);
-    assert.deepEqual(await page.evaluate(() => window.__clicks), [['Life Centre PayNow - Life Centre (Tithes, Offering).png', 'blob:']]);
+    assert.deepEqual(await page.evaluate(() => window.__clicks), [['life-centre-paynow-tithes-offering.png', 'blob:']]);
+    assert.deepEqual(await notes(page), ['Saved to your Downloads', '']);
     await context.close();
   });
   it('has two sections, closed at first, that open and close from their headings', async () => {
