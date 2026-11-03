@@ -13,7 +13,10 @@ const CAPACITIES = ['', '20', '50', '100', '200', '500'];
 const blank = () => ({
   title: '', from: COVERS[0][0], to: COVERS[0][1], photo: '', date: addDays(dateKey(), 7), start: '19:30', endDate: addDays(dateKey(), 7), end: '21:00',
   loc: '', venue: '', type: 'special', desc: '', appr: false, paid: false, price: '', regUrl: '', vis: 'public', cap: '', pinned: false, notify: true,
+  popup: false, popupStart: '', popupEnd: '', // a launch pop-up request for everyone, from popupStart to popupEnd (the event's end by default)
 });
+
+const POPUP_STATUS = { draft: 'saved as a draft', requested: 'waiting for an approver', approved: 'approved and scheduled', live: 'live now', ended: 'ended', declined: 'declined' };
 
 // An existing event -> form values.
 function fromEvent(ev) {
@@ -41,6 +44,7 @@ export function render(root, params) {
   let busy = false;
   let result = null; // { id, text } once saved
   let error = '';
+  let request = null; // the launch pop-up request already made for this event, when editing
 
   const host = h('div', { class: 'stack' });
   root.append(host);
@@ -76,11 +80,26 @@ export function render(root, params) {
       const id = await data.admin.save('events', session.email, values, editId ?? undefined);
       if (!editId) save(EVENT_DRAFT, null);
       result = { id, text: s.vis === 'draft' ? 'Saved as a draft. Only staff can see it.' : 'Everyone can see it in Events.' + (s.notify ? ' Followers are notified.' : '') };
+      if (s.popup && s.photo) {
+        try { if (await sendPopupRequest(id, endMs)) result.text += ' Your launch pop-up request has gone to the approvers.'; } catch (e) { result.text += ` The pop-up request could not be sent: ${e.message}`; }
+      }
     } catch (e) {
       error = e.code === 'permission-denied' ? 'This account is not allowed to do that.' : `Could not save: ${e.message}`;
     }
     busy = false;
     draw();
+  }
+
+  // The request for a launch pop-up for everyone: the event's banner, from the chosen start (now by default) to the chosen end
+  // (the event's end by default). The people with "Can approve pop-ups" decide. Resolves true when a request was sent.
+  async function sendPopupRequest(id, eventEnd) {
+    if (request && !['draft', 'requested', 'declined'].includes(request.status)) return false; // decided already
+    const start = s.popupStart ? sgInputToMs(s.popupStart) : Date.now();
+    const end = s.popupEnd ? sgInputToMs(s.popupEnd) : eventEnd;
+    if (!(end > start)) throw new Error('the pop-up must end after it starts.');
+    const values = { title: s.title.trim(), image: s.photo, eventId: id, start, end, status: 'requested', requestedBy: session.email, createdAt: request?.createdAt };
+    await data.admin.save('popups', session.email, values, request?.id);
+    return true;
   }
 
   async function remove() {
@@ -156,7 +175,13 @@ export function render(root, params) {
       h('label', { class: 'cr-line top' }, ic('globe', 20), h('span', { class: 'cr-label' }, 'Visibility'), select('Visibility', s.vis, [['public', 'Public'], ['draft', 'Draft']], (v) => keep({ vis: v })), ic('updown', 16)),
       h('label', { class: 'cr-line top' }, ic('cap', 20), h('span', { class: 'cr-label' }, 'Capacity'), select('Capacity', s.cap, CAPACITIES.map((c) => [c, c || 'Unlimited']), (v) => keep({ cap: v })), ic('updown', 16)),
       row('bell', 'Notify followers', sw('Notify followers', s.notify, (v) => keep({ notify: v })), null),
-      row('pin', 'Pin to the top of Events', sw('Pin to the top of Events', s.pinned, (v) => keep({ pinned: v }))));
+      row('pin', 'Pin to the top of Events', sw('Pin to the top of Events', s.pinned, (v) => keep({ pinned: v }))),
+      // With a banner, the event can ask for a launch pop-up: shown to everyone once a day once an approver says yes.
+      s.photo ? row('megaphone', 'Request a launch pop-up for everyone', sw('Request a launch pop-up for everyone', s.popup, (v) => keep({ popup: v, popupStart: s.popupStart || msToSgInput(Date.now()), popupEnd: s.popupEnd || `${s.endDate}T${s.end}` }))) : null,
+      s.photo && s.popup ? h('div', { class: 'cr-popup' },
+        h('p', { class: 'muted' }, request ? `Pop-up request: ${POPUP_STATUS[request.status] ?? request.status}.${request.note ? ` Note: ${request.note}` : ''}` : 'Shown to everyone once a day, from the start until the end below, once an approver says yes.'),
+        h('label', { class: 'cr-line' }, h('span', { class: 'cr-label' }, 'Pop-up from'), h('input', { type: 'datetime-local', class: 'cr-input', 'aria-label': 'Pop-up start', value: s.popupStart, onchange: (e) => keep({ popupStart: e.target.value }) })),
+        h('label', { class: 'cr-line top' }, h('span', { class: 'cr-label' }, 'Until'), h('input', { type: 'datetime-local', class: 'cr-input', 'aria-label': 'Pop-up end', value: s.popupEnd, onchange: (e) => keep({ popupEnd: e.target.value }) }))) : null);
     for (const r of options.querySelectorAll('.cr-row')) r.classList.add('top');
 
     fill(host, header,
@@ -184,11 +209,17 @@ export function render(root, params) {
   });
 
   if (editId) {
+    // The event, and the pop-up request already made for it (if any), so the form shows where that stands.
+    const showRequest = () => { if (request) s = { ...s, popup: true, popupStart: msToSgInput(request.start), popupEnd: msToSgInput(request.end) }; };
     data.getEvent(editId).then(({ value }) => {
-      if (value) { existing = value; s = fromEvent(value); }
+      if (value) { existing = value; s = fromEvent(value); showRequest(); }
       else { existing = null; }
       draw();
     });
+    data.admin.listPopups({ eventId: editId }).then((list) => {
+      request = list[0] ?? null;
+      if (request && existing) { showRequest(); draw(); }
+    }).catch(() => {});
   }
   return stop;
 }

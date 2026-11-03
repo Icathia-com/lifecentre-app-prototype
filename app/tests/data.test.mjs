@@ -159,6 +159,30 @@ describe('staff writes', () => {
     assert.deepEqual([saved.passageId, saved.reference, saved.text, saved.translation], ['LUK.2.11', 'Luke 2:11', undefined, undefined]);
     assert.ok((await publicData().getVerse('2026-12-25')).value.text, 'the built-in verse stands in until the daily job has the text');
   });
+  it('reads the pop-up switch (off when nothing is set) and the pop-up in the live slot, and lets admins and approvers change them', async () => {
+    const ADMIN = 'admin@lifecentre.sg';
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', ADMIN), { role: 'admin', updatedBy: ADMIN }));
+    const admin = createData(env.authenticatedContext('a', { email: ADMIN, email_verified: true }).firestore(), { now: () => NOW });
+    assert.deepEqual((await publicData().getAppConfig()).value, { popupsOn: false, livePopupId: null });
+    assert.deepEqual((await publicData().getLivePopup()).value, { config: { popupsOn: false, livePopupId: null }, popup: null });
+    const id = await admin.admin.save('popups', ADMIN, { title: 'Christmas', image: 'https://pub-test.r2.dev/popups/a.jpg', start: NOW - 3600000, end: NOW + 86400000, status: 'live', requestedBy: ADMIN, approvedBy: ADMIN });
+    await admin.admin.setConfig(ADMIN, { popupsOn: true, livePopupId: id });
+    store.clear(); // not from the phone's saved copy
+    const { value } = await publicData().getLivePopup();
+    assert.deepEqual([value.config, value.popup.title, value.popup.status, value.popup.start, value.popup.approvedBy], [{ popupsOn: true, livePopupId: id }, 'Christmas', 'live', NOW - 3600000, ADMIN]);
+    await staffData().admin.save('popups', STAFF, { title: 'Carols', image: 'https://pub-test.r2.dev/popups/b.jpg', eventId: 'ev1', start: NOW, end: NOW + 86400000, status: 'requested', requestedBy: STAFF }, 'req'); // a request is made in one's own name
+    assert.deepEqual((await admin.admin.listPopups({ status: 'requested' })).map((p) => p.id), ['req']);
+    assert.deepEqual((await admin.admin.listPopups({ eventId: 'ev1' })).map((p) => p.title), ['Carols']);
+    assert.deepEqual((await admin.admin.listPopups({ requestedBy: STAFF })).map((p) => p.id), ['req']);
+    assert.equal((await admin.admin.listPopups()).length, 2);
+    // a decision changes only the status fields (the rules check that for approvers), and createdAt is kept
+    await admin.admin.patch('popups', ADMIN, 'req', { status: 'declined', approvedBy: ADMIN, note: 'Not this week.' });
+    const after = (await admin.admin.listPopups({ eventId: 'ev1' }))[0];
+    assert.deepEqual([after.status, after.approvedBy, after.note, after.title, typeof after.updatedAt], ['declined', ADMIN, 'Not this week.', 'Carols', 'number']);
+    await admin.admin.setConfig(ADMIN, { popupsOn: false, livePopupId: null });
+    store.clear();
+    assert.equal((await publicData().getLivePopup()).value.popup, null, 'off: nothing for members');
+  });
   it('saves a verse with only its passage, never an undefined value, and replaces a verse saved in the old shape', async () => {
     await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'verses', '2026-11-01'), { reference: 'Psalms 139:23 NKJV', text: 'Search me, O God, and know my heart.', translation: 'NKJV', updatedBy: STAFF }));
     // the values carry stray old fields and undefined ones, as a mixed-up old form could send them

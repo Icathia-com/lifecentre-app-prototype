@@ -5,6 +5,7 @@ rules_version = '2';
 // Staff and admin (an email in /staff with that role, signed in with a verified Google account): write them.
 // Leader (also in /staff): can be recognised by the app, but cannot post or read drafts.
 // Videos (Watch): public read; admins and leaders post and edit; any staff-list member (admin, staff or leader) can remove one.
+// Pop-ups: everyone reads the one live pop-up; staff send requests; admins and people with "Can approve pop-ups" decide.
 // Admin: also manage /staff. Everything not listed here (stories for now) is denied.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -44,6 +45,25 @@ service cloud.firestore {
     // Who may post videos in Watch: admins and organisation leaders (not plain staff).
     function canPostVideo() {
       return isStaff() && role() in ['admin', 'leader'];
+    }
+
+    // A permission switch an admin can set on a staff entry, e.g. approvePopups.
+    function hasSwitch(key) {
+      return isStaff() && get(staffPath()).data.get(key, false) == true;
+    }
+
+    // Who decides on launch pop-ups: admins, and anyone on the staff list with "Can approve pop-ups".
+    function canApprovePopups() {
+      return isAdmin() || hasSwitch('approvePopups');
+    }
+
+    function configPath() {
+      return /databases/$(database)/documents/config/app;
+    }
+
+    // The id of the pop-up in the live slot ('' when there is none).
+    function livePopupId() {
+      return exists(configPath()) ? get(configPath()).data.get('livePopupId', '') : '';
     }
 
     function isText(v, max) {
@@ -149,11 +169,52 @@ service cloud.firestore {
     }
 
     function validStaff(d) {
-      return d.keys().hasOnly(['role', 'name', 'updatedBy', 'updatedAt'])
+      return d.keys().hasOnly(['role', 'name', 'approvePopups', 'updatedBy', 'updatedAt'])
         && d.keys().hasAll(['role', 'updatedBy'])
         && d.role in ['admin', 'leader', 'staff']
         && optionalText(d, 'name', 80)
+        && (!('approvePopups' in d) || d.approvePopups is bool)
         && d.updatedBy == userEmail();
+    }
+
+    // config/app: the pop-up master switch (off until an admin turns it on) and the id of the one pop-up in the live slot.
+    function validConfig(d) {
+      return d.keys().hasOnly(['popupsOn', 'livePopupId', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['popupsOn', 'updatedBy'])
+        && d.popupsOn is bool
+        && (!('livePopupId' in d) || d.livePopupId == null || isText(d.livePopupId, 100))
+        && d.updatedBy == userEmail();
+    }
+
+    // A pop-up banner: an https address in the church's storage, or (a request made from an event) the event's own small JPEG.
+    function validPopupImage(p) {
+      return p is string
+        && ((p.size() <= 500 && p.matches('^https://.{1,490}$'))
+            || (p.size() > 23 && p.size() <= 140000 && p[0:23] == 'data:image/jpeg;base64,'));
+    }
+
+    function validPopup(d) {
+      return d.keys().hasOnly(['title', 'image', 'eventId', 'start', 'end', 'status', 'requestedBy', 'approvedBy', 'note',
+                               'createdAt', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['title', 'image', 'start', 'end', 'status', 'requestedBy', 'updatedBy'])
+        && isText(d.title, 80)
+        && validPopupImage(d.image)
+        && optionalText(d, 'eventId', 100)
+        && d.start is timestamp
+        && d.end is timestamp && d.end > d.start
+        && d.status in ['draft', 'requested', 'approved', 'live', 'ended', 'declined']
+        && isText(d.requestedBy, 120)
+        && optionalText(d, 'approvedBy', 120)
+        && optionalText(d, 'note', 300)
+        && (!('createdAt' in d) || d.createdAt is timestamp)
+        && d.updatedBy == userEmail();
+    }
+
+    // Nobody approves their own request, admins included.
+    function approvingOwnPopup() {
+      return resource.data.status == 'requested'
+        && request.resource.data.status in ['approved', 'live']
+        && resource.data.requestedBy == userEmail();
     }
 
     // Public queries must filter on published == true, or the read is refused.
@@ -199,6 +260,48 @@ service cloud.firestore {
         && email == email.lower()
         && validStaff(request.resource.data);
       allow delete: if isAdmin() && email != userEmail();
+    }
+
+    // One document. Admins set the master switch; admins and approvers change which pop-up is live (an approver may create
+    // the document, but only with the switch off).
+    match /config/app {
+      allow read: if true;
+      allow create: if validConfig(request.resource.data)
+        && (isAdmin() || (canApprovePopups() && request.resource.data.popupsOn == false));
+      allow update: if validConfig(request.resource.data)
+        && (isAdmin()
+            || (canApprovePopups()
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['livePopupId', 'updatedBy', 'updatedAt'])));
+      allow delete: if false;
+    }
+
+    // Launch pop-ups. Everyone may read the one in the live slot; staff who post, and approvers, read them all.
+    // Staff create requests in their own name (admins may also save drafts and make a pop-up live straight away).
+    // Approvers approve, decline or end a pop-up, never their own request, and change nothing else about it.
+    // A requester may edit their own request while it is still a draft, a request, or declined.
+    match /popups/{id} {
+      allow get: if canPublish() || canApprovePopups()
+        || (resource.data.status in ['approved', 'live'] && id == livePopupId());
+      allow list: if canPublish() || canApprovePopups();
+      allow create: if validPopup(request.resource.data)
+        && request.resource.data.requestedBy == userEmail()
+        && (isAdmin() || (canPublish() && request.resource.data.status in ['draft', 'requested']));
+      allow update: if validPopup(request.resource.data)
+        && !approvingOwnPopup()
+        && (isAdmin()
+            || (canApprovePopups()
+                && resource.data.requestedBy != userEmail()
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'approvedBy', 'note', 'updatedBy', 'updatedAt'])
+                && request.resource.data.status in ['approved', 'live', 'declined', 'ended']
+                && (request.resource.data.get('approvedBy', '') == userEmail()
+                    || (resource.data.status in ['approved', 'live']
+                        && request.resource.data.get('approvedBy', '') == resource.data.get('approvedBy', ''))))
+            || (canPublish()
+                && resource.data.requestedBy == userEmail()
+                && resource.data.status in ['draft', 'requested', 'declined']
+                && request.resource.data.status in ['draft', 'requested']));
+      allow delete: if isAdmin()
+        || (canPublish() && resource.data.requestedBy == userEmail() && resource.data.status != 'live');
     }
   }
 }

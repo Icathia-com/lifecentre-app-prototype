@@ -5,6 +5,7 @@ import { data, getAuthTools } from '../firebase.js';
 import { h, dateKey, addDays, formatDay, msToSgInput, sgInputToMs } from '../util.js';
 import { TYPES, siteName } from '../sites.js';
 import { BOOKS, buildPassage, parsePassageId, parseReference } from '../bible.js';
+import { popupsPanel } from './popups-panel.js';
 
 // Admins and staff post content; leaders are on the staff list but cannot (the security rules enforce this too).
 const POSTERS = ['admin', 'staff'];
@@ -58,10 +59,15 @@ const PANELS = {
       { name: 'email', label: 'Google account email', type: 'email', required: true, max: 120, lockWhenEditing: true },
       { name: 'name', label: 'Name', type: 'text', max: 80 },
       { name: 'role', label: 'Role', type: 'select', options: ['staff', 'leader', 'admin'] },
+      { name: 'approvePopups', label: 'Can approve pop-ups', type: 'checkbox' },
     ],
     blank: () => ({ role: 'staff' }),
     fromItem: (s) => ({ ...s, email: s.id }),
-    show: (s) => [s.name || s.id, [s.name && s.id, s.role]],
+    show: (s) => [s.name || s.id, [s.name && s.id, s.role, s.approvePopups && 'Approves pop-ups']],
+  },
+  // Launch pop-ups: admins run them; anyone with "Can approve pop-ups" decides on requests (see popups-panel.js).
+  popups: {
+    label: 'Pop-ups', roles: ['admin', 'staff', 'leader'], allowed: (entry) => entry.role === 'admin' || !!entry.approvePopups, custom: popupsPanel,
   },
 };
 
@@ -239,20 +245,21 @@ export async function render(root) {
   }
 
   function dashboard(user, entry) {
-    const names = Object.keys(PANELS).filter((k) => PANELS[k].roles.includes(entry.role));
+    const names = Object.keys(PANELS).filter((k) => PANELS[k].roles.includes(entry.role) && (!PANELS[k].allowed || PANELS[k].allowed(entry)));
     if (!names.length) {
       return h('section', { class: 'card' },
         h('p', { class: 'who' }, h('span', {}, 'Signed in as ', h('strong', {}, user.email), ` (${entry.role})`), signOutButton()),
         h('p', { class: 'note' }, `Your role (${entry.role}) can't post notices, verses or events.`));
     }
-    let current = names[0];
+    const wanted = new URLSearchParams(location.hash.split('?')[1] ?? '').get('section'); // #/staff?section=popups opens that section
+    let current = names.includes(wanted) ? wanted : names[0];
     const switcher = h('div', { class: 'switch', role: 'group', 'aria-label': 'Sections' });
     const holder = h('div', { class: 'stack' });
     function draw() {
       switcher.replaceChildren(...names.map((n) => h('button', {
         type: 'button', class: 'btn', 'aria-pressed': String(n === current), onclick: () => { current = n; draw(); },
       }, PANELS[n].label)));
-      holder.replaceChildren(panel(current, PANELS[current], user));
+      holder.replaceChildren(PANELS[current].custom ? PANELS[current].custom(user, entry) : panel(current, PANELS[current], user));
     }
     draw();
     return h('div', { class: 'stack' },

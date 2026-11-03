@@ -8,7 +8,8 @@ import { MINISTRIES, CHURCH, siteName } from '../sites.js';
 import { load, save, notifSettings, NOTIF_SETTINGS, NOTIF_READ, FOLLOW_MINISTRIES, FOLLOW_SITES } from '../local.js';
 import { ic, longDate, eventTime, eventHref } from '../ui.js';
 
-const KIND = { notice: ['megaphone', '#E5322D'], event: ['ticket', '#2F6BFF'] };
+const KIND = { notice: ['megaphone', '#E5322D'], event: ['ticket', '#2F6BFF'], popup: ['image', '#7A3FD6'] };
+const popupWhen = (ms) => `${formatDay(ms, { day: 'numeric', month: 'short' })} ${formatClock(minutesOfDay(ms))}`;
 const DAY = 86400000;
 
 const SECTIONS = [
@@ -37,6 +38,7 @@ export function render(root) {
   let session = null;
   let loaded = 0;
   let source = 'live';
+  let popupItems = []; // launch pop-up requests (for approvers) and answers (for the requester)
   const body = h('div', { class: 'stack' });
   const markAll = h('button', { type: 'button', class: 'mark-all', onclick: () => { save(NOTIF_READ, [...new Set([...load(NOTIF_READ, []), ...items().map((i) => i.id)])]); draw(); } }, 'Mark all read');
   const actTab = h('button', { type: 'button', role: 'tab', id: 'tab-act', 'aria-controls': 'notif-panel', onclick: () => { view = 'act'; draw(); } }, 'Activity');
@@ -71,7 +73,28 @@ export function render(root) {
         });
       }
     }
+    list.push(...popupItems);
     return list.sort((a, b) => b.at - a.at);
+  }
+
+  // Pop-up requests go only to the people with "Can approve pop-ups" (and admins); the requester hears the answer.
+  async function loadPopups(s) {
+    popupItems = [];
+    if (!s?.email) { draw(); return; }
+    try {
+      for (const p of await data.admin.listPopups({ requestedBy: s.email })) {
+        if (!['declined', 'approved', 'live'].includes(p.status)) continue;
+        const title = p.status === 'declined' ? `Your pop-up request was declined: ${p.title}` : `Your pop-up is ${p.status === 'live' ? 'live' : 'scheduled'}: ${p.title}`;
+        popupItems.push({ id: `popup:${p.id}:${p.status}`, kind: 'popup', at: p.updatedAt ?? p.createdAt ?? Date.now(), title, body: p.status === 'declined' ? (p.note || 'No note was given.') : `From ${popupWhen(p.start)} to ${popupWhen(p.end)}.`, href: p.eventId ? `#/events/${encodeURIComponent(p.eventId)}` : null });
+      }
+      if (s.role === 'admin' || s.approvePopups) {
+        for (const p of await data.admin.listPopups({ status: 'requested' })) {
+          if (p.requestedBy === s.email) continue;
+          popupItems.push({ id: `popup:${p.id}:requested`, kind: 'popup', at: p.createdAt ?? p.updatedAt ?? Date.now(), title: `Pop-up request: ${p.title}`, body: `From ${p.requestedBy}, ${popupWhen(p.start)} to ${popupWhen(p.end)}. Approve or decline it on the staff page.`, href: '#/staff?section=popups' });
+        }
+      }
+    } catch (err) { console.warn('pop-up requests:', err.message); }
+    draw();
   }
 
   function activity() {
@@ -126,7 +149,13 @@ export function render(root) {
   }
   draw();
 
-  const stop = onSession((next) => { session = next; if (view === 'set') draw(); });
+  let known = null;
+  const stop = onSession((next) => {
+    session = next;
+    if (view === 'set') draw();
+    const who = next?.email ? `${next.email}|${next.role}|${next.approvePopups}` : null;
+    if (who !== known) { known = who; loadPopups(next); }
+  });
   const today = dateKey();
   data.getAnnouncements().then(({ value, source: s }) => { notices = value; loaded++; if (s !== 'live') source = s; draw(); });
   data.getEvents({ from: dayStart(today), to: dayStart(addDays(today, 180)), key: 'events-upcoming' }).then(({ value, source: s }) => { events = value; loaded++; if (s !== 'live') source = s; draw(); });

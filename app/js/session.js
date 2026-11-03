@@ -7,7 +7,7 @@ const KEY = 'lc:v1:session'; // last known account, so the tab bar is right on t
 const read = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
 const write = (value) => { try { if (value) localStorage.setItem(KEY, JSON.stringify(value)); else localStorage.removeItem(KEY); } catch { /* storage may be blocked */ } };
 
-let state = read(); // { email, role, name } or null (name: the Google account's display name, for the Home greeting)
+let state = read(); // { email, role, name, approvePopups } or null (name: the Google account's display name, for the Home greeting)
 const listeners = new Set();
 const emit = () => listeners.forEach((fn) => fn(state));
 
@@ -27,10 +27,10 @@ export async function startSession() {
       if (!user) { state = null; write(null); emit(); return; }
       try {
         const entry = await data.admin.getStaffEntry(user.email);
-        state = { email: user.email, role: entry ? entry.role : null, name: user.displayName || '' };
+        state = { email: user.email, role: entry ? entry.role : null, name: user.displayName || '', approvePopups: !!entry?.approvePopups };
       } catch {
         // Offline or refused: keep what was known for this same account.
-        if (!state || state.email !== user.email) state = { email: user.email, role: null, name: user.displayName || '' };
+        if (!state || state.email !== user.email) state = { email: user.email, role: null, name: user.displayName || '', approvePopups: false };
       }
       write(state);
       emit();

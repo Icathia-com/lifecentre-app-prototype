@@ -268,6 +268,103 @@ describe('sample data', () => {
   });
 });
 
+describe('launch pop-ups', () => {
+  const T0 = T('2026-11-01T00:00:00Z');
+  const T1 = T('2026-11-10T00:00:00Z');
+  const popup = (requestedBy, extra = {}) => ({ title: 'Christmas service', image: 'https://pub-test.r2.dev/popups/2026/11/a.jpg', start: T0, end: T1, status: 'requested', requestedBy, updatedBy: requestedBy, ...extra });
+  const APPROVER = 'leader@lifecentre.sg'; // a leader with "Can approve pop-ups"
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'staff', APPROVER), { role: 'leader', approvePopups: true, updatedBy: ADMIN });
+      await setDoc(doc(db, 'popups', 'r1'), popup(STAFF, { eventId: 'pub' }));
+      await setDoc(doc(db, 'popups', 'l1'), popup(ADMIN, { title: 'Live one', status: 'live', approvedBy: ADMIN }));
+      await setDoc(doc(db, 'popups', 'l2'), popup(ADMIN, { title: 'Live but not in the slot', status: 'live', approvedBy: ADMIN }));
+      await setDoc(doc(db, 'config', 'app'), { popupsOn: true, livePopupId: 'l1', updatedBy: ADMIN });
+    });
+  });
+  const patch = (db, id, fields) => setDoc(doc(db, 'popups', id), fields, { merge: true });
+
+  it('everyone reads the master switch and the one pop-up in the live slot, and nothing else', async () => {
+    for (const db of [anon(), user('visitor@example.com')]) {
+      await assertSucceeds(getDoc(doc(db, 'config', 'app')));
+      await assertSucceeds(getDoc(doc(db, 'popups', 'l1')));
+      await assertFails(getDoc(doc(db, 'popups', 'l2'))); // live by status, but not the one in the slot
+      await assertFails(getDoc(doc(db, 'popups', 'r1')));
+      await assertFails(getDocs(collection(db, 'popups')));
+      await assertFails(setDoc(doc(db, 'config', 'app'), { popupsOn: false, livePopupId: null, updatedBy: 'visitor@example.com' }));
+      await assertFails(setDoc(doc(db, 'popups', 'x'), popup('visitor@example.com')));
+    }
+  });
+  it('staff send requests in their own name, and may edit or withdraw them, but cannot make anything live', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(setDoc(doc(db, 'popups', 'new'), popup(STAFF, { eventId: 'pub', image: `data:image/jpeg;base64,${'A'.repeat(2000)}` })));
+    await assertSucceeds(setDoc(doc(db, 'popups', 'd'), popup(STAFF, { status: 'draft' })));
+    await assertFails(setDoc(doc(db, 'popups', 'x'), popup(STAFF, { status: 'live' })));
+    await assertFails(setDoc(doc(db, 'popups', 'x'), popup(STAFF, { status: 'approved' })));
+    await assertFails(setDoc(doc(db, 'popups', 'x'), popup(ADMIN))); // in someone else's name
+    await assertSucceeds(setDoc(doc(db, 'popups', 'r1'), popup(STAFF, { title: 'Christmas Eve service', end: T('2026-11-12T00:00:00Z') })));
+    await assertFails(patch(db, 'r1', { status: 'live', updatedBy: STAFF }));
+    await assertFails(patch(db, 'r1', { status: 'approved', approvedBy: STAFF, updatedBy: STAFF }));
+    await assertFails(patch(db, 'l1', { status: 'ended', updatedBy: STAFF })); // not theirs, and not an approver
+    await assertSucceeds(getDocs(collection(db, 'popups')));
+    await assertSucceeds(deleteDoc(doc(db, 'popups', 'r1')));
+    await assertFails(deleteDoc(doc(db, 'popups', 'l1')));
+    await assertFails(setDoc(doc(db, 'config', 'app'), { popupsOn: true, livePopupId: 'r1', updatedBy: STAFF }));
+  });
+  it('a person with "Can approve pop-ups" approves, declines or ends, never their own request, and changes nothing else', async () => {
+    const db = user(APPROVER);
+    await assertSucceeds(getDocs(collection(db, 'popups')));
+    await assertSucceeds(patch(db, 'r1', { status: 'live', approvedBy: APPROVER, updatedBy: APPROVER }));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'popups', 'r1'), popup(STAFF)));
+    await assertSucceeds(patch(db, 'r1', { status: 'declined', approvedBy: APPROVER, note: 'Another pop-up is live until Tuesday.', updatedBy: APPROVER }));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'popups', 'r1'), popup(STAFF)));
+    await assertFails(patch(db, 'r1', { status: 'live', approvedBy: ADMIN, updatedBy: APPROVER })); // must sign the decision themselves
+    await assertFails(patch(db, 'r1', { status: 'live', approvedBy: APPROVER, title: 'Renamed', updatedBy: APPROVER })); // only the decision changes
+    await assertFails(setDoc(doc(db, 'popups', 'r1'), popup(STAFF, { status: 'live', approvedBy: APPROVER, updatedBy: APPROVER, start: T1, end: T('2026-11-20T00:00:00Z') })));
+    await assertSucceeds(patch(db, 'l1', { status: 'ended', updatedBy: APPROVER })); // the one that was live, when replacing it
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'popups', 'own'), popup(APPROVER)));
+    await assertFails(patch(db, 'own', { status: 'live', approvedBy: APPROVER, updatedBy: APPROVER }));
+    await assertFails(patch(db, 'own', { status: 'approved', approvedBy: APPROVER, updatedBy: APPROVER }));
+    await assertSucceeds(setDoc(doc(db, 'config', 'app'), { popupsOn: true, livePopupId: 'r1', updatedBy: APPROVER }));
+    await assertFails(setDoc(doc(db, 'config', 'app'), { popupsOn: false, livePopupId: 'r1', updatedBy: APPROVER })); // the switch is for admins
+    await assertFails(setDoc(doc(db, 'popups', 'x'), popup(APPROVER))); // a leader does not post
+    await assertFails(deleteDoc(doc(db, 'popups', 'r1')));
+  });
+  it('an approver may create the config document, but only with the switch off', async () => {
+    await env.withSecurityRulesDisabled((ctx) => deleteDoc(doc(ctx.firestore(), 'config', 'app')));
+    await assertFails(setDoc(doc(user(APPROVER), 'config', 'app'), { popupsOn: true, livePopupId: 'r1', updatedBy: APPROVER }));
+    await assertSucceeds(setDoc(doc(user(APPROVER), 'config', 'app'), { popupsOn: false, livePopupId: 'r1', updatedBy: APPROVER }));
+  });
+  it('admins run the switch, make pop-ups live directly, delete any, but still cannot approve their own request', async () => {
+    const db = user(ADMIN);
+    await assertSucceeds(setDoc(doc(db, 'config', 'app'), { popupsOn: false, livePopupId: null, updatedBy: ADMIN }));
+    await assertSucceeds(setDoc(doc(db, 'popups', 'direct'), popup(ADMIN, { status: 'live', approvedBy: ADMIN })));
+    await assertSucceeds(setDoc(doc(db, 'popups', 'later'), popup(ADMIN, { status: 'approved', approvedBy: ADMIN })));
+    await assertSucceeds(patch(db, 'r1', { status: 'live', approvedBy: ADMIN, updatedBy: ADMIN }));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'popups', 'mine'), popup(ADMIN)));
+    await assertFails(patch(db, 'mine', { status: 'live', approvedBy: ADMIN, updatedBy: ADMIN }));
+    await assertSucceeds(patch(db, 'mine', { status: 'draft', updatedBy: ADMIN })); // but may keep it as a draft
+    await assertSucceeds(deleteDoc(doc(db, 'popups', 'l1')));
+    await assertFails(deleteDoc(doc(db, 'config', 'app')));
+  });
+  it('refuses a bad pop-up: a picture that is not https or a JPEG, an end before the start, an unknown status, extra fields', async () => {
+    const db = user(ADMIN);
+    for (const bad of [
+      { image: 'http://example.org/a.jpg' }, { image: 'javascript:alert(1)' }, { image: `data:image/png;base64,${'A'.repeat(100)}` }, { image: `data:image/jpeg;base64,${'A'.repeat(140000)}` },
+      { end: T('2026-10-31T00:00:00Z') }, { end: T0 }, { status: 'pending' }, { title: '' }, { title: 'x'.repeat(81) }, { note: 'x'.repeat(301) }, { eventId: 'x'.repeat(101) }, { views: 1 },
+    ]) await assertFails(setDoc(doc(db, 'popups', 'bad'), popup(ADMIN, bad)));
+    const { start, ...noStart } = popup(ADMIN);
+    await assertFails(setDoc(doc(db, 'popups', 'bad'), noStart));
+  });
+  it('"Can approve pop-ups" is a switch only admins set on a staff entry', async () => {
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'staff', STAFF), { role: 'staff', approvePopups: true, updatedBy: ADMIN }));
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'staff', STAFF), { role: 'staff', approvePopups: false, updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(ADMIN), 'staff', STAFF), { role: 'staff', approvePopups: 'yes', updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(STAFF), 'staff', STAFF), { role: 'staff', approvePopups: true, updatedBy: STAFF }));
+  });
+});
+
 describe('collections without rules yet', () => {
   it('stories are denied to everyone, including admin', async () => {
     for (const db of [anon(), user(STAFF), user(ADMIN)]) {

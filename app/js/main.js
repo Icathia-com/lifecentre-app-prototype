@@ -1,6 +1,8 @@
 import { startRouter } from './router.js';
 import { enableDragScroll } from './util.js';
 import { onSession, startSession, isOnStaffList } from './session.js';
+import { data } from './firebase.js';
+import { showLaunchPopup } from './popup.js';
 
 const outlet = document.getElementById('main');
 enableDragScroll(outlet, 'y');
@@ -28,7 +30,7 @@ startRouter({
     { path: '/staff', name: 'staff', title: 'Staff', load: () => import('./views/staff.js') },
     { path: '/account', name: 'account', tab: 'home', title: 'Account', load: () => import('./views/account.js') },
   ],
-});
+}).then(() => showLaunchPopup(data)); // the launch pop-up, once a day, after the first screen is drawn
 
 // The fifth tab: "Contact us" for visitors and members, "Facilities Booking" for admins, staff and leaders.
 const fifth = document.getElementById('tab-fifth');

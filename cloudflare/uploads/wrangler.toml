@@ -1,0 +1,23 @@
+# The upload Worker (see src/index.js). Deployed from the repository root with:
+#   npx wrangler deploy --config cloudflare/uploads/wrangler.toml
+# Secrets are never in this file. They are set once with `wrangler secret put` (see ../SETUP.md):
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY  (an R2 API token that may write objects)
+#   FIREBASE_SERVICE_ACCOUNT                (a service-account key, JSON, for the nightly clean-up of expired stories)
+name = "lifecentre-uploads"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[triggers]
+crons = ["0 19 * * *"] # 03:00 in Singapore: remove story records whose time is up
+
+[[r2_buckets]]
+binding = "UPLOADS"
+bucket_name = "lifecentre-uploads"
+
+[vars]
+FIREBASE_PROJECT_ID = "lifecentre-app"
+CF_ACCOUNT_ID = "SET-AFTER-SIGN-UP"        # the Cloudflare account id (not a secret): Dashboard > R2 > Overview
+BUCKET_NAME = "lifecentre-uploads"
+PUBLIC_BASE_URL = "https://SET-AFTER-BUCKET-IS-PUBLIC" # the bucket's public address (an r2.dev address, or a custom domain)
+ALLOWED_ORIGINS = "https://icathia.com,http://localhost:8000"

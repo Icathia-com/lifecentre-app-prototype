@@ -6,7 +6,7 @@ import { before, after, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer-core';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, getDocs, deleteDoc, collection, Timestamp } from 'firebase/firestore';
 import { serve } from '../../scripts/serve.mjs';
 import { dateKey, addDays, dayStart } from '../js/util.js';
 
@@ -70,7 +70,7 @@ async function open(hash = '#/', { width = 390, height = 844, setup } = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.accept());
-  await page.setViewport({ width, height });
+  await page.setViewport({ width, height, deviceScaleFactor: Number(process.env.SHOT_DPR) || 1 }); // SHOT_DPR=2 for sharper review screenshots
   if (setup) await setup(page);
   await page.goto(base + hash);
   await page.waitForSelector('#page-title');
@@ -2861,6 +2861,288 @@ describe('the verse of the day in Bible versions', () => {
     assert.deepEqual(Object.keys(saved).sort(), ['passageId', 'reference', 'updatedAt', 'updatedBy']);
     assert.deepEqual([saved.passageId, saved.reference], ['PSA.139.23-24', 'Psalm 139:23-24']);
     await context.close();
+  });
+});
+
+describe('Launch pop-up', () => {
+  const HOUR = 3600000;
+  const UPLOADS = 'https://lifecentre-uploads.lifecentre.workers.dev/';
+  const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, PUT, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' };
+  const PNG = readFileSync(new URL('../icons/favicon-32.png', import.meta.url));
+  // The upload Worker and the storage bucket, faked: every call is recorded.
+  const fakeUploads = (calls = []) => async (p) => {
+    await p.setRequestInterception(true);
+    p.on('request', (req) => {
+      const u = req.url();
+      if (req.method() === 'OPTIONS' && (u.startsWith(UPLOADS) || u.startsWith('https://upload.test/'))) return req.respond({ status: 204, headers: CORS });
+      if (u === `${UPLOADS}sign`) { calls.push({ sign: JSON.parse(req.postData() || '{}'), auth: req.headers().authorization }); return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ url: 'https://upload.test/put/1', key: 'popups/2026/11/1.jpg', publicUrl: 'https://media.test/popups/1.jpg', expiresIn: 600 }) }); }
+      if (u.startsWith('https://upload.test/')) { calls.push({ put: u, type: req.headers()['content-type'], length: Number(req.headers()['content-length'] || 0) }); return req.respond({ status: 200, headers: CORS, body: '' }); }
+      if (u.startsWith('https://media.test/')) return req.respond({ status: 200, contentType: 'image/png', body: PNG });
+      return req.continue();
+    });
+  };
+  const atTime = (ms) => (p) => p.evaluateOnNewDocument((start) => { const real = Date.now; const shift = start - real(); Date.now = () => real() + shift; }, ms);
+  const both = (...steps) => async (p) => { for (const step of steps) await step(p); };
+  const T = Timestamp.fromMillis;
+  const seedPopup = (id, fields) => env.withSecurityRulesDisabled((ctx) => {
+    const full = { title: 'Christmas service', image: 'https://media.test/popups/1.jpg', start: T(Date.now() - HOUR), end: T(Date.now() + 72 * HOUR), status: 'live', requestedBy: ADMIN, approvedBy: ADMIN, updatedBy: ADMIN, createdAt: T(Date.now() - 2 * HOUR), updatedAt: T(Date.now() - HOUR), ...fields };
+    return setDoc(doc(ctx.firestore(), 'popups', id), Object.fromEntries(Object.entries(full).filter(([, v]) => v !== undefined)));
+  });
+  const setConfig = (fields) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'config', 'app'), { popupsOn: true, livePopupId: 'p1', updatedBy: ADMIN, ...fields }));
+  const setApprover = (email, on) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', email), { role: email === ADMIN ? 'admin' : email === LEADER ? 'leader' : 'staff', approvePopups: on, updatedBy: ADMIN }));
+  async function allPopups() {
+    let list = [];
+    await env.withSecurityRulesDisabled(async (ctx) => { list = (await getDocs(collection(ctx.firestore(), 'popups'))).docs.map((d) => ({ id: d.id, ...d.data() })); });
+    return list;
+  }
+  // Everything this describe makes is removed again, so no pop-up turns up in other tests.
+  const clean = () => env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    for (const d of (await getDocs(collection(db, 'popups'))).docs) await deleteDoc(d.ref);
+    await deleteDoc(doc(db, 'config', 'app'));
+    await setApprover(LEADER, false);
+    await setApprover(STAFF, false);
+  });
+  beforeEach(clean);
+  after(clean);
+  // Puts a freshly drawn picture on a file input.
+  const choosePicture = (page, selector) => page.evaluate(async (sel) => {
+    const c = document.createElement('canvas');
+    c.width = 1200; c.height = 900;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 1200, 900); grad.addColorStop(0, '#1B1740'); grad.addColorStop(1, '#E5326B');
+    g.fillStyle = grad; g.fillRect(0, 0, 1200, 900);
+    g.fillStyle = '#fff'; g.font = 'bold 120px sans-serif'; g.fillText('CHRISTMAS', 120, 480);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], 'banner.jpg', { type: 'image/jpeg' }));
+    const input = document.querySelector(sel);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, selector);
+  const setDateTime = (page, selector, ms) => page.evaluate((sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); }, selector, new Date(ms + 8 * HOUR).toISOString().slice(0, 16));
+
+  it('admins give a person "Can approve pop-ups" on the staff list', async () => {
+    const { page, context } = await openAsStaff('/staff', ADMIN, { width: 760, height: 1100 });
+    await page.click('button[aria-pressed]::-p-text(Staff)');
+    await page.waitForSelector('#staff-approvePopups');
+    assert.equal(await page.$eval('label[for=staff-approvePopups]', (l) => l.textContent), 'Can approve pop-ups');
+    await page.click(`button[aria-label="Edit ${LEADER}"]`);
+    await page.waitForFunction((m) => document.querySelector('#staff-email')?.value === m, {}, LEADER);
+    await page.click('#staff-approvePopups');
+    await page.click('form button[type=submit]');
+    await waitText(page, 'Saved.', '[role=status]');
+    assert.equal((await readDoc('staff', LEADER)).approvePopups, true);
+    await waitText(page, 'Approves pop-ups', '.items');
+    await shot(page, 'popup-staff-roles');
+    await context.close();
+  });
+
+  it('the Pop-ups section: the switch starts off; a banner is cropped to 4:5, uploaded through the Worker, and "Make live" fills the live slot', async () => {
+    const calls = [];
+    const { page, context } = await openAsStaff('/staff?section=popups', ADMIN, { width: 760, height: 1100, setup: fakeUploads(calls) });
+    await page.waitForSelector('.pu-panel');
+    assert.equal(await page.$eval('.pu-panel .cr-switch', (b) => b.getAttribute('aria-checked')), 'false');
+    assert.match(await text(page, '.pu-state'), /^Off: nothing shows to members/);
+    assert.deepEqual(await page.$$eval('.switch .btn', (els) => els.map((b) => b.textContent)), ['Notices', 'Verses', 'Events', 'Staff', 'Pop-ups']);
+    await page.click('.pu-panel .btn::-p-text(New pop-up)');
+    await page.waitForSelector('#pu-title');
+    await page.type('#pu-title', 'Christmas service');
+    await choosePicture(page, '#pu-file');
+    await page.waitForSelector('img.pu-preview');
+    const preview = await page.$eval('img.pu-preview', async (img) => { await img.decode(); return [img.naturalWidth, img.naturalHeight]; });
+    assert.deepEqual(preview, [1080, 1350], 'cropped to the pop-up shape');
+    await setDateTime(page, '#pu-start', Date.now() - HOUR);
+    await setDateTime(page, '#pu-end', Date.now() + 2 * 24 * HOUR);
+    await page.select('#pu-event', 'conf');
+    await page.evaluate(() => document.querySelector('.pu-panel').scrollIntoView());
+    await shot(page, 'popup-admin');
+    await checkAccessibility(page, 'Pop-ups section');
+    await page.click('.pu-panel .btn::-p-text(Make live)');
+    await waitText(page, 'It is now the live pop-up.', '[role=status]');
+    const [sign, put] = [calls.find((c) => c.sign), calls.find((c) => c.put)];
+    assert.deepEqual([sign.sign.kind, sign.sign.contentType, sign.sign.size > 10000, sign.auth.startsWith('Bearer ')], ['popups', 'image/jpeg', true, true]);
+    assert.deepEqual([put.put, put.type], ['https://upload.test/put/1', 'image/jpeg'], 'the file is put at the signed address'); // the browser adds the length after interception, so it is not visible here
+    const [saved] = await allPopups();
+    assert.deepEqual([saved.title, saved.image, saved.eventId, saved.status, saved.requestedBy, saved.approvedBy, saved.end.toMillis() > Date.now()], ['Christmas service', 'https://media.test/popups/1.jpg', 'conf', 'live', ADMIN, ADMIN, true]);
+    assert.deepEqual([(await readDoc('config', 'app')).livePopupId, (await readDoc('config', 'app')).popupsOn], [saved.id, false]);
+    await waitText(page, 'Live now', '.pu-panel');
+    await page.click('.pu-panel .cr-switch');
+    await waitText(page, 'Pop-ups are on.', '[role=status]');
+    assert.equal((await readDoc('config', 'app')).popupsOn, true);
+    await page.click('.pu-panel .btn::-p-text(Take down)');
+    await waitText(page, 'Taken down.', '[role=status]');
+    assert.deepEqual([(await allPopups())[0].status, (await readDoc('config', 'app')).livePopupId], ['ended', null]);
+    await context.close();
+  });
+
+  it('members see the live pop-up once a day on their first open, can close it, and tapping it opens the event', async () => {
+    await seedPopup('p1', { eventId: 'conf' });
+    await setConfig({});
+    const { page, errors, context } = await open('#/', { setup: fakeUploads() });
+    await page.waitForSelector('.pu-card');
+    const card = await page.$eval('.pu-card', (c) => ({ role: c.getAttribute('role'), modal: c.getAttribute('aria-modal'), title: c.querySelector('#pu-title').textContent, img: c.querySelector('img').getAttribute('src'), href: c.querySelector('.pu-image').getAttribute('href'), focused: document.activeElement?.className }));
+    assert.deepEqual(card, { role: 'dialog', modal: 'true', title: 'Christmas service', img: 'https://media.test/popups/1.jpg', href: '#/events/conf', focused: 'pu-x' });
+    await shot(page, 'popup-member');
+    await checkAccessibility(page, 'Member pop-up');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.$('.pu-card'), null, 'Escape closes it');
+    assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:popupSeen'))), { id: 'p1', day: TODAY });
+    await page.reload();
+    await page.waitForSelector('#page-title');
+    await new Promise((r) => setTimeout(r, 800));
+    assert.equal(await page.$('.pu-card'), null, 'not again today');
+    assert.deepEqual(errors, []);
+    await context.close();
+    // the next day it shows again, and a tap on the picture opens the event
+    const next = await open('#/', { setup: both(fakeUploads(), atTime(Date.now() + 24 * HOUR)) });
+    await next.page.waitForSelector('.pu-card');
+    await next.page.click('.pu-image');
+    await next.page.waitForFunction(() => location.hash === '#/events/conf');
+    assert.equal(await next.page.$('.pu-card'), null);
+    await next.context.close();
+    // the backdrop and the close button both close it; the close button is where the keyboard starts
+    const third = await open('#/', { setup: both(fakeUploads(), atTime(Date.now() + 48 * HOUR)) });
+    await third.page.waitForSelector('.pu-card');
+    await third.page.click('.pu-x');
+    assert.equal(await third.page.$('.pu-card'), null);
+    await third.context.close();
+  });
+
+  it('shows nothing when the switch is off, outside the start and end, when another pop-up is in the slot, and ends by itself at its end', async () => {
+    await seedPopup('p1', {});
+    await setConfig({ popupsOn: false });
+    const quiet = async (label, setup = fakeUploads()) => { const { page, context } = await open('#/', { setup }); await page.waitForSelector('.verse-card'); await new Promise((r) => setTimeout(r, 1500)); assert.equal(await page.$('.pu-card'), null, label); await context.close(); };
+    await quiet('switch off');
+    await setConfig({});
+    await seedPopup('p1', { start: T(Date.now() + HOUR) });
+    await quiet('not started');
+    await seedPopup('p1', { end: T(Date.now() - 1000), start: T(Date.now() - HOUR) });
+    await quiet('already ended');
+    await seedPopup('p1', {});
+    await setConfig({ livePopupId: 'other' });
+    await quiet('a different pop-up is in the slot');
+    await setConfig({});
+    await seedPopup('p1', { end: T(Date.now() + 7000) });
+    const { page, context } = await open('#/', { setup: fakeUploads() });
+    await page.waitForSelector('.pu-card', { timeout: 5000 });
+    await page.waitForFunction(() => !document.querySelector('.pu-card'), { timeout: 10000 });
+    await context.close();
+  });
+
+  it('staff with a banner on their event can request a launch pop-up, which goes only to the approvers', async () => {
+    await setApprover(LEADER, true);
+    const { page, context } = await openAsStaff('/events/new', STAFF);
+    await page.waitForSelector('.cr-name');
+    await page.type('.cr-name', 'Carols night');
+    await page.click('.cr-btn::-p-text(Choose location)');
+    await page.click('.cr-chips .chip::-p-text(Yishun)');
+    assert.equal(await page.$('.cr-switch[aria-label="Request a launch pop-up for everyone"]'), null, 'no banner, no request');
+    await choosePicture(page, 'input[type=file]');
+    await page.waitForSelector('.cover.photo');
+    await page.waitForSelector('.cr-switch[aria-label="Request a launch pop-up for everyone"]');
+    await page.click('.cr-switch[aria-label="Request a launch pop-up for everyone"]');
+    await page.waitForSelector('input[aria-label="Pop-up start"]');
+    const [from, until, endDate, endTime] = await page.evaluate(() => [document.querySelector('input[aria-label="Pop-up start"]').value, document.querySelector('input[aria-label="Pop-up end"]').value, document.querySelector('input[aria-label="End date"]').value, document.querySelector('input[aria-label="End time"]').value]);
+    assert.ok(from.length === 16, 'starts now');
+    assert.equal(until, `${endDate}T${endTime}`, 'ends with the event');
+    await page.evaluate(() => document.querySelector('.cr-popup').scrollIntoView({ block: 'center' }));
+    await shot(page, 'popup-request');
+    await page.click('.cr-submit');
+    await waitText(page, 'Your launch pop-up request has gone to the approvers.');
+    const [req] = await allPopups();
+    const eventId = await page.$eval('a.btn[href^="#/events/"]', (a) => a.getAttribute('href').split('/').pop());
+    assert.deepEqual([req.title, req.status, req.requestedBy, req.eventId, req.image.startsWith('data:image/jpeg;base64,'), req.end.toMillis() > req.start.toMillis()], ['Carols night', 'requested', STAFF, eventId, true, true]);
+    // editing the event shows where the request stands
+    await goto(page, `/events/${eventId}/edit`);
+    await waitText(page, 'Pop-up request: waiting for an approver.');
+    await context.close();
+    // the requester is not told about their own request; approvers (the switch, or admins) are; other staff are not
+    const sees = async (email, expected, label) => {
+      const o = await openAsStaff('/notifications', email);
+      await new Promise((r) => setTimeout(r, 1200));
+      const rows = await o.page.$$eval('.nf-row', (els) => els.map((r) => [r.querySelector('b').textContent, r.getAttribute('href')]));
+      const row = rows.find(([t]) => t === 'Pop-up request: Carols night');
+      assert.equal(!!row, expected, label);
+      if (expected) assert.equal(row[1], '#/staff?section=popups');
+      await o.context.close();
+    };
+    await sees(STAFF, false, 'the requester');
+    await sees(LEADER, true, 'an approver');
+    await sees(ADMIN, true, 'an admin');
+    await setApprover(LEADER, false);
+    await sees(LEADER, false, 'a leader without the switch');
+  });
+
+  it('approving with no pop-up live makes the request live; with another live, the approver replaces it or keeps it (declining with a note); nobody approves their own', async () => {
+    await setApprover(LEADER, true);
+    await seedPopup('r1', { title: 'Carols night', status: 'requested', requestedBy: STAFF, approvedBy: undefined, eventId: 'conf', image: `data:image/jpeg;base64,${'/9j/4AAQSkZJRgABAQ'.repeat(4)}` });
+    await seedPopup('l1', { title: 'Live one' });
+    await setConfig({ livePopupId: 'l1', popupsOn: false }); // off, or the pop-up itself would open over the staff page (staff see it like everyone else)
+    const { page, context } = await openAsStaff('/staff?section=popups', LEADER, { width: 760, height: 1100, setup: fakeUploads() });
+    await page.waitForSelector('.pu-panel');
+    assert.equal(await page.$('.pu-panel .cr-switch'), null, 'the master switch is for admins');
+    await waitText(page, 'Live one', '.pu-panel');
+    const row = await page.$eval('.pu-list .pu-row', (r) => ({ title: r.querySelector('b').textContent, from: [...r.querySelectorAll('.meta')].map((m) => m.textContent), thumb: !!r.querySelector('img.pu-thumb') }));
+    assert.deepEqual([row.title, row.from[1], row.thumb], ['Carols night', `From ${STAFF}`, true]);
+    const pageLog = [];
+    page.on('console', (m) => pageLog.push(`${m.type()}: ${m.text()}`));
+    page.on('pageerror', (e) => pageLog.push(`pageerror: ${e.message}`));
+    await page.click('button[aria-label="Approve Carols night"]');
+    try { await page.waitForSelector('.pu-choice', { timeout: 8000 }); } catch (e) {
+      throw new Error(`no Replace/Keep choice after Approve.\nPanel: ${await page.$eval('.pu-panel', (el) => el.innerText.replace(/\n+/g, ' | '))}\nLog: ${pageLog.join('\n')}`);
+    }
+    assert.match(await text(page, '.pu-choice'), /Live one is live until .*Only one pop-up can be live/);
+    await shot(page, 'popup-approve-choice');
+    await page.click('.pu-choice .btn::-p-text(Keep the current one)');
+    await waitText(page, 'Declined. The current pop-up stays', '[role=status]');
+    let byId = Object.fromEntries((await allPopups()).map((p) => [p.id, p]));
+    assert.deepEqual([byId.r1.status, byId.r1.approvedBy, byId.l1.status, (await readDoc('config', 'app')).livePopupId], ['declined', LEADER, 'live', 'l1']);
+    assert.match(byId.r1.note, /^Another pop-up, "Live one", is live until /);
+    // the same again, replacing
+    await seedPopup('r1', { title: 'Carols night', status: 'requested', requestedBy: STAFF, approvedBy: undefined });
+    await page.reload();
+    await page.waitForSelector('button[aria-label="Approve Carols night"]');
+    await page.click('button[aria-label="Approve Carols night"]');
+    await page.waitForSelector('.pu-choice');
+    await page.click('.pu-choice .btn::-p-text(Replace the current pop-up)');
+    await waitText(page, 'It replaced the pop-up that was live.', '[role=status]');
+    byId = Object.fromEntries((await allPopups()).map((p) => [p.id, p]));
+    assert.deepEqual([byId.r1.status, byId.r1.approvedBy, byId.l1.status, (await readDoc('config', 'app')).livePopupId], ['live', LEADER, 'ended', 'r1']);
+    // declining with a note, which the requester then sees in Notifications
+    await seedPopup('r2', { title: 'Youth camp', status: 'requested', requestedBy: STAFF, approvedBy: undefined });
+    await page.reload();
+    await page.waitForSelector('button[aria-label="Decline Youth camp"]');
+    await page.click('button[aria-label="Decline Youth camp"]');
+    await page.waitForSelector('#pu-note');
+    await page.type('#pu-note', 'Please pick a date after the carols.');
+    await page.click('.pu-decline .btn::-p-text(Decline with this note)');
+    await waitText(page, 'Declined, with your note', '[role=status]');
+    byId = Object.fromEntries((await allPopups()).map((p) => [p.id, p]));
+    assert.deepEqual([byId.r2.status, byId.r2.note], ['declined', 'Please pick a date after the carols.']);
+    await context.close();
+    const requester = await openAsStaff('/notifications', STAFF);
+    await waitText(requester.page, 'Your pop-up request was declined: Youth camp');
+    await waitText(requester.page, 'Please pick a date after the carols.');
+    await requester.context.close();
+    // nobody approves their own request, even with the switch
+    await setApprover(STAFF, true);
+    await seedPopup('r3', { title: 'My own', status: 'requested', requestedBy: STAFF, approvedBy: undefined });
+    const own = await openAsStaff('/staff?section=popups', STAFF, { width: 760, height: 1100 });
+    await own.page.waitForSelector('button[aria-label="Approve My own"]');
+    assert.equal(await own.page.$eval('button[aria-label="Approve My own"]', (b) => b.disabled), true);
+    await waitText(own.page, 'Your own request: someone else approves it.', '.pu-panel');
+    await own.context.close();
+    // with nothing live, an admin's approval goes straight to live
+    await setConfig({ livePopupId: null });
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'popups', 'r1'), { status: 'ended' }, { merge: true }));
+    const admin = await openAsStaff('/staff?section=popups', ADMIN, { width: 760, height: 1100 });
+    await admin.page.waitForSelector('button[aria-label="Approve My own"]');
+    await admin.page.click('button[aria-label="Approve My own"]');
+    await waitText(admin.page, 'Approved. It is now the live pop-up.', '[role=status]');
+    byId = Object.fromEntries((await allPopups()).map((p) => [p.id, p]));
+    assert.deepEqual([byId.r3.status, byId.r3.approvedBy, (await readDoc('config', 'app')).livePopupId], ['live', ADMIN, 'r3']);
+    await admin.context.close();
   });
 });
 

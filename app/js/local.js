@@ -34,6 +34,7 @@ export const EVENT_DRAFT = 'eventDraft';
 export const EVENTS_VIEW = 'eventsView';
 export const WATCH_RESUME = 'watchResume'; // { id, t }: the video and second the member stopped at
 export const WATCH_SOUND = 'watchSound'; // true when the member turned sound on
+export const POPUP_SEEN = 'popupSeen'; // { id, day }: the launch pop-up already shown on this phone today
 
 // The design's defaults: everything on except the daily verse.
 export const NOTIF_DEFAULTS = { rem: true, chg: true, newev: true, notice: true, verse: false, story: true, book: true };

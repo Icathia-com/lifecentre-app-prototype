@@ -12,6 +12,9 @@ This guide is for church staff, leaders and admins. You do not need any technica
 | Add a video to Watch | Yes | No | Yes |
 | Remove a video from Watch | Yes | Yes | Yes |
 | Add or remove people on the staff list | Yes | No | No |
+| Request a launch pop-up for an event | Yes | Yes | No |
+| Approve pop-up requests | Yes | With "Can approve pop-ups" | With "Can approve pop-ups" |
+| Make a pop-up live directly, and the pop-up master switch | Yes | No | No |
 
 ## Sign in
 
@@ -97,13 +100,37 @@ Your bookings are listed lower on the same page, under **Your bookings** and **Y
 
 **Rebook:** on an earlier booking, tap **Rebook** to book the same space again. The app picks the same hours on the next same weekday and fills in your details, so you only choose a different day if you want one, then tap **Confirm** and **Send booking request**.
 
+## Launch pop-ups
+
+A launch pop-up is a full-screen banner that everyone sees once a day, on their first open of the day, while it is live. Tapping
+it opens the linked event. Only one pop-up can be live at a time, and nothing shows to members until an admin turns the
+master switch on.
+
+**Ask for one (staff and admins):** when you create or edit an event that has a cover photo, turn on **Request a launch pop-up
+for everyone** under Options. The pop-up uses the event's photo and title. It starts now and ends when the event ends; change
+either if you like, then save the event. Your request goes to the people who approve pop-ups, in their Notifications. You will
+see the answer in your own Notifications, with a note if it was declined.
+
+**Approve requests (admins, and anyone with "Can approve pop-ups"):** sign in, tap **Pop-ups** on the staff page (or the request
+in your Notifications). Each request shows the banner, the dates and who asked. Tap **Approve** or **Decline** (with a short note
+to the requester). If another pop-up is live, approving asks you to choose: **Replace the current pop-up**, or **Keep the current
+one**, which declines the new request and tells the requester why. Nobody can approve their own request.
+
+**Run pop-ups (admins only):** on **Pop-ups**:
+1. **Show to members** is the master switch. It starts off. Nothing shows to anyone until you turn it on.
+2. **New pop-up**: tap **Choose banner** and pick a picture. It is cropped to the pop-up shape; slide **Position the crop** to
+   choose which part shows. Give it a **Title**, link it to an event if you like, and set **Show from** and **Until**.
+   **Save as draft** keeps it for later; **Make live** shows it from its start time (replacing the live one, if any).
+3. **Take down** ends the live pop-up at once. A pop-up also ends by itself at its end time.
+
 ## Manage the staff list (admins only)
 
 1. Sign in, then tap **Staff**.
 2. To add someone, type their **Google account email**, their **Name**, and choose a **Role** (staff, leader or admin). Tap **Save**.
    The person must use that same Google account to sign in.
 3. To change someone's name or role, tap them in the list, change it, and tap **Save**.
-4. To remove someone, tap **Delete** next to their name. You cannot delete yourself.
+4. Tick **Can approve pop-ups** for anyone who should decide on launch pop-up requests. Admins can always decide.
+5. To remove someone, tap **Delete** next to their name. You cannot delete yourself.
 
 ## If something goes wrong
 

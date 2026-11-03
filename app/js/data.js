@@ -2,7 +2,7 @@
 // Reads fall back to what is saved on the phone, then to sample content, when the database can't be reached.
 // They use the "FromServer" calls on purpose: the plain ones answer an offline query with an empty list instead of an error.
 import {
-  collection, doc, getDocFromServer, getDocsFromServer, query, where, orderBy, setDoc, deleteDoc, Timestamp, serverTimestamp,
+  collection, doc, getDocFromServer, getDocsFromServer, query, where, orderBy, setDoc, updateDoc, deleteDoc, Timestamp, serverTimestamp,
 } from 'firebase/firestore';
 import { BACKUP_VERSES, backupVerse, sampleAnnouncements, sampleEvents } from './sample-data.js';
 import { dateKey } from './util.js';
@@ -20,9 +20,15 @@ const readers = {
     description: d.description, cover: d.cover, pinned: d.pinned, registerUrl: d.registerUrl, requireApproval: d.requireApproval, price: d.price,
     capacity: d.capacity, notifyFollowers: d.notifyFollowers, going: d.going, published: !!d.published, sample: d.sample, createdAt: ms(d.createdAt),
   }),
-  staff: (id, d) => clean({ id, role: d.role, name: d.name }),
+  staff: (id, d) => clean({ id, role: d.role, name: d.name, approvePopups: d.approvePopups }),
   videos: (id, d) => clean({ id, title: d.title, org: d.org, desc: d.desc, src: d.src, videoId: d.videoId, url: d.url, dur: d.dur, sample: d.sample, createdAt: ms(d.createdAt) }),
+  popups: (id, d) => clean({
+    id, title: d.title, image: d.image, eventId: d.eventId, start: ms(d.start), end: ms(d.end), status: d.status, requestedBy: d.requestedBy,
+    approvedBy: d.approvedBy, note: d.note, createdAt: ms(d.createdAt), updatedAt: ms(d.updatedAt),
+  }),
+  config: (id, d) => ({ popupsOn: !!d.popupsOn, livePopupId: d.livePopupId ?? null }),
 };
+const NO_CONFIG = () => ({ popupsOn: false, livePopupId: null });
 
 // Form values -> document fields. Fields left empty are left out, which is what the rules expect.
 const writers = {
@@ -34,8 +40,12 @@ const writers = {
     ...(v.requireApproval ? { requireApproval: true } : {}), ...(v.pinned ? { pinned: true } : {}), notifyFollowers: !!v.notifyFollowers,
     ...(v.createdAt ? { createdAt: Timestamp.fromMillis(v.createdAt) } : {}), published: !!v.published,
   }),
-  staff: (v) => ({ role: v.role, ...clean({ name: v.name }) }),
+  staff: (v) => ({ role: v.role, ...clean({ name: v.name }), ...(v.approvePopups ? { approvePopups: true } : {}) }),
   videos: (v) => ({ title: v.title, src: v.src, ...clean({ org: v.org, desc: v.desc, videoId: v.videoId, url: v.url, dur: v.dur }) }),
+  popups: (v) => ({
+    title: v.title, image: v.image, start: Timestamp.fromMillis(v.start), end: Timestamp.fromMillis(v.end), status: v.status, requestedBy: v.requestedBy,
+    ...clean({ eventId: v.eventId, approvedBy: v.approvedBy, note: v.note }), ...(v.createdAt ? { createdAt: Timestamp.fromMillis(v.createdAt) } : {}),
+  }),
 };
 
 const SORTS = {
@@ -44,6 +54,7 @@ const SORTS = {
   events: (a, b) => b.start - a.start,
   staff: (a, b) => (a.id < b.id ? -1 : 1),
   videos: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
+  popups: (a, b) => (b.createdAt ?? b.updatedAt ?? 0) - (a.createdAt ?? a.updatedAt ?? 0),
 };
 
 const CACHE_PREFIX = 'lc:v1:';
@@ -136,6 +147,26 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
       return { ...result, value: current };
     },
 
+    // The pop-up master switch and which pop-up is in the live slot (config/app). Missing means off.
+    getAppConfig() {
+      return load('config', async () => {
+        const snap = await getDocFromServer(doc(db, 'config', 'app'));
+        return snap.exists() ? readers.config(snap.id, snap.data()) : NO_CONFIG();
+      }, (v) => v, NO_CONFIG);
+    },
+
+    // The pop-up in the live slot, when the master switch is on: { config, popup } with popup null otherwise. The caller still
+    // checks the pop-up's own start and end.
+    async getLivePopup() {
+      const { value: config, source } = await this.getAppConfig();
+      if (!config.popupsOn || !config.livePopupId) return { value: { config, popup: null }, source };
+      const result = await load(`popup:${config.livePopupId}`, async () => {
+        const snap = await getDocFromServer(doc(db, 'popups', config.livePopupId));
+        return snap.exists() ? readers.popups(snap.id, snap.data()) : null;
+      }, (v) => v, () => null);
+      return { value: { config, popup: result.value }, source: result.source };
+    },
+
     // Posted Watch videos, newest first. Nothing posted gives an empty list (Watch then shows its sample cards).
     getVideos() {
       const newest = (list) => [...list].sort(SORTS.videos);
@@ -158,11 +189,21 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
       // Saving replaces the document, so an edited sample item stops being marked as sample.
       async save(col, email, values, id) {
         const ref = id ? doc(db, col, id) : doc(collection(db, col));
-        const created = (col === 'events' || col === 'videos') && !id && !values.createdAt ? { createdAt: serverTimestamp() } : {};
+        const created = ['events', 'videos', 'popups'].includes(col) && !id && !values.createdAt ? { createdAt: serverTimestamp() } : {};
         await setDoc(ref, clean({ ...writers[col](values), ...created, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() })); // setDoc refuses undefined, so a missing value is simply not written
         return ref.id;
       },
+      // Changes only the given fields (a decision on a pop-up changes its status and nothing else, which the rules check).
+      patch: (col, email, id, fields) => updateDoc(doc(db, col, id), clean({ ...fields, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() })),
       remove: (col, id) => deleteDoc(doc(db, col, id)),
+      // Pop-ups: all of them, or those with a status, an event or a requester.
+      async listPopups({ status, eventId, requestedBy } = {}) {
+        const filters = [status && where('status', '==', status), eventId && where('eventId', '==', eventId), requestedBy && where('requestedBy', '==', requestedBy.toLowerCase())].filter(Boolean);
+        const snap = await getDocsFromServer(filters.length ? query(collection(db, 'popups'), ...filters) : collection(db, 'popups'));
+        return snap.docs.map((d) => readers.popups(d.id, d.data())).sort(SORTS.popups);
+      },
+      // The master switch and the live slot together: the rules want the whole document each time.
+      setConfig: (email, { popupsOn, livePopupId }) => setDoc(doc(db, 'config', 'app'), { popupsOn: !!popupsOn, livePopupId: livePopupId ?? null, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
     },
   };
 }

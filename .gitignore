@@ -28,3 +28,8 @@ android/manifest-checksum.txt
 android/*.apk
 android/*.aab
 android/*.idsig
+
+# Cloudflare Worker: wrangler state and local secrets stay on this computer
+cloudflare/**/.wrangler/
+cloudflare/**/.dev.vars
+cloudflare/**/node_modules/
