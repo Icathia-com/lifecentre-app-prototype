@@ -3089,7 +3089,7 @@ describe('Launch pop-up', () => {
 
   it('approving with no pop-up live makes the request live; with another live, the approver replaces it or keeps it (declining with a note); nobody approves their own', async () => {
     await setApprover(LEADER, true);
-    await seedPopup('r1', { title: 'Carols night', status: 'requested', requestedBy: STAFF, approvedBy: undefined, eventId: 'conf', image: `data:image/jpeg;base64,${'/9j/4AAQSkZJRgABAQ'.repeat(4)}` });
+    await seedPopup('r1', { title: 'Carols night', status: 'requested', requestedBy: STAFF, approvedBy: undefined, eventId: 'conf', image: 'https://media.test/popups/r1.jpg' }); // served by fakeUploads, so the thumbnail renders in the screenshot
     await seedPopup('l1', { title: 'Live one' });
     await setConfig({ livePopupId: 'l1', popupsOn: false }); // off, or the pop-up itself would open over the staff page (staff see it like everyone else)
     const { page, context } = await openAsStaff('/staff?section=popups', LEADER, { width: 760, height: 1100, setup: fakeUploads() });
