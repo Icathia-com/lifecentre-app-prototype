@@ -154,7 +154,15 @@ export function popupsPanel(user, entry) {
     if (!(start < end)) return say('The end must be after the start.', true);
     if (makeLive && end <= Date.now()) return say('Its end has passed. Change the dates first.', true);
     act(makeLive ? 'Saved. It is now the live pop-up.' : 'Saved as a draft.', async () => {
-      const image = form.blob ? await uploadFile(form.blob, { kind: 'popups' }) : form.image;
+      // The banner goes up first and the form keeps its public address, so a save that fails is retried without uploading again.
+      if (form.blob) {
+        say('Uploading the banner…');
+        form.image = await uploadFile(form.blob, { kind: 'popups' });
+        form.blob = null;
+        if (form.preview) URL.revokeObjectURL(form.preview);
+        form.preview = form.image;
+      }
+      const image = form.image;
       const slot = inSlot(popups, config);
       const liveStatus = start > Date.now() ? 'approved' : 'live';
       const values = {
@@ -162,11 +170,13 @@ export function popupsPanel(user, entry) {
         requestedBy: form.requestedBy ?? email, approvedBy: makeLive ? email : form.approvedBy, note: form.note, createdAt: form.createdAt,
       };
       if (makeLive && values.status !== 'draft' && form.status === 'requested' && form.requestedBy === email) throw new Error('you cannot approve your own request.');
-      const id = await data.admin.save('popups', email, values, form.id ?? undefined);
-      if (makeLive) {
-        if (slot && slot.id !== id) await data.admin.patch('popups', email, slot.id, { status: 'ended' });
-        await data.admin.setSlot(email, id);
-      }
+      try {
+        const id = await data.admin.save('popups', email, values, form.id ?? undefined);
+        if (makeLive) {
+          if (slot && slot.id !== id) await data.admin.patch('popups', email, slot.id, { status: 'ended' });
+          await data.admin.setSlot(email, id);
+        }
+      } catch (err) { throw new Error(`the banner is uploaded (${image}), but the pop-up could not be saved: ${explain(err)}`); }
       form = null;
     });
   }

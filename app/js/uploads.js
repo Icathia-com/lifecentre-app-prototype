@@ -1,14 +1,15 @@
-// Uploads to the church's own file storage (a Cloudflare R2 bucket), through the upload Worker: it checks the signed-in Google
-// account against the staff list and hands back a short-lived address to put one file at. Files are made smaller on the phone
-// first, and anything over 60 MB is refused here before it is sent. Nothing secret lives in the app: the Worker holds the keys.
+// Uploads to the church's own file storage (a Cloudflare R2 bucket), through the upload Worker: the file goes to the Worker
+// with the signed-in Google account's token, the Worker checks the account against the staff list and puts the file in the
+// bucket, and answers with the file's public address. Files are made smaller on the phone first, and anything over 60 MB is
+// refused here before it is sent. Nothing secret lives in the app, and the Worker holds no keys either.
 import { getAuthTools } from './firebase.js';
 
 export const UPLOAD_API = 'https://lifecentre-uploads.lifecentre-app-prototype.workers.dev'; // the Worker's address (deployed 3 Nov 2026)
 export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 export const TOO_BIG = 'That file is over 60 MB. Please choose a smaller one.';
 
-// Puts `blob` in the bucket under `kind/` (popups or stories) and resolves with its public address.
-// A recording's type can carry codec details ("video/webm;codecs=vp9,opus"): the plain type is what is signed and sent.
+// Puts `blob` in the bucket under `kind/` (popups, stories or avatars) and resolves with its public address.
+// A recording's type can carry codec details ("video/webm;codecs=vp9,opus"): the plain type is what is sent.
 export const plainType = (type) => String(type || '').split(';')[0].trim().toLowerCase();
 const UNREACHABLE = 'The upload service could not be reached. Please try again later.';
 
@@ -19,18 +20,15 @@ export async function uploadFile(blob, { kind, fetcher = fetch } = {}) {
   if (!user) throw new Error('Please sign in with Google first.');
   const token = await user.getIdToken();
   const contentType = plainType(blob.type);
-  let signed;
+  let res;
   try {
-    signed = await fetcher(`${UPLOAD_API}/sign`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ kind, contentType, size: blob.size }),
+    res = await fetcher(`${UPLOAD_API}/upload?kind=${encodeURIComponent(kind)}&size=${blob.size}`, {
+      method: 'POST', headers: { 'Content-Type': contentType, Authorization: `Bearer ${token}` }, body: blob,
     });
   } catch { throw new Error(UNREACHABLE); }
-  if (!signed.ok) throw new Error(await reason(signed));
-  const { url, publicUrl } = await signed.json();
-  let put;
-  try { put = await fetcher(url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: blob }); } catch { throw new Error(UNREACHABLE); }
-  if (!put.ok) throw new Error('The upload did not finish. Please try again.');
+  if (!res.ok) throw new Error(await reason(res));
+  const { publicUrl } = await res.json();
+  if (typeof publicUrl !== 'string' || !publicUrl.startsWith('https://')) throw new Error('The upload did not finish. Please try again.');
   return publicUrl;
 }
 

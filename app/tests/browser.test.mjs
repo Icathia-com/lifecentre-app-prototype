@@ -2875,9 +2875,12 @@ describe('Launch pop-up', () => {
     await p.setRequestInterception(true);
     p.on('request', (req) => {
       const u = req.url();
-      if (req.method() === 'OPTIONS' && (u.startsWith(UPLOADS) || u.startsWith('https://upload.test/'))) return req.respond({ status: 204, headers: CORS });
-      if (u === `${UPLOADS}sign`) { calls.push({ sign: JSON.parse(req.postData() || '{}'), auth: req.headers().authorization }); return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ url: 'https://upload.test/put/1', key: 'popups/2026/11/1.jpg', publicUrl: 'https://media.test/popups/1.jpg', expiresIn: 600 }) }); }
-      if (u.startsWith('https://upload.test/')) { calls.push({ put: u, type: req.headers()['content-type'], length: Number(req.headers()['content-length'] || 0) }); return req.respond({ status: 200, headers: CORS, body: '' }); }
+      if (req.method() === 'OPTIONS' && u.startsWith(UPLOADS)) return req.respond({ status: 204, headers: CORS });
+      if (u.startsWith(`${UPLOADS}upload?`)) { // the file itself goes to the Worker, which puts it in the bucket
+        const q = new URL(u).searchParams;
+        calls.push({ sign: { kind: q.get('kind'), contentType: req.headers()['content-type'] || '', size: Number(q.get('size')) }, auth: req.headers().authorization, put: u, type: req.headers()['content-type'] || '' });
+        return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ key: 'popups/2026/11/1.jpg', publicUrl: 'https://media.test/popups/1.jpg', bytes: Number(q.get('size')) }) });
+      }
       if (u.startsWith('https://media.test/')) return req.respond({ status: 200, contentType: 'image/png', body: PNG });
       return req.continue();
     });
@@ -2969,7 +2972,7 @@ describe('Launch pop-up', () => {
     }
     const [sign, put] = [calls.find((c) => c.sign), calls.find((c) => c.put)];
     assert.deepEqual([sign.sign.kind, sign.sign.contentType, sign.sign.size > 10000, sign.auth.startsWith('Bearer ')], ['popups', 'image/jpeg', true, true]);
-    assert.deepEqual([put.put, put.type], ['https://upload.test/put/1', 'image/jpeg'], 'the file is put at the signed address'); // the browser adds the length after interception, so it is not visible here
+    assert.deepEqual([put.put.startsWith(`${UPLOADS}upload?kind=popups&size=`), put.type], [true, 'image/jpeg'], 'the file itself goes to the Worker');
     const [saved] = await allPopups();
     assert.deepEqual([saved.title, saved.image, saved.eventId, saved.status, saved.requestedBy, saved.approvedBy, saved.end.toMillis() > Date.now()], ['Christmas service', 'https://media.test/popups/1.jpg', 'conf', 'live', ADMIN, ADMIN, true]);
     assert.deepEqual([(await readDoc('config', 'app')).livePopupId, (await readDoc('config', 'app')).popupsOn], [saved.id, false]);
@@ -3175,15 +3178,15 @@ describe('Stories', () => {
     await p.setRequestInterception(true);
     p.on('request', (req) => {
       const u = req.url();
-      if (req.method() === 'OPTIONS' && (u.startsWith(UPLOADS) || u.startsWith('https://upload.test/'))) return req.respond({ status: 204, headers: CORS });
-      if (u === `${UPLOADS}sign`) {
-        const body = JSON.parse(req.postData() || '{}');
+      if (req.method() === 'OPTIONS' && u.startsWith(UPLOADS)) return req.respond({ status: 204, headers: CORS });
+      if (u.startsWith(`${UPLOADS}upload?`)) { // the file itself goes to the Worker, which puts it in the bucket
+        const q = new URL(u).searchParams;
+        const body = { kind: q.get('kind'), contentType: req.headers()['content-type'] || '', size: Number(q.get('size')) };
         const n = calls.filter((c) => c.sign).length + 1;
         const key = `${body.kind}/2026/11/${n}.${(body.contentType || 'x/bin').split('/')[1].split(';')[0]}`;
-        calls.push({ sign: body, auth: req.headers().authorization, key });
-        return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ url: `https://upload.test/put/${n}`, key, publicUrl: `https://media.test/${key}`, expiresIn: 600 }) });
+        calls.push({ sign: body, auth: req.headers().authorization, key, put: u, type: body.contentType });
+        return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ key, publicUrl: `https://media.test/${key}`, bytes: body.size }) });
       }
-      if (u.startsWith('https://upload.test/')) { calls.push({ put: u, type: req.headers()['content-type'] }); return req.respond({ status: 200, headers: CORS, body: '' }); }
       if (u.startsWith('https://media.test/')) {
         const f = files.get(u) ?? { type: 'image/png', body: PNG };
         const range = /bytes=(\d+)-(\d*)/.exec(req.headers().range || '');
