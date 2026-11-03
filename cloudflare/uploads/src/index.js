@@ -60,12 +60,14 @@ export async function sign(request, env, io) {
   const auth = request.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!token) throw refuse(401, 'Please sign in with Google first.');
-  const claims = await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID, io).catch(() => { throw refuse(401, 'Please sign in with Google again.'); });
+  const claims = await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID, io).catch((err) => { throw err.status ? err : refuse(401, 'Please sign in with Google again.'); });
   let body;
   try { body = await request.json(); } catch { throw refuse(400, 'Bad request.'); }
-  const { kind, contentType, size } = body || {};
-  if (!KINDS[kind]) throw refuse(400, 'Unknown upload kind.');
-  if (!TYPES[contentType]) throw refuse(415, 'That type of file cannot be uploaded.');
+  const { kind, size } = body || {};
+  // A recording's type may carry codec details; the plain type is checked and signed. Own properties only: no "constructor".
+  const contentType = String(body?.contentType || '').split(';')[0].trim().toLowerCase();
+  if (typeof kind !== 'string' || !Object.hasOwn(KINDS, kind)) throw refuse(400, 'Unknown upload kind.');
+  if (!Object.hasOwn(TYPES, contentType)) throw refuse(415, 'That type of file cannot be uploaded.');
   if (!Number.isInteger(size) || size <= 0) throw refuse(400, 'Bad file size.');
   if (size > MAX_BYTES) throw refuse(413, 'That file is over 60 MB. Please choose a smaller one.');
   const entry = await staffEntry(claims.email, token, env, io);
@@ -120,8 +122,9 @@ export async function verifyFirebaseToken(token, projectId, io) {
 
 async function googleKeys(io) {
   if (jwksCache.keys && jwksCache.until > io.now()) return jwksCache.keys;
-  const res = await io.fetch(JWKS_URL);
-  if (!res.ok) throw new Error('keys unavailable');
+  let res;
+  try { res = await io.fetch(JWKS_URL); } catch { throw refuse(503, 'Please try again in a moment.'); }
+  if (!res.ok) throw refuse(503, 'Please try again in a moment.'); // Google's keys could not be fetched: not the person's fault
   const { keys } = await res.json();
   const maxAge = Number(/max-age=(\d+)/.exec(res.headers.get('Cache-Control') || '')?.[1] || 3600);
   jwksCache = { keys, until: io.now() + maxAge * 1000 };

@@ -165,13 +165,19 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
     },
 
     // The pop-up in the live slot, when the master switch is on: { config, popup } with popup null otherwise. The caller still
-    // checks the pop-up's own start and end.
+    // checks the pop-up's own start and end. A refused read (the pop-up is no longer live, or has not started) means none,
+    // never a saved copy.
     async getLivePopup() {
       const { value: config, source } = await this.getAppConfig();
       if (!config.popupsOn || !config.livePopupId) return { value: { config, popup: null }, source };
       const result = await load(`popup:${config.livePopupId}`, async () => {
-        const snap = await getDocFromServer(doc(db, 'popups', config.livePopupId));
-        return snap.exists() ? readers.popups(snap.id, snap.data()) : null;
+        try {
+          const snap = await getDocFromServer(doc(db, 'popups', config.livePopupId));
+          return snap.exists() ? readers.popups(snap.id, snap.data()) : null;
+        } catch (err) {
+          if (err.code === 'permission-denied') return null;
+          throw err;
+        }
       }, (v) => v, () => null);
       return { value: { config, popup: result.value }, source: result.source };
     },
@@ -223,8 +229,18 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
         const snap = await getDocsFromServer(filters.length ? query(collection(db, 'popups'), ...filters) : collection(db, 'popups'));
         return snap.docs.map((d) => readers.popups(d.id, d.data())).sort(SORTS.popups);
       },
-      // The master switch and the live slot together: the rules want the whole document each time.
+      // The master switch (admins): the whole document, as the rules want it.
       setConfig: (email, { popupsOn, livePopupId }) => setDoc(doc(db, 'config', 'app'), { popupsOn: !!popupsOn, livePopupId: livePopupId ?? null, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
+      // Which pop-up is in the live slot, leaving the switch as it is (an approver may change only this). Makes the document,
+      // switch off, when there is none yet.
+      async setSlot(email, livePopupId) {
+        const ref = doc(db, 'config', 'app');
+        const fields = { livePopupId: livePopupId ?? null, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() };
+        // An update to a document that is not there is refused by the rules (not reported as missing), so look first.
+        const snap = await getDocFromServer(ref);
+        if (snap.exists()) await updateDoc(ref, fields);
+        else await setDoc(ref, { popupsOn: false, ...fields });
+      },
       // A staff member's own display name and photo (the only things they may change about their entry).
       updateMe: (email, { displayName, photo }) => updateDoc(doc(db, 'staff', email.toLowerCase()), { displayName: String(displayName ?? '').trim().slice(0, 60), photo: photo || '', updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
     },

@@ -27,6 +27,7 @@ export function openStories({ groups, startIndex = 0, me = null, onClose, host =
   let stillDone = 0;      // and how much of it had run before a pause
   let raf = 0;
   let press = null;       // { x, y, t, id, moved, held, timer }
+  let needsTap = false;   // the browser refused to start sound without a tap (iPhones can): the next tap starts it
   let seen = load(STORIES_SEEN, {});
   const counted = new Set(load(STORIES_COUNTED, []));
   const opener = document.activeElement;
@@ -34,6 +35,7 @@ export function openStories({ groups, startIndex = 0, me = null, onClose, host =
   const bars = h('div', { class: 'st-bars', 'aria-hidden': 'true' });
   const media = h('div', { class: 'st-media' });
   const caption = h('p', { class: 'st-text', hidden: '' });
+  const tapHint = h('p', { class: 'st-tap', hidden: '' }, 'Tap to play');
   const nameEl = h('b', {});
   const timeEl = h('small', {});
   const views = h('span', { class: 'st-views', hidden: '' });
@@ -48,7 +50,7 @@ export function openStories({ groups, startIndex = 0, me = null, onClose, host =
   const pauseBtn = h('button', { type: 'button', class: 'sr', onclick: () => (paused ? resume() : pause()) }, 'Pause');
   const stage = h('div', { class: 'st-stage', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Stories', tabindex: '-1' },
     media, h('div', { class: 'st-shade top', 'aria-hidden': 'true' }), h('div', { class: 'st-shade bottom', 'aria-hidden': 'true' }),
-    bars, h('div', { class: 'st-head' }, who, views, closeBtn), caption,
+    bars, h('div', { class: 'st-head' }, who, views, closeBtn), caption, tapHint,
     h('div', { class: 'st-keys' }, prevBtn, nextBtn, prevPerson, nextPerson, pauseBtn), live);
   const layer = h('div', { class: 'st-layer' }, stage);
 
@@ -147,7 +149,8 @@ export function openStories({ groups, startIndex = 0, me = null, onClose, host =
           paintFraction((t - part.start) / partLength(part));
         };
         target.onended = () => advance();
-        if (!paused) target.play().catch(() => { /* the browser wants a tap first: the hold/tap handlers call play again */ });
+        needsTap = false; tapHint.hidden = true;
+        if (!paused) target.play().catch(() => { if (closed || token !== playToken) return; needsTap = true; tapHint.hidden = false; }); // the browser wants a tap first
       });
     } else {
       stillDone = 0;
@@ -219,6 +222,7 @@ export function openStories({ groups, startIndex = 0, me = null, onClose, host =
       return;
     }
     if (e.type === 'pointercancel') return;
+    if (needsTap && el) { needsTap = false; tapHint.hidden = true; el.play().catch(() => { needsTap = true; tapHint.hidden = false; }); return; }
     step(p.x < stage.clientWidth / 3 ? -1 : 1);
   };
   stage.addEventListener('pointerup', release);

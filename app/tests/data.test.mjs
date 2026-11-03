@@ -183,6 +183,25 @@ describe('staff writes', () => {
     store.clear();
     assert.equal((await publicData().getLivePopup()).value.popup, null, 'off: nothing for members');
   });
+  it('changes the live slot on its own: made with the switch off when there is no config yet, and leaving the switch alone after', async () => {
+    const ADMIN = 'admin@lifecentre.sg';
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'staff', ADMIN), { role: 'admin', updatedBy: ADMIN });
+      await setDoc(doc(ctx.firestore(), 'staff', LEADER), { role: 'leader', approvePopups: true, updatedBy: ADMIN });
+    });
+    const approver = createData(env.authenticatedContext('l', { email: LEADER, email_verified: true }).firestore(), { now: () => NOW });
+    await approver.admin.setSlot(LEADER, 'p1'); // no config document yet: an approver may make it, switch off
+    store.clear();
+    assert.deepEqual((await publicData().getAppConfig()).value, { popupsOn: false, livePopupId: 'p1' });
+    const admin = createData(env.authenticatedContext('a', { email: ADMIN, email_verified: true }).firestore(), { now: () => NOW });
+    await admin.admin.setConfig(ADMIN, { popupsOn: true, livePopupId: 'p1' });
+    await approver.admin.setSlot(LEADER, 'p2'); // the switch an admin turned on stays on
+    store.clear();
+    assert.deepEqual((await publicData().getAppConfig()).value, { popupsOn: true, livePopupId: 'p2' });
+    await approver.admin.setSlot(LEADER, null);
+    store.clear();
+    assert.deepEqual((await publicData().getAppConfig()).value, { popupsOn: true, livePopupId: null });
+  });
   it('lists live stories newest first for everyone, counts a view, and lets a staff member set their own name and photo', async () => {
     const ADMIN = 'admin@lifecentre.sg';
     await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', ADMIN), { role: 'admin', updatedBy: ADMIN }));

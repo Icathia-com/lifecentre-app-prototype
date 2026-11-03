@@ -2960,8 +2960,13 @@ describe('Launch pop-up', () => {
     await page.evaluate(() => document.querySelector('.pu-panel').scrollIntoView());
     await shot(page, 'popup-admin');
     await checkAccessibility(page, 'Pop-ups section');
+    const pageLog = [];
+    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') pageLog.push(`${m.type()}: ${m.text()}`); });
+    page.on('pageerror', (e) => pageLog.push(`pageerror: ${e.message}`));
     await page.click('.pu-panel .btn::-p-text(Make live)');
-    await waitText(page, 'It is now the live pop-up.', '[role=status]');
+    try { await waitText(page, 'It is now the live pop-up.', '[role=status]'); } catch (e) {
+      throw new Error(`Make live did not finish.\nStatus: ${await page.$$eval('[role=status]', (els) => els.map((s) => s.textContent).join(' | '))}\nCalls: ${JSON.stringify(calls)}\nLog: ${pageLog.join('\n')}`);
+    }
     const [sign, put] = [calls.find((c) => c.sign), calls.find((c) => c.put)];
     assert.deepEqual([sign.sign.kind, sign.sign.contentType, sign.sign.size > 10000, sign.auth.startsWith('Bearer ')], ['popups', 'image/jpeg', true, true]);
     assert.deepEqual([put.put, put.type], ['https://upload.test/put/1', 'image/jpeg'], 'the file is put at the signed address'); // the browser adds the length after interception, so it is not visible here
@@ -3044,6 +3049,10 @@ describe('Launch pop-up', () => {
     assert.equal(await page.$('.cr-switch[aria-label="Request a launch pop-up for everyone"]'), null, 'no banner, no request');
     await choosePicture(page, 'input[type=file]');
     await page.waitForSelector('.cover.photo');
+    await page.waitForSelector('.cr-switch[aria-label="Request a launch pop-up for everyone"]');
+    await page.select('select[aria-label="Visibility"]', 'draft');
+    await page.waitForFunction(() => !document.querySelector('.cr-switch[aria-label="Request a launch pop-up for everyone"]'), {}, 'a draft event cannot ask for a pop-up');
+    await page.select('select[aria-label="Visibility"]', 'public');
     await page.waitForSelector('.cr-switch[aria-label="Request a launch pop-up for everyone"]');
     await page.click('.cr-switch[aria-label="Request a launch pop-up for everyone"]');
     await page.waitForSelector('input[aria-label="Pop-up start"]');
@@ -3395,7 +3404,7 @@ describe('Stories', () => {
     await page.click('.st-post-btn');
     await page.waitForFunction(() => location.hash === '#/', { timeout: 30000 });
     const sign = calls.find((c) => c.sign);
-    assert.deepEqual([sign.sign.kind, sign.sign.contentType.startsWith('video/'), sign.sign.size > 1000, calls.some((c) => c.put)], ['stories', true, true, true]);
+    assert.deepEqual([sign.sign.kind, sign.sign.contentType.startsWith('video/'), sign.sign.contentType.includes(';'), sign.sign.size > 1000, calls.find((c) => c.put)?.type === sign.sign.contentType], ['stories', true, false, true, true], 'the plain type is signed and sent');
     const [story] = await allStories();
     assert.deepEqual([story.type, story.author, story.text, story.parts.length, story.duration, story.views, story.mediaUrl.startsWith('https://media.test/stories/'), story.expiresAt.toMillis() - story.createdAt.toMillis() > 23 * HOUR], ['video', STAFF, 'Hello from the camera', 6, 12, 0, true, true]);
     assert.deepEqual(story.parts, [{ start: 0, end: 2 }, { start: 2, end: 4 }, { start: 4, end: 6 }, { start: 6, end: 8 }, { start: 8, end: 10 }, { start: 10, end: 12 }]);

@@ -109,15 +109,15 @@ export function render(root) {
   }
 
   // Staff: the display name and photo shown on their stories (Google's to begin with), changed here and nowhere else.
-  let profile = null; // { displayName, photo, status, busy } while the staff member edits it
+  let profile = null; // { displayName, photo, status, busy, dirty } while the staff member edits it (dirty: something was changed)
   function profileCard() {
-    profile ??= { displayName: staff.displayName || staff.name || '', photo: staff.photo || '', status: '', busy: false };
+    profile ??= { displayName: staff.displayName || staff.name || '', photo: staff.photo || '', status: '', busy: false, dirty: false };
     const p = profile;
     const photoInput = h('input', { type: 'file', id: 'acct-photo', accept: 'image/*', class: 'sr', onchange: async (e) => {
       const f = e.target.files?.[0];
       if (!f) return;
       p.busy = true; p.status = 'Uploading the photo…'; draw();
-      try { p.photo = await uploadFile(await shrinkPhoto(f, { max: 256 }), { kind: 'avatars' }); p.status = 'Photo ready. Tap Save.'; } catch (err) { p.status = err.message; }
+      try { p.photo = await uploadFile(await shrinkPhoto(f, { max: 256 }), { kind: 'avatars' }); p.dirty = true; p.status = 'Photo ready. Tap Save.'; } catch (err) { p.status = err.message; }
       p.busy = false; draw();
     } });
     return h('section', { class: 'card', 'aria-labelledby': 'acct-profile-h' },
@@ -126,12 +126,13 @@ export function render(root) {
       h('div', { class: 'acct-profile' },
         avatarEl({ photo: p.photo, name: p.displayName, email: staff.email }, 56),
         h('label', { class: 'btn', for: 'acct-photo' }, ic('image', 16, 2), 'Change photo'), photoInput),
-      h('div', { class: 'field' }, h('label', { for: 'acct-name' }, 'Display name'), h('input', { type: 'text', id: 'acct-name', maxlength: '60', value: p.displayName, oninput: (e) => { p.displayName = e.target.value; } })),
+      h('div', { class: 'field' }, h('label', { for: 'acct-name' }, 'Display name'), h('input', { type: 'text', id: 'acct-name', maxlength: '60', value: p.displayName, oninput: (e) => { p.displayName = e.target.value; p.dirty = true; } })),
       h('div', { class: 'form-actions' }, h('button', { type: 'button', class: 'btn primary', disabled: p.busy ? '' : null, onclick: async () => {
         p.busy = true; p.status = ''; draw();
         try {
           await data.admin.updateMe(staff.email, { displayName: p.displayName, photo: p.photo });
           updateProfile({ displayName: p.displayName.trim(), photo: p.photo });
+          p.dirty = false;
           p.status = 'Saved.';
         } catch (err) { p.status = err.code === 'permission-denied' ? 'This account is not on the staff list.' : `Could not save: ${err.message}`; }
         p.busy = false; draw();
@@ -154,10 +155,15 @@ export function render(root) {
       h('a', { class: 'btn primary', href: '#/stories/new' }, 'Post a story'),
       myStories === null ? h('p', { class: 'muted' }, 'Loading your stories…') : rows.length ? h('div', { class: 'acct-rows acct-stories' }, rows) : h('p', { class: 'muted' }, 'You have no story up at the moment.'));
   }
+  let loadingStories = false;
+  let alive = true;
   async function loadMyStories() {
-    if (!staff?.postStories) return;
-    try { const { value } = await data.getStories(); myStories = value.filter((s) => s.author === staff.email); } catch { myStories = []; }
-    draw();
+    if (!staff?.postStories || loadingStories) return;
+    loadingStories = true;
+    const who = staff.email;
+    try { const { value } = await data.getStories(); if (alive && staff?.email === who) myStories = value.filter((s) => s.author === who); } catch { if (alive) myStories = []; }
+    loadingStories = false;
+    if (alive) draw();
   }
 
   const bookingsCard = () => h('section', { class: 'card', 'aria-labelledby': 'acct-add-member-h' },
@@ -223,6 +229,8 @@ export function render(root) {
     staff = s?.email ? s : null;
     if (staff) googleError = '';
     if (!staff || staff.email !== was?.email) { profile = null; myStories = null; }
+    // The live staff entry arrives after the phone's saved copy: start the profile form again from it unless something was typed.
+    else if (profile && !profile.dirty && !profile.busy && (staff.displayName !== was?.displayName || staff.photo !== was?.photo)) profile = null;
     if (!firstSession && !was && staff && next && !noGoogle) { location.replace(next); return; }
     firstSession = false;
     draw();
@@ -230,5 +238,5 @@ export function render(root) {
   });
   const stopMember = onBookingSession((m) => { member = m; draw(); });
 
-  return () => { stopStaff(); stopMember(); };
+  return () => { alive = false; stopStaff(); stopMember(); };
 }

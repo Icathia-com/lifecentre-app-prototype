@@ -1,8 +1,12 @@
-[
-  {
-    "AllowedOrigins": ["https://icathia.com", "http://localhost:8000"],
-    "AllowedMethods": ["PUT"],
-    "AllowedHeaders": ["Content-Type", "Content-Length"],
-    "MaxAgeSeconds": 600
-  }
-]
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://icathia.com", "http://localhost:8000"],
+        "methods": ["PUT"],
+        "headers": ["Content-Type"]
+      },
+      "maxAgeSeconds": 600
+    }
+  ]
+}

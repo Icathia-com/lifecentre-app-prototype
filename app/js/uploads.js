@@ -8,19 +8,28 @@ export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 export const TOO_BIG = 'That file is over 60 MB. Please choose a smaller one.';
 
 // Puts `blob` in the bucket under `kind/` (popups or stories) and resolves with its public address.
+// A recording's type can carry codec details ("video/webm;codecs=vp9,opus"): the plain type is what is signed and sent.
+export const plainType = (type) => String(type || '').split(';')[0].trim().toLowerCase();
+const UNREACHABLE = 'The upload service could not be reached. Please try again later.';
+
 export async function uploadFile(blob, { kind, fetcher = fetch } = {}) {
   if (blob.size > MAX_UPLOAD_BYTES) throw new Error(TOO_BIG);
   const { auth } = await getAuthTools();
   const user = auth.currentUser;
   if (!user) throw new Error('Please sign in with Google first.');
   const token = await user.getIdToken();
-  const signed = await fetcher(`${UPLOAD_API}/sign`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ kind, contentType: blob.type, size: blob.size }),
-  });
+  const contentType = plainType(blob.type);
+  let signed;
+  try {
+    signed = await fetcher(`${UPLOAD_API}/sign`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ kind, contentType, size: blob.size }),
+    });
+  } catch { throw new Error(UNREACHABLE); }
   if (!signed.ok) throw new Error(await reason(signed));
   const { url, publicUrl } = await signed.json();
-  const put = await fetcher(url, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob });
+  let put;
+  try { put = await fetcher(url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: blob }); } catch { throw new Error(UNREACHABLE); }
   if (!put.ok) throw new Error('The upload did not finish. Please try again.');
   return publicUrl;
 }

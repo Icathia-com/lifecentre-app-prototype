@@ -208,6 +208,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
 .cr-input[type='datetime-local'] { width: 196px; max-width: 100%; }
 .cr-popup { display: flex; flex-direction: column; border-top: 1px solid rgba(11, 18, 32, 0.07); }
 .cr-popup > .muted { padding: 10px 16px 0; }
+.cr-popup-preview { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0; font-size: 12.5px; }
 .cr-input.wide { width: 100%; }
 .cr-btn { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 0 16px; border: 0; background: none; text-align: left; }
 .cr-value { font-size: 15px; font-weight: 600; }
@@ -700,6 +701,7 @@ body[data-route='watch'] .screen { padding: 0; gap: 0; overflow: hidden; color: 
 .st-x { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.18); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .st-text { position: absolute; left: 20px; right: 20px; bottom: max(28px, env(safe-area-inset-bottom)); z-index: 3; margin: 0; padding: 10px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.45); font-size: 17px; font-weight: 600; line-height: 1.35; text-align: center; white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; }
 .st-keys { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; }
+.st-tap { position: absolute; left: 50%; top: 50%; z-index: 3; transform: translate(-50%, -50%); margin: 0; padding: 12px 22px; border-radius: 24px; background: rgba(0, 0, 0, 0.55); font-size: 15px; font-weight: 700; pointer-events: none; }
 
 /* ---- Stories: posting and recording ---- */
 body[data-route='story-post'] .tabbar { display: none; }

@@ -149,7 +149,6 @@ function panel(col, spec, user) {
   async function onSubmit(e) {
     e.preventDefault();
     let values = readValues(e.currentTarget, spec.fields);
-    if (editing && spec.carry) for (const key of spec.carry) if (values[key] === undefined && editing[key] !== undefined) values[key] = editing[key];
     if (values.end && values.end < values.start) return say('The end must be after the start.', true);
     if (spec.prepare) {
       const prepared = spec.prepare(values);
@@ -157,6 +156,9 @@ function panel(col, spec, user) {
       values = prepared.values;
     }
     const id = spec.idField ? String(values[spec.idField]).toLowerCase() : editing?.id;
+    // Fields the person set themselves (their display name and photo) survive an admin's edit, and a re-add under the same email.
+    const current = editing ?? (id ? items.find((i) => i.id === id) : null);
+    if (current && spec.carry) for (const key of spec.carry) if (values[key] === undefined && current[key] !== undefined) values[key] = current[key];
     try {
       await data.admin.save(col, user.email, values, id);
       editing = null;

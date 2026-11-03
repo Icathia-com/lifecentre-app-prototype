@@ -34,29 +34,33 @@ export function popupsPanel(user, entry) {
   const say = (text, isError = false) => { status.hidden = !text; status.textContent = text; status.classList.toggle('error', isError); };
   const blank = () => ({ id: null, title: '', eventId: '', start: msToSgInput(Date.now()), end: msToSgInput(Date.now() + 7 * DAY), image: '', blob: null, preview: '', file: null, position: 0.5 });
 
+  // Fresh data from the server: every decision here is taken on what is current, not on what was loaded earlier.
+  async function loadData() {
+    const [{ value: cfg }, list, evs] = await Promise.all([data.getAppConfig(), data.admin.listPopups(), isAdmin ? data.admin.list('events') : Promise.resolve([])]);
+    config = cfg;
+    popups = list;
+    events = evs.filter((e) => e.published && (e.end ?? e.start) > Date.now()).sort((a, b) => a.start - b.start);
+    await tidy();
+  }
   async function refresh() {
-    try {
-      const [{ value: cfg }, list, evs] = await Promise.all([data.getAppConfig(), data.admin.listPopups(), isAdmin ? data.admin.list('events') : Promise.resolve([])]);
-      config = cfg;
-      popups = list;
-      events = evs.filter((e) => (e.end ?? e.start) > Date.now()).sort((a, b) => a.start - b.start);
-      await tidy();
-    } catch (err) {
-      say(`Could not load: ${explain(err)}`, true);
-    }
+    try { await loadData(); } catch (err) { say(`Could not load: ${explain(err)}`, true); }
     draw();
     section.removeAttribute('aria-busy'); // loaded: the section is drawn with its data
   }
 
-  // The slot keeps itself right: a scheduled pop-up whose start has come is live; one whose end has passed is ended.
+  // The slot keeps itself right: a scheduled pop-up whose start has come is live; one whose end has passed is ended; a slot
+  // pointing at a pop-up that is no longer live is cleared.
   async function tidy() {
     const slot = inSlot(popups, config);
-    if (!slot) return;
     const now = Date.now();
     try {
+      if (!slot) {
+        if (config.livePopupId) { await data.admin.setSlot(email, null); config = { ...config, livePopupId: null }; }
+        return;
+      }
       if (slot.end <= now) {
         await data.admin.patch('popups', email, slot.id, { status: 'ended' });
-        await data.admin.setConfig(email, { popupsOn: config.popupsOn, livePopupId: null });
+        await data.admin.setSlot(email, null);
         slot.status = 'ended'; config = { ...config, livePopupId: null };
       } else if (slot.status === 'approved' && slot.start <= now) {
         await data.admin.patch('popups', email, slot.id, { status: 'live' });
@@ -65,26 +69,31 @@ export function popupsPanel(user, entry) {
     } catch (err) { console.warn('pop-up slot:', err.message); }
   }
 
-  // One action at a time: the section is busy from the tap until it has been drawn again with the fresh data.
+  // One action at a time, on fresh data: the section is busy from the tap until it has been drawn again afterwards.
   async function act(label, fn) {
     if (busy) return;
     busy = true; section.setAttribute('aria-busy', 'true'); draw();
-    try { await fn(); say(label); } catch (err) { say(`Could not do that: ${explain(err)}`, true); }
+    try { await loadData(); await fn(); say(label); } catch (err) { say(`Could not do that: ${explain(err)}`, true); }
     busy = false;
     await refresh();
   }
 
+  const over = (p) => p.end <= Date.now();
+
   // Puts a pop-up in the live slot, ending the one there. Scheduled when its start is still to come.
   async function activate(p) {
+    const fresh = popups.find((x) => x.id === p.id) ?? p;
+    if (over(fresh)) throw new Error('its end has passed. Change the dates first.');
     const slot = inSlot(popups, config);
     const now = Date.now();
-    if (slot && slot.id !== p.id) await data.admin.patch('popups', email, slot.id, { status: 'ended' });
-    await data.admin.patch('popups', email, p.id, { status: p.start > now ? 'approved' : 'live', approvedBy: email });
-    await data.admin.setConfig(email, { popupsOn: config.popupsOn, livePopupId: p.id });
+    if (slot && slot.id !== fresh.id) await data.admin.patch('popups', email, slot.id, { status: 'ended' });
+    await data.admin.patch('popups', email, fresh.id, { status: fresh.start > now ? 'approved' : 'live', approvedBy: email });
+    await data.admin.setSlot(email, fresh.id);
     choice = null;
   }
 
   function goLive(p, mode) {
+    if (over(p)) { say('Its end has passed. Change the dates first.', true); return; }
     const slot = inSlot(popups, config);
     if (slot && slot.id !== p.id) { choice = { popup: p, live: slot, mode }; decline = null; draw(); return; }
     act(mode === 'approve' ? 'Approved. It is now the live pop-up.' : 'It is now the live pop-up.', () => activate(p));
@@ -105,14 +114,14 @@ export function popupsPanel(user, entry) {
 
   const takeDown = (p) => act('Taken down. Nothing is showing now.', async () => {
     await data.admin.patch('popups', email, p.id, { status: 'ended' });
-    await data.admin.setConfig(email, { popupsOn: config.popupsOn, livePopupId: null });
+    if (config.livePopupId === p.id) await data.admin.setSlot(email, null);
   });
 
   const remove = (p) => {
     if (!confirm(`Delete "${p.title}"?`)) return;
     act('Deleted.', async () => {
       await data.admin.remove('popups', p.id);
-      if (config.livePopupId === p.id) await data.admin.setConfig(email, { popupsOn: config.popupsOn, livePopupId: null });
+      if (config.livePopupId === p.id) await data.admin.setSlot(email, null);
       if (form?.id === p.id) form = null;
     });
   };
@@ -143,6 +152,7 @@ export function popupsPanel(user, entry) {
     if (!form.title.trim()) return say('Give the pop-up a title.', true);
     if (!form.blob && !form.image) return say('Choose a banner first.', true);
     if (!(start < end)) return say('The end must be after the start.', true);
+    if (makeLive && end <= Date.now()) return say('Its end has passed. Change the dates first.', true);
     act(makeLive ? 'Saved. It is now the live pop-up.' : 'Saved as a draft.', async () => {
       const image = form.blob ? await uploadFile(form.blob, { kind: 'popups' }) : form.image;
       const slot = inSlot(popups, config);
@@ -155,7 +165,7 @@ export function popupsPanel(user, entry) {
       const id = await data.admin.save('popups', email, values, form.id ?? undefined);
       if (makeLive) {
         if (slot && slot.id !== id) await data.admin.patch('popups', email, slot.id, { status: 'ended' });
-        await data.admin.setConfig(email, { popupsOn: config.popupsOn, livePopupId: id });
+        await data.admin.setSlot(email, id);
       }
       form = null;
     });
@@ -198,11 +208,12 @@ export function popupsPanel(user, entry) {
   function requestRow(p) {
     const own = p.requestedBy === email;
     const acts = h('div', { class: 'pu-acts' },
-      h('button', { type: 'button', class: 'btn primary', disabled: busy || own ? '' : null, 'aria-label': `Approve ${p.title}`, onclick: () => goLive(p, 'approve') }, 'Approve'),
+      h('button', { type: 'button', class: 'btn primary', disabled: busy || own || over(p) ? '' : null, 'aria-label': `Approve ${p.title}`, onclick: () => goLive(p, 'approve') }, 'Approve'),
       h('button', { type: 'button', class: 'btn', disabled: busy || own ? '' : null, 'aria-label': `Decline ${p.title}`, onclick: () => { decline = p.id; choice = null; draw(); body.querySelector('#pu-note')?.focus(); } }, 'Decline'));
     return h('li', { class: 'pu-row' }, thumb(p),
       h('div', { class: 'pu-text' }, h('b', {}, p.title), h('span', { class: 'meta' }, span(p)), h('span', { class: 'meta' }, `From ${p.requestedBy}`),
         own ? h('span', { class: 'note' }, 'Your own request: someone else approves it.') : null,
+        over(p) ? h('span', { class: 'note' }, 'Its end has passed: it can only be declined, or the requester changes the dates.') : null,
         acts,
         decline === p.id ? declineBox(p) : null,
         choice?.popup.id === p.id ? choiceBox() : null));

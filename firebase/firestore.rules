@@ -214,6 +214,8 @@ service cloud.firestore {
         && d.duration <= (d.type == 'video' ? 180 : (d.type == 'audio' ? 300 : 15))
         && d.parts is list && d.parts.size() >= 1
         && d.parts.size() <= (d.type == 'video' ? 6 : (d.type == 'audio' ? 10 : 1))
+        && d.parts[0] is map && d.parts[0].keys().hasOnly(['start', 'end']) && d.parts[0].start == 0
+        && d.parts[d.parts.size() - 1] is map && d.parts[d.parts.size() - 1].end == d.duration
         && d.views is int && d.views >= 0
         && d.createdAt is timestamp
         && d.expiresAt is timestamp
@@ -253,9 +255,9 @@ service cloud.firestore {
         && d.updatedBy == userEmail();
     }
 
-    // Nobody approves their own request, admins included.
+    // Nobody approves their own request, admins included (nor revives their own declined one).
     function approvingOwnPopup() {
-      return resource.data.status == 'requested'
+      return resource.data.status in ['requested', 'declined']
         && request.resource.data.status in ['approved', 'live']
         && resource.data.requestedBy == userEmail();
     }
@@ -297,13 +299,13 @@ service cloud.firestore {
 
     // The document id is the lower-case email address.
     match /staff/{email} {
-      allow get: if isAdmin() || (signedIn() && email == userEmail());
+      allow get: if isAdmin() || (signedIn() && request.auth.token.email_verified == true && email == userEmail());
       allow list: if isAdmin();
       allow create, update: if isAdmin()
         && email == email.lower()
         && validStaff(request.resource.data);
       // People on the staff list change their own display name and photo, and nothing else about their entry.
-      allow update: if signedIn() && email == userEmail()
+      allow update: if signedIn() && request.auth.token.email_verified == true && email == userEmail()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photo', 'updatedBy', 'updatedAt'])
         && validStaff(request.resource.data);
       allow delete: if isAdmin() && email != userEmail();
@@ -343,8 +345,9 @@ service cloud.firestore {
     // Approvers approve, decline or end a pop-up, never their own request, and change nothing else about it.
     // A requester may edit their own request while it is still a draft, a request, or declined.
     match /popups/{id} {
+      // The public reads the pop-up in the live slot only once its start has come.
       allow get: if canPublish() || canApprovePopups()
-        || (resource.data.status in ['approved', 'live'] && id == livePopupId());
+        || (resource.data.status in ['approved', 'live'] && id == livePopupId() && resource.data.start <= request.time);
       allow list: if canPublish() || canApprovePopups();
       allow create: if validPopup(request.resource.data)
         && request.resource.data.requestedBy == userEmail()
@@ -352,15 +355,20 @@ service cloud.firestore {
       allow update: if validPopup(request.resource.data)
         && !approvingOwnPopup()
         && (isAdmin()
+            // approvers decide on requests (never a draft), and may end a live pop-up, even one they asked for themselves
             || (canApprovePopups()
-                && resource.data.requestedBy != userEmail()
+                && resource.data.status != 'draft'
+                && (resource.data.requestedBy != userEmail()
+                    || (request.resource.data.status == 'ended' && resource.data.status in ['approved', 'live']))
                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'approvedBy', 'note', 'updatedBy', 'updatedAt'])
                 && request.resource.data.status in ['approved', 'live', 'declined', 'ended']
                 && (request.resource.data.get('approvedBy', '') == userEmail()
                     || (resource.data.status in ['approved', 'live']
                         && request.resource.data.get('approvedBy', '') == resource.data.get('approvedBy', ''))))
+            // the requester keeps their own request, in their own name
             || (canPublish()
                 && resource.data.requestedBy == userEmail()
+                && request.resource.data.requestedBy == userEmail()
                 && resource.data.status in ['draft', 'requested', 'declined']
                 && request.resource.data.status in ['draft', 'requested']));
       allow delete: if isAdmin()

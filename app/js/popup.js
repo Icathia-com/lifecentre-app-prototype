@@ -20,10 +20,12 @@ export const safeImage = (src) => (typeof src === 'string' && (/^https:\/\/\S+$/
 export function openPopup(popup, { host = document.querySelector('.app') ?? document.body, now = Date.now, onClose } = {}) {
   const eventHref = popup.eventId ? `#/events/${encodeURIComponent(popup.eventId)}` : null;
   const image = h('img', { src: safeImage(popup.image), alt: '' });
+  const before = document.activeElement; // where the keyboard was, to go back to on close
   const close = () => {
     clearTimeout(timer);
     document.removeEventListener('keydown', onKey);
     layer.remove();
+    if (before?.isConnected && typeof before.focus === 'function') before.focus({ preventScroll: true });
     onClose?.();
   };
   const go = () => { close(); if (eventHref) location.hash = eventHref; };

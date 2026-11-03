@@ -16,9 +16,10 @@ const params = new URLSearchParams(location.search);
 const local = ['localhost', '127.0.0.1'].includes(location.hostname) && params.has('emulator');
 export const PART = (local && Number(params.get('partSeconds'))) || PART_SECONDS;
 
+// MP4 (H.264/AAC) first where the browser can record it, since every phone can play that; WebM otherwise.
 const MIMES = {
-  video: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'],
-  audio: ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'],
+  video: ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'],
+  audio: ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'],
 };
 const pickMime = (kind) => MIMES[kind].find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || '';
 const EXT_TYPE = { webm: 'video/webm', mp4: 'video/mp4', mov: 'video/quicktime', m4a: 'audio/mp4', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', weba: 'audio/webm' };
@@ -193,8 +194,9 @@ export function render(root) {
           const out = await reencode(file, { maxSeconds: maxSeconds('video'), onProgress: (f) => { busy = `Making the video smaller… ${Math.round(f * 100)}%`; const b = host.querySelector('.st-busy'); if (b) b.textContent = busy; } });
           blob = out.blob; mimeType = out.mimeType; length = out.duration;
         }
-        const shown = Math.min(Math.round(length), maxSeconds(type));
-        setDraft({ kind: type, blob, mimeType, duration: Math.max(1, shown), parts: splitParts(shown, { partSeconds: PART, maxParts: PART_LIMITS[type] }), note: length > maxSeconds(type) ? `Only the first ${type === 'video' ? '3 minutes' : '5 minutes'} will be shown.` : '' });
+        const shown = Math.max(1, Math.min(Math.round(length), maxSeconds(type)));
+        const notes = [length > maxSeconds(type) ? `Only the first ${type === 'video' ? '3 minutes' : '5 minutes'} will be shown.` : '', type === 'video' && !canReencode() ? 'On this phone the video is sent as it is, so keep it short.' : ''].filter(Boolean);
+        setDraft({ kind: type, blob, mimeType, duration: shown, parts: splitParts(shown, { partSeconds: PART, maxParts: PART_LIMITS[type] }), note: notes.join(' ') });
       } else say('Pick a photo, a video or an audio file.');
     } catch (e) { busy = ''; say(e.message || 'That file could not be used.'); }
   }
@@ -221,7 +223,7 @@ export function render(root) {
     step = 'posting'; busy = 'Posting…'; error = ''; draw();
     try {
       const values = {
-        author: session.email, authorName: session.displayName || session.name || session.email, authorPhoto: session.photo || undefined,
+        author: session.email, authorName: (session.displayName || session.name || session.email).slice(0, 80), authorPhoto: session.photo || undefined,
         type: draft.kind, colours: draft.colours, duration: draft.duration, parts: draft.parts, expiresAt: Date.now() + DAY, text: text || undefined,
       };
       if (draft.blob) { busy = 'Uploading…'; draw(); values.mediaUrl = await uploadFile(draft.blob, { kind: 'stories' }); values.mediaType = draft.mimeType || draft.blob.type; }
@@ -231,7 +233,8 @@ export function render(root) {
       location.hash = '#/';
     } catch (e) {
       step = 'edit'; busy = '';
-      say(e.code === 'permission-denied' ? 'This account is not allowed to post stories.' : (e.message || 'Could not post. Please try again.'));
+      // The rules refuse a story whose 24-hour expiry disagrees with the server by more than an hour: a wrong phone clock.
+      say(e.code === 'permission-denied' ? (session?.postStories ? 'Could not post. Check the phone\'s date and time, then try again.' : 'This account is not allowed to post stories.') : (e.message || 'Could not post. Please try again.'));
     }
   }
 

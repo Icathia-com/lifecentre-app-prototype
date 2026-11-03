@@ -19,10 +19,11 @@ No secret is ever written into this repository. Secrets are typed into `wrangler
    - TTL: forever.
    Click **Create API token** and keep the page open: it shows the **Access Key ID** and **Secret Access Key** once. You will paste
    them into `wrangler secret put` in Part 3. Do not paste them into chat, a file or an email.
-5. A Firebase service account for the nightly clean-up (this is in Google, not Cloudflare): Firebase console > Project settings >
-   **Service accounts** > **Generate new private key** for project `lifecentre-app`. It downloads a JSON file. Keep it somewhere
-   private on this computer; it is pasted into one secret in Part 3 and then can be deleted.
-   Give it the narrowest role: Google Cloud console > IAM > find that service account > role **Cloud Datastore User** is enough.
+5. A service account for the nightly clean-up (this is in Google, not Cloudflare). Do not use the key the Firebase console offers:
+   that is the Admin SDK account, which can do anything in the project. Make a small one instead:
+   Google Cloud console (project `lifecentre-app`) > **IAM & Admin** > **Service accounts** > **Create service account**, name
+   `lifecentre-cleanup`, role **Cloud Datastore User** only. Open it > **Keys** > **Add key** > **Create new key** > JSON. It
+   downloads a JSON file. Keep it somewhere private on this computer; it is pasted into one secret in Part 3 and then can be deleted.
 
 ## Part 2: the bucket (run from the repository folder, signed in as hello@)
 
@@ -30,7 +31,7 @@ No secret is ever written into this repository. Secrets are typed into `wrangler
 npx wrangler@4 login                                   # opens the browser; sign in as hello@lifecentre.sg
 npx wrangler@4 whoami                                  # shows the account and its id
 npx wrangler@4 r2 bucket create lifecentre-uploads
-npx wrangler@4 r2 bucket cors set lifecentre-uploads --file cloudflare/r2-cors.json
+npx wrangler@4 r2 bucket cors set lifecentre-uploads --file cloudflare/r2-cors.json   # (the file is in wrangler's shape; the dashboard's CORS editor uses a different one)
 npx wrangler@4 r2 bucket lifecycle add lifecentre-uploads --name stories-2-days --prefix stories/ --expire-days 2
 npx wrangler@4 r2 bucket lifecycle list lifecentre-uploads
 ```

@@ -102,6 +102,28 @@ describe('POST /sign', () => {
     assert.equal(avatar.status, 200, 'anyone on the staff list uploads a profile photo');
     assert.match((await avatar.json()).key, /^avatars\//);
   });
+  it('accepts a recording whose type carries codec details, and signs the plain type', async () => {
+    const io = fakeIo({ staff: { 'admin@lifecentre.sg': { role: 'admin' } } });
+    const res = await handle(post({ kind: 'stories', contentType: 'video/webm;codecs=vp9,opus', size: 5000 }, { auth: await token({ email: 'admin@lifecentre.sg' }) }), env, io);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.match(body.key, /\.webm$/);
+    assert.equal(new URL(body.url).searchParams.get('X-Amz-SignedHeaders'), 'content-length;content-type;host');
+    const voice = await handle(post({ kind: 'stories', contentType: 'audio/webm;codecs=opus', size: 5000 }, { auth: await token({ email: 'admin@lifecentre.sg' }) }), env, io);
+    assert.match((await voice.json()).key, /\.weba$/);
+  });
+  it('is not fooled by names from the prototype chain, and reports a keys outage as a retry, not a sign-in problem', async () => {
+    const io = fakeIo({ staff: { 'leader@lifecentre.sg': { role: 'leader' } } });
+    for (const kind of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      assert.equal((await handle(post({ kind, contentType: 'video/mp4', size: 10 }, { auth: await token({ email: 'leader@lifecentre.sg' }) }), env, io)).status, 400, kind);
+    }
+    assert.equal((await handle(post({ kind: 'avatars', contentType: 'constructor', size: 10 }, { auth: await token({ email: 'leader@lifecentre.sg' }) }), env, io)).status, 415);
+    assert.equal((await handle(post({ kind: ['avatars'], contentType: 'image/jpeg', size: 10 }, { auth: await token({ email: 'leader@lifecentre.sg' }) }), env, io)).status, 400);
+    resetKeyCache();
+    const down = { ...io, fetch: async (url, init) => (String(url).includes('/jwk/') ? new Response('nope', { status: 502 }) : io.fetch(url, init)) };
+    const res = await handle(post({ kind: 'avatars', contentType: 'image/jpeg', size: 10 }, { auth: await token({ email: 'leader@lifecentre.sg' }) }), env, down);
+    assert.deepEqual([res.status, (await res.json()).error], [503, 'Please try again in a moment.']);
+  });
   it('refuses no sign-in, a bad token, someone not on the staff list, files over 60 MB, unknown types and unknown kinds', async () => {
     const io = fakeIo({ staff: { 'staff@lifecentre.sg': { role: 'staff' } } });
     const status = async (body, auth) => (await handle(post(body, auth === undefined ? {} : { auth }), env, io)).status;

@@ -77,23 +77,29 @@ export function render(root) {
     return list.sort((a, b) => b.at - a.at);
   }
 
-  // Pop-up requests go only to the people with "Can approve pop-ups" (and admins); the requester hears the answer.
+  // Pop-up requests go only to the people with "Can approve pop-ups" (and admins); the requester hears the answer. A newer
+  // load (the session changed meanwhile) replaces an older one; nothing is listed twice.
+  let popupTicket = 0;
   async function loadPopups(s) {
-    popupItems = [];
-    if (!s?.email) { draw(); return; }
-    try {
-      for (const p of await data.admin.listPopups({ requestedBy: s.email })) {
-        if (!['declined', 'approved', 'live'].includes(p.status)) continue;
-        const title = p.status === 'declined' ? `Your pop-up request was declined: ${p.title}` : `Your pop-up is ${p.status === 'live' ? 'live' : 'scheduled'}: ${p.title}`;
-        popupItems.push({ id: `popup:${p.id}:${p.status}`, kind: 'popup', at: p.updatedAt ?? p.createdAt ?? Date.now(), title, body: p.status === 'declined' ? (p.note || 'No note was given.') : `From ${popupWhen(p.start)} to ${popupWhen(p.end)}.`, href: p.eventId ? `#/events/${encodeURIComponent(p.eventId)}` : null });
-      }
-      if (s.role === 'admin' || s.approvePopups) {
-        for (const p of await data.admin.listPopups({ status: 'requested' })) {
-          if (p.requestedBy === s.email) continue;
-          popupItems.push({ id: `popup:${p.id}:requested`, kind: 'popup', at: p.createdAt ?? p.updatedAt ?? Date.now(), title: `Pop-up request: ${p.title}`, body: `From ${p.requestedBy}, ${popupWhen(p.start)} to ${popupWhen(p.end)}. Approve or decline it on the staff page.`, href: '#/staff?section=popups' });
+    const mine = ++popupTicket;
+    const list = [];
+    if (s?.email) {
+      try {
+        for (const p of await data.admin.listPopups({ requestedBy: s.email })) {
+          if (!['declined', 'approved', 'live'].includes(p.status)) continue;
+          const title = p.status === 'declined' ? `Your pop-up request was declined: ${p.title}` : `Your pop-up is ${p.status === 'live' ? 'live' : 'scheduled'}: ${p.title}`;
+          list.push({ id: `popup:${p.id}:${p.status}`, kind: 'popup', at: p.updatedAt ?? p.createdAt ?? Date.now(), title, body: p.status === 'declined' ? (p.note || 'No note was given.') : `From ${popupWhen(p.start)} to ${popupWhen(p.end)}.`, href: p.eventId ? `#/events/${encodeURIComponent(p.eventId)}` : null });
         }
-      }
-    } catch (err) { console.warn('pop-up requests:', err.message); }
+        if (s.role === 'admin' || s.approvePopups) {
+          for (const p of await data.admin.listPopups({ status: 'requested' })) {
+            if (p.requestedBy === s.email) continue;
+            list.push({ id: `popup:${p.id}:requested`, kind: 'popup', at: p.createdAt ?? p.updatedAt ?? Date.now(), title: `Pop-up request: ${p.title}`, body: `From ${p.requestedBy}, ${popupWhen(p.start)} to ${popupWhen(p.end)}. Approve or decline it on the staff page.`, href: '#/staff?section=popups' });
+          }
+        }
+      } catch (err) { console.warn('pop-up requests:', err.message); }
+    }
+    if (mine !== popupTicket) return;
+    popupItems = list;
     draw();
   }
 

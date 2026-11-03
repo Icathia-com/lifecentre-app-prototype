@@ -331,6 +331,24 @@ describe('launch pop-ups', () => {
     await assertFails(setDoc(doc(db, 'popups', 'x'), popup(APPROVER))); // a leader does not post
     await assertFails(deleteDoc(doc(db, 'popups', 'r1')));
   });
+  it('an approver may end a live pop-up they asked for themselves, never approve one, and never touch a draft; a requester stays the requester; the public waits for the start', async () => {
+    const db = user(APPROVER);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'popups', 'ownlive'), popup(APPROVER, { status: 'live', approvedBy: ADMIN }));
+      await setDoc(doc(ctx.firestore(), 'popups', 'owndeclined'), popup(APPROVER, { status: 'declined', approvedBy: ADMIN, note: 'No' }));
+      await setDoc(doc(ctx.firestore(), 'popups', 'adraft'), popup(ADMIN, { status: 'draft' }));
+      await setDoc(doc(ctx.firestore(), 'popups', 'soon'), popup(ADMIN, { status: 'approved', approvedBy: ADMIN, start: T('2026-11-20T00:00:00Z'), end: T('2026-11-25T00:00:00Z') }));
+    });
+    await assertSucceeds(patch(db, 'ownlive', { status: 'ended', updatedBy: APPROVER }));
+    await assertFails(patch(db, 'owndeclined', { status: 'live', approvedBy: APPROVER, updatedBy: APPROVER }));
+    await assertFails(patch(db, 'adraft', { status: 'live', approvedBy: APPROVER, updatedBy: APPROVER }));
+    await assertSucceeds(patch(user(ADMIN), 'owndeclined', { status: 'live', approvedBy: ADMIN, updatedBy: ADMIN })); // an admin may revive someone else's declined request
+    await assertFails(setDoc(doc(user(STAFF), 'popups', 'r1'), popup(STAFF, { requestedBy: APPROVER, updatedBy: STAFF })));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'config', 'app'), { popupsOn: true, livePopupId: 'soon', updatedBy: ADMIN }));
+    await assertFails(getDoc(doc(anon(), 'popups', 'soon')));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'popups', 'soon'), { start: T('2026-10-01T00:00:00Z') }, { merge: true }));
+    await assertSucceeds(getDoc(doc(anon(), 'popups', 'soon')));
+  });
   it('an approver may create the config document, but only with the switch off', async () => {
     await env.withSecurityRulesDisabled((ctx) => deleteDoc(doc(ctx.firestore(), 'config', 'app')));
     await assertFails(setDoc(doc(user(APPROVER), 'config', 'app'), { popupsOn: true, livePopupId: 'r1', updatedBy: APPROVER }));
@@ -404,6 +422,7 @@ describe('stories', () => {
     for (const bad of [
       { parts: parts(7), duration: 180 }, { duration: 181, parts: parts(6) }, { type: 'audio', parts: parts(11), duration: 300 }, { type: 'audio', duration: 301, parts: parts(10) },
       { type: 'photo', duration: 16, parts: parts(1, 16) }, { type: 'photo', parts: parts(2, 5), duration: 10 }, { parts: [] }, { duration: 0 }, { duration: 2.5 },
+      { parts: ['x'] }, { parts: [{ start: 5, end: 75 }, { start: 30, end: 75 }] }, { parts: [{ start: 0, end: 30 }, { start: 30, end: 60 }] }, { parts: [{ start: 0, end: 75, extra: 1 }] },
       { type: 'text', mediaUrl: undefined, text: '' }, { type: 'text', text: 'has media too' }, { type: 'text', mediaUrl: undefined, text: 'x'.repeat(301) }, { text: 'x'.repeat(301) },
       { mediaUrl: 'http://example.org/a.webm' }, { mediaUrl: undefined }, { mediaUrl: 'javascript:alert(1)' }, { colours: ['blue', '#000000'] }, { colours: ['#000000'] }, { colours: 'red' },
       { views: 1 }, { views: -1 }, { type: 'gif' }, { authorName: '' }, { bgImage: 'http://x.y/z.jpg' }, { likes: 3 },

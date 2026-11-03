@@ -31,18 +31,23 @@ export function onSession(fn) {
 export async function startSession() {
   try {
     const tools = await getAuthTools();
+    let ticket = 0; // a sign-out during the staff-list check must not be overwritten by that check's late answer
     tools.onAuthStateChanged(tools.auth, async (user) => {
+      const mine = ++ticket;
       if (!user) { state = null; write(null); emit(); return; }
+      const email = user.email.toLowerCase(); // as the security rules compare it
       try {
-        const entry = await data.admin.getStaffEntry(user.email);
+        const entry = await data.admin.getStaffEntry(email);
+        if (mine !== ticket) return;
         state = {
-          email: user.email, role: entry ? entry.role : null, name: user.displayName || '', approvePopups: !!entry?.approvePopups,
+          email, role: entry ? entry.role : null, name: user.displayName || '', approvePopups: !!entry?.approvePopups,
           postStories: entry?.role === 'admin' || !!entry?.postStories, // stories: the display name and photo the person set, else Google's
           displayName: entry?.displayName || user.displayName || '', photo: entry?.photo || user.photoURL || '',
         };
       } catch {
+        if (mine !== ticket) return;
         // Offline or refused: keep what was known for this same account.
-        if (!state || state.email !== user.email) state = { email: user.email, role: null, name: user.displayName || '', approvePopups: false, postStories: false, displayName: user.displayName || '', photo: user.photoURL || '' };
+        if (!state || state.email !== email) state = { email, role: null, name: user.displayName || '', approvePopups: false, postStories: false, displayName: user.displayName || '', photo: user.photoURL || '' };
       }
       write(state);
       emit();

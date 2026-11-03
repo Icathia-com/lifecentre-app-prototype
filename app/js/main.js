@@ -32,6 +32,8 @@ startRouter({
     { path: '/account', name: 'account', tab: 'home', title: 'Account', load: () => import('./views/account.js') },
   ],
 }).then(() => showLaunchPopup(data)); // the launch pop-up, once a day, after the first screen is drawn
+// An installed app kept open overnight gets its "first open of the day" when it comes back to the screen (shown once a day).
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.querySelector('.pu-layer')) showLaunchPopup(data); });
 
 // The fifth tab: "Contact us" for visitors and members, "Facilities Booking" for admins, staff and leaders.
 const fifth = document.getElementById('tab-fifth');

@@ -38,6 +38,9 @@ describe('who has a live story', () => {
       story({ id: 'c', createdAt: NOW - 2 * HOUR, authorName: 'Pastor Sam', authorPhoto: 'https://pub.r2.dev/avatars/sam.jpg' }),
       story({ id: 'gone', author: 'eve@lifecentre.sg', createdAt: NOW - 30 * HOUR, expiresAt: NOW - 6 * HOUR }),
       story({ id: 'broken', author: 'eve@lifecentre.sg', parts: [] }),
+      story({ id: 'broken2', author: 'eve@lifecentre.sg', parts: ['x'] }),
+      story({ id: 'broken3', author: 'eve@lifecentre.sg', parts: [{ start: 'a', end: 30 }] }),
+      story({ id: 'broken4', author: 'eve@lifecentre.sg', parts: [{ start: 30, end: 10 }] }),
     ], NOW);
     assert.deepEqual(groups.map((g) => [g.author, g.name, g.photo, g.stories.map((s) => s.id), g.newest]), [
       ['grace@lifecentre.sg', 'Grace Lim', '', ['b'], NOW - HOUR],

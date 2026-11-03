@@ -107,10 +107,11 @@ A launch pop-up is a full-screen banner that everyone sees once a day, on their 
 it opens the linked event. Only one pop-up can be live at a time, and nothing shows to members until an admin turns the
 master switch on.
 
-**Ask for one (staff and admins):** when you create or edit an event that has a cover photo, turn on **Request a launch pop-up
-for everyone** under Options. The pop-up uses the event's photo and title. It starts now and ends when the event ends; change
-either if you like, then save the event. Your request goes to the people who approve pop-ups, in their Notifications. You will
-see the answer in your own Notifications, with a note if it was declined.
+**Ask for one (staff and admins):** when you create or edit a public event that has a cover photo, turn on **Request a launch
+pop-up for everyone** under Options. The pop-up uses the event's photo (cut to the pop-up's tall shape, so a portrait photo works
+best) and its title. It starts now and ends when the event ends; change either if you like, then save the event. Your request
+goes to the people who approve pop-ups, in their Notifications. You will see the answer in your own Notifications, with a note
+if it was declined. Saving the event again later does not send the request again unless you turn the switch on again.
 
 **Approve requests (admins, and anyone with "Can approve pop-ups"):** sign in, tap **Pop-ups** on the staff page (or the request
 in your Notifications). Each request shows the banner, the dates and who asked. Tap **Approve** or **Decline** (with a short note
@@ -137,6 +138,9 @@ Admins, and anyone with **Can post stories** on the staff list, can post them.
 - **Voice**: record a voice message over a colour, or add a photo behind it. It stops by itself after 10 parts (5 minutes).
 - **Text**: a few words on a colour.
 You can add a line of text over a photo or video. Tap **Post**. You can post several stories a day.
+
+Good to know: on an iPhone a video picked from the phone is sent as it is (other phones make it smaller first), so keep it short.
+A story's file stays available for up to two days after it is deleted or has expired, while the app itself stops showing it at once.
 
 **Watching:** tap a circle. The bars across the top are the parts. Tap the right side for the next part, the left side for the one
 before, hold to pause, swipe left or right for the next or previous person, swipe down to close. Sound is on for video and voice.

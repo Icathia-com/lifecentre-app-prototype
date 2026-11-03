@@ -35,8 +35,9 @@ export const shownSeconds = (type, duration) => partsFor(type, duration).at(-1).
 // name and photo on the circle come from the person's newest story.
 export function groupByAuthor(stories, now = Date.now()) {
   const groups = new Map();
+  const soundParts = (parts) => Array.isArray(parts) && parts.length > 0 && parts.every((p) => p && Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start);
   for (const s of stories) {
-    if (!(s.expiresAt > now) || !Array.isArray(s.parts) || !s.parts.length) continue;
+    if (!(s.expiresAt > now) || !soundParts(s.parts)) continue; // a broken story never reaches the viewer
     const g = groups.get(s.author) ?? { author: s.author, name: s.authorName || s.author, photo: s.authorPhoto || '', stories: [], newest: 0 };
     g.stories.push(s);
     if (s.createdAt >= g.newest) { g.newest = s.createdAt; g.name = s.authorName || g.name; g.photo = s.authorPhoto || g.photo; }
