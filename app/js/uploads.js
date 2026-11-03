@@ -34,6 +34,19 @@ async function reason(res) {
 // along the longer side) and saved as a JPEG of modest size.
 export const BANNER = { width: 1080, height: 1350 };
 
+// A photo made smaller on the phone: no side longer than `max` pixels, as a JPEG. Used for story photos (1080) and profile
+// photos (256).
+export async function shrinkPhoto(file, { max = 1080, quality = 0.85 } = {}) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture could not be used.'))), 'image/jpeg', quality));
+}
+
 export async function cropToBanner(file, { position = 0.5, quality = 0.85, width = BANNER.width, height = BANNER.height } = {}) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.max(width / bitmap.width, height / bitmap.height); // cover the whole banner

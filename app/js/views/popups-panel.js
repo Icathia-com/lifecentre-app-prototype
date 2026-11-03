@@ -45,6 +45,7 @@ export function popupsPanel(user, entry) {
       say(`Could not load: ${explain(err)}`, true);
     }
     draw();
+    section.removeAttribute('aria-busy'); // loaded: the section is drawn with its data
   }
 
   // The slot keeps itself right: a scheduled pop-up whose start has come is live; one whose end has passed is ended.
@@ -64,9 +65,10 @@ export function popupsPanel(user, entry) {
     } catch (err) { console.warn('pop-up slot:', err.message); }
   }
 
+  // One action at a time: the section is busy from the tap until it has been drawn again with the fresh data.
   async function act(label, fn) {
     if (busy) return;
-    busy = true; draw();
+    busy = true; section.setAttribute('aria-busy', 'true'); draw();
     try { await fn(); say(label); } catch (err) { say(`Could not do that: ${explain(err)}`, true); }
     busy = false;
     await refresh();
@@ -264,7 +266,8 @@ export function popupsPanel(user, entry) {
       isAdmin ? [h('h3', { class: 'label' }, 'All pop-ups'), others.length ? h('ul', { class: 'pu-list' }, others.map(otherRow)) : h('p', { class: 'muted' }, 'Nothing else yet.')] : null);
   }
 
+  const section = h('section', { class: 'card panel pu-panel', 'aria-label': 'Pop-ups', 'aria-busy': 'true' }, status, body);
   draw();
   refresh();
-  return h('section', { class: 'card panel pu-panel', 'aria-label': 'Pop-ups' }, status, body);
+  return section;
 }

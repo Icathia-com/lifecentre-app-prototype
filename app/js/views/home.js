@@ -11,6 +11,10 @@ import { onBookingSession } from '../booking-api.js';
 import { openTaskSheet } from '../task-sheet.js';
 import { createVerseCard } from '../verse-card.js';
 import { greetingLines, msUntilGreetingChange } from '../greeting.js';
+import { createStoriesRow } from './story-row.js';
+import { openStories } from './story-viewer.js';
+import { groupByAuthor } from '../stories.js';
+import { load, STORIES_SEEN } from '../local.js';
 
 const COLW = 100;    // every day column is 100px wide, so a wider screen simply shows more days
 const TOTAL = 553;   // 26 weeks back and the year ahead, drawn only a few columns at a time
@@ -106,7 +110,15 @@ export function render(root) {
     clearTimeout(greetTimer);
     greetTimer = setTimeout(showGreeting, msUntilGreetingChange(Date.now()) + 50); // a moment past the next change
   };
-  const stopSession = onSession((session) => { staffSession = session?.email ? session : null; showAvatar(); showGreeting(); });
+  // Stories: the circles under the greeting (hidden until someone posts), opening the full-screen viewer.
+  let groups = [];
+  const me = () => (staffSession?.email ? { email: staffSession.email, canPost: !!staffSession.postStories, name: staffSession.displayName || staffSession.name || staffSession.email, photo: staffSession.photo || '' } : null);
+  const storiesRow = createStoriesRow({ onOpen: (index) => { closeStories?.(); closeStories = openStories({ groups, startIndex: index, me: me(), onClose: () => { closeStories = null; paintStories(); } }); } });
+  let closeStories = null;
+  const paintStories = () => storiesRow.update({ groups, seen: load(STORIES_SEEN, {}), me: me() });
+  const loadStories = () => data.getStories().then(({ value }) => { if (!alive) return; groups = groupByAuthor(value); paintStories(); }).catch(() => {});
+
+  const stopSession = onSession((session) => { staffSession = session?.email ? session : null; showAvatar(); showGreeting(); paintStories(); });
   const stopMember = onBookingSession((session) => { memberSession = session; showAvatar(); showGreeting(); });
 
   const calEl = h('section', { class: 'glass cal', 'aria-labelledby': 'cal-h' },
@@ -123,6 +135,7 @@ export function render(root) {
         greetLight,
         h('h1', { id: 'page-title', tabindex: '-1' }, greetSr, greetName),
         greetDate)),
+    storiesRow.el,
     verseBox,
     bannerBox,
     calEl,
@@ -343,9 +356,11 @@ export function render(root) {
   });
   // The signed-in member's own room bookings (nobody else's) join their calendar.
   myBookings().then((list) => { if (alive && list.length) { bookings = list; buildBoard(); } });
+  loadStories();
 
   return () => {
     alive = false;
+    closeStories?.();
     clearTimeout(timer);
     clearTimeout(greetTimer);
     closeSheet?.();

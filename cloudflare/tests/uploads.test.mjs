@@ -98,6 +98,9 @@ describe('POST /sign', () => {
     assert.equal(await ask('staff@lifecentre.sg'), 403);
     const leaderPopup = await handle(post({ kind: 'popups', contentType: 'image/jpeg', size: 1000 }, { auth: await token({ email: 'leader@lifecentre.sg' }) }), env, io);
     assert.equal(leaderPopup.status, 403, 'a leader cannot upload pop-up banners');
+    const avatar = await handle(post({ kind: 'avatars', contentType: 'image/jpeg', size: 1000 }, { auth: await token({ email: 'staff@lifecentre.sg' }) }), env, io);
+    assert.equal(avatar.status, 200, 'anyone on the staff list uploads a profile photo');
+    assert.match((await avatar.json()).key, /^avatars\//);
   });
   it('refuses no sign-in, a bad token, someone not on the staff list, files over 60 MB, unknown types and unknown kinds', async () => {
     const io = fakeIo({ staff: { 'staff@lifecentre.sg': { role: 'staff' } } });

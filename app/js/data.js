@@ -2,7 +2,7 @@
 // Reads fall back to what is saved on the phone, then to sample content, when the database can't be reached.
 // They use the "FromServer" calls on purpose: the plain ones answer an offline query with an empty list instead of an error.
 import {
-  collection, doc, getDocFromServer, getDocsFromServer, query, where, orderBy, setDoc, updateDoc, deleteDoc, Timestamp, serverTimestamp,
+  collection, doc, getDocFromServer, getDocsFromServer, query, where, orderBy, setDoc, updateDoc, deleteDoc, Timestamp, serverTimestamp, increment,
 } from 'firebase/firestore';
 import { BACKUP_VERSES, backupVerse, sampleAnnouncements, sampleEvents } from './sample-data.js';
 import { dateKey } from './util.js';
@@ -20,7 +20,11 @@ const readers = {
     description: d.description, cover: d.cover, pinned: d.pinned, registerUrl: d.registerUrl, requireApproval: d.requireApproval, price: d.price,
     capacity: d.capacity, notifyFollowers: d.notifyFollowers, going: d.going, published: !!d.published, sample: d.sample, createdAt: ms(d.createdAt),
   }),
-  staff: (id, d) => clean({ id, role: d.role, name: d.name, approvePopups: d.approvePopups }),
+  staff: (id, d) => clean({ id, role: d.role, name: d.name, approvePopups: d.approvePopups, postStories: d.postStories, displayName: d.displayName, photo: d.photo }),
+  stories: (id, d) => clean({
+    id, author: d.author, authorName: d.authorName, authorPhoto: d.authorPhoto, type: d.type, mediaUrl: d.mediaUrl, mediaType: d.mediaType, text: d.text,
+    colours: d.colours, bgImage: d.bgImage, duration: d.duration, parts: d.parts, views: d.views ?? 0, createdAt: ms(d.createdAt), expiresAt: ms(d.expiresAt),
+  }),
   videos: (id, d) => clean({ id, title: d.title, org: d.org, desc: d.desc, src: d.src, videoId: d.videoId, url: d.url, dur: d.dur, sample: d.sample, createdAt: ms(d.createdAt) }),
   popups: (id, d) => clean({
     id, title: d.title, image: d.image, eventId: d.eventId, start: ms(d.start), end: ms(d.end), status: d.status, requestedBy: d.requestedBy,
@@ -40,7 +44,11 @@ const writers = {
     ...(v.requireApproval ? { requireApproval: true } : {}), ...(v.pinned ? { pinned: true } : {}), notifyFollowers: !!v.notifyFollowers,
     ...(v.createdAt ? { createdAt: Timestamp.fromMillis(v.createdAt) } : {}), published: !!v.published,
   }),
-  staff: (v) => ({ role: v.role, ...clean({ name: v.name }), ...(v.approvePopups ? { approvePopups: true } : {}) }),
+  staff: (v) => ({ role: v.role, ...clean({ name: v.name, displayName: v.displayName, photo: v.photo }), ...(v.approvePopups ? { approvePopups: true } : {}), ...(v.postStories ? { postStories: true } : {}) }),
+  stories: (v) => ({
+    author: v.author, authorName: v.authorName, type: v.type, colours: v.colours, duration: v.duration, parts: v.parts, views: 0, expiresAt: Timestamp.fromMillis(v.expiresAt),
+    ...clean({ authorPhoto: v.authorPhoto, mediaUrl: v.mediaUrl, mediaType: v.mediaType, text: v.text, bgImage: v.bgImage }),
+  }),
   videos: (v) => ({ title: v.title, src: v.src, ...clean({ org: v.org, desc: v.desc, videoId: v.videoId, url: v.url, dur: v.dur }) }),
   popups: (v) => ({
     title: v.title, image: v.image, start: Timestamp.fromMillis(v.start), end: Timestamp.fromMillis(v.end), status: v.status, requestedBy: v.requestedBy,
@@ -55,6 +63,7 @@ const SORTS = {
   staff: (a, b) => (a.id < b.id ? -1 : 1),
   videos: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
   popups: (a, b) => (b.createdAt ?? b.updatedAt ?? 0) - (a.createdAt ?? a.updatedAt ?? 0),
+  stories: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
 };
 
 const CACHE_PREFIX = 'lc:v1:';
@@ -167,6 +176,18 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
       return { value: { config, popup: result.value }, source: result.source };
     },
 
+    // Live stories (not yet expired), newest first, for everyone. Nothing posted gives an empty list.
+    getStories() {
+      const live = (list) => list.filter((s) => s.expiresAt > now()).sort(SORTS.stories);
+      return load('stories', async () => {
+        const snap = await getDocsFromServer(query(collection(db, 'stories'), where('expiresAt', '>', Timestamp.fromMillis(now()))));
+        return live(snap.docs.map((d) => readers.stories(d.id, d.data())));
+      }, live, () => []);
+    },
+
+    // One more view of a story. Anyone may add exactly one at a time; nothing else about a story ever changes this way.
+    countStoryView: (id) => updateDoc(doc(db, 'stories', id), { views: increment(1) }),
+
     // Posted Watch videos, newest first. Nothing posted gives an empty list (Watch then shows its sample cards).
     getVideos() {
       const newest = (list) => [...list].sort(SORTS.videos);
@@ -189,7 +210,7 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
       // Saving replaces the document, so an edited sample item stops being marked as sample.
       async save(col, email, values, id) {
         const ref = id ? doc(db, col, id) : doc(collection(db, col));
-        const created = ['events', 'videos', 'popups'].includes(col) && !id && !values.createdAt ? { createdAt: serverTimestamp() } : {};
+        const created = ['events', 'videos', 'popups', 'stories'].includes(col) && !id && !values.createdAt ? { createdAt: serverTimestamp() } : {};
         await setDoc(ref, clean({ ...writers[col](values), ...created, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() })); // setDoc refuses undefined, so a missing value is simply not written
         return ref.id;
       },
@@ -204,6 +225,8 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
       },
       // The master switch and the live slot together: the rules want the whole document each time.
       setConfig: (email, { popupsOn, livePopupId }) => setDoc(doc(db, 'config', 'app'), { popupsOn: !!popupsOn, livePopupId: livePopupId ?? null, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
+      // A staff member's own display name and photo (the only things they may change about their entry).
+      updateMe: (email, { displayName, photo }) => updateDoc(doc(db, 'staff', email.toLowerCase()), { displayName: String(displayName ?? '').trim().slice(0, 60), photo: photo || '', updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
     },
   };
 }

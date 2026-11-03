@@ -33,7 +33,8 @@ before(async () => {
   env = await initializeTestEnvironment({ projectId: 'lifecentre-app', firestore: { rules: readFileSync(new URL('../../firebase/firestore.rules', import.meta.url), 'utf8') } });
   server = await serve(0);
   base = `http://localhost:${server.address().port}/app/?emulator`;
-  browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-first-run'] });
+  // A fake camera and microphone, allowed without asking, and media that plays without a tap: for the story tests.
+  browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-first-run', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
 });
 after(async () => {
   await browser?.close();
@@ -2927,6 +2928,7 @@ describe('Launch pop-up', () => {
     await page.click('button[aria-pressed]::-p-text(Staff)');
     await page.waitForSelector('#staff-approvePopups');
     assert.equal(await page.$eval('label[for=staff-approvePopups]', (l) => l.textContent), 'Can approve pop-ups');
+    await page.waitForSelector(`button[aria-label="Edit ${LEADER}"]`); // the list loads after the form
     await page.click(`button[aria-label="Edit ${LEADER}"]`);
     await page.waitForFunction((m) => document.querySelector('#staff-email')?.value === m, {}, LEADER);
     await page.click('#staff-approvePopups');
@@ -2941,7 +2943,7 @@ describe('Launch pop-up', () => {
   it('the Pop-ups section: the switch starts off; a banner is cropped to 4:5, uploaded through the Worker, and "Make live" fills the live slot', async () => {
     const calls = [];
     const { page, context } = await openAsStaff('/staff?section=popups', ADMIN, { width: 760, height: 1100, setup: fakeUploads(calls) });
-    await page.waitForSelector('.pu-panel');
+    await page.waitForSelector('.pu-panel:not([aria-busy])'); // drawn with its data, so nothing is redrawn under a click
     assert.equal(await page.$eval('.pu-panel .cr-switch', (b) => b.getAttribute('aria-checked')), 'false');
     assert.match(await text(page, '.pu-state'), /^Off: nothing shows to members/);
     assert.deepEqual(await page.$$eval('.switch .btn', (els) => els.map((b) => b.textContent)), ['Notices', 'Verses', 'Events', 'Staff', 'Pop-ups']);
@@ -2967,9 +2969,11 @@ describe('Launch pop-up', () => {
     assert.deepEqual([saved.title, saved.image, saved.eventId, saved.status, saved.requestedBy, saved.approvedBy, saved.end.toMillis() > Date.now()], ['Christmas service', 'https://media.test/popups/1.jpg', 'conf', 'live', ADMIN, ADMIN, true]);
     assert.deepEqual([(await readDoc('config', 'app')).livePopupId, (await readDoc('config', 'app')).popupsOn], [saved.id, false]);
     await waitText(page, 'Live now', '.pu-panel');
+    await page.waitForSelector('.pu-panel:not([aria-busy])');
     await page.click('.pu-panel .cr-switch');
     await waitText(page, 'Pop-ups are on.', '[role=status]');
     assert.equal((await readDoc('config', 'app')).popupsOn, true);
+    await page.waitForSelector('.pu-panel:not([aria-busy])'); // the section is drawn again after an action
     await page.click('.pu-panel .btn::-p-text(Take down)');
     await waitText(page, 'Taken down.', '[role=status]');
     assert.deepEqual([(await allPopups())[0].status, (await readDoc('config', 'app')).livePopupId], ['ended', null]);
@@ -3080,7 +3084,7 @@ describe('Launch pop-up', () => {
     await seedPopup('l1', { title: 'Live one' });
     await setConfig({ livePopupId: 'l1', popupsOn: false }); // off, or the pop-up itself would open over the staff page (staff see it like everyone else)
     const { page, context } = await openAsStaff('/staff?section=popups', LEADER, { width: 760, height: 1100, setup: fakeUploads() });
-    await page.waitForSelector('.pu-panel');
+    await page.waitForSelector('.pu-panel:not([aria-busy])');
     assert.equal(await page.$('.pu-panel .cr-switch'), null, 'the master switch is for admins');
     await waitText(page, 'Live one', '.pu-panel');
     const row = await page.$eval('.pu-list .pu-row', (r) => ({ title: r.querySelector('b').textContent, from: [...r.querySelectorAll('.meta')].map((m) => m.textContent), thumb: !!r.querySelector('img.pu-thumb') }));
@@ -3143,6 +3147,347 @@ describe('Launch pop-up', () => {
     byId = Object.fromEntries((await allPopups()).map((p) => [p.id, p]));
     assert.deepEqual([byId.r3.status, byId.r3.approvedBy, (await readDoc('config', 'app')).livePopupId], ['live', ADMIN, 'r3']);
     await admin.context.close();
+  });
+});
+
+describe('Stories', () => {
+  const HOUR = 3600000;
+  const UPLOADS = 'https://lifecentre-uploads.lifecentre.workers.dev/';
+  const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, PUT, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' };
+  const PNG = readFileSync(new URL('../icons/favicon-32.png', import.meta.url));
+  const SAM = 'sam@lifecentre.sg';
+  const GRACE = 'grace@lifecentre.sg';
+  const V = 'https://media.test/stories/v.webm';
+  const A = 'https://media.test/stories/a.webm';
+  const files = new Map(); // address -> { type, body }: a video and a voice recording made with the fake camera and microphone
+  const T = Timestamp.fromMillis;
+  // The upload Worker and the storage bucket, faked; the bucket serves the recordings, with ranges, as a real one would.
+  const fakeMedia = (calls = []) => async (p) => {
+    await p.setRequestInterception(true);
+    p.on('request', (req) => {
+      const u = req.url();
+      if (req.method() === 'OPTIONS' && (u.startsWith(UPLOADS) || u.startsWith('https://upload.test/'))) return req.respond({ status: 204, headers: CORS });
+      if (u === `${UPLOADS}sign`) {
+        const body = JSON.parse(req.postData() || '{}');
+        const n = calls.filter((c) => c.sign).length + 1;
+        const key = `${body.kind}/2026/11/${n}.${(body.contentType || 'x/bin').split('/')[1].split(';')[0]}`;
+        calls.push({ sign: body, auth: req.headers().authorization, key });
+        return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ url: `https://upload.test/put/${n}`, key, publicUrl: `https://media.test/${key}`, expiresIn: 600 }) });
+      }
+      if (u.startsWith('https://upload.test/')) { calls.push({ put: u, type: req.headers()['content-type'] }); return req.respond({ status: 200, headers: CORS, body: '' }); }
+      if (u.startsWith('https://media.test/')) {
+        const f = files.get(u) ?? { type: 'image/png', body: PNG };
+        const range = /bytes=(\d+)-(\d*)/.exec(req.headers().range || '');
+        if (range) {
+          const start = Number(range[1]);
+          const end = range[2] ? Math.min(Number(range[2]), f.body.length - 1) : f.body.length - 1;
+          return req.respond({ status: 206, headers: { 'content-type': f.type, 'content-range': `bytes ${start}-${end}/${f.body.length}`, 'accept-ranges': 'bytes', 'content-length': String(end - start + 1) }, body: f.body.subarray(start, end + 1) });
+        }
+        return req.respond({ status: 200, headers: { 'content-type': f.type, 'accept-ranges': 'bytes', 'content-length': String(f.body.length) }, body: f.body });
+      }
+      return req.continue();
+    });
+  };
+  const seedStory = (id, fields) => env.withSecurityRulesDisabled((ctx) => {
+    const now = Date.now();
+    const full = { author: SAM, authorName: 'Samuel Tan', type: 'video', mediaUrl: V, mediaType: 'video/webm', colours: ['#1B1740', '#3558C8'], duration: 9, parts: [{ start: 0, end: 3 }, { start: 3, end: 6 }, { start: 6, end: 9 }], views: 0, createdAt: T(now - HOUR), expiresAt: T(now + 23 * HOUR), updatedBy: SAM, ...fields };
+    return setDoc(doc(ctx.firestore(), 'stories', id), Object.fromEntries(Object.entries(full).filter(([, v]) => v !== undefined)));
+  });
+  const setPoster = (email, on) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', email), { role: email === ADMIN ? 'admin' : email === LEADER ? 'leader' : 'staff', postStories: on, updatedBy: ADMIN }));
+  async function allStories() {
+    let list = [];
+    await env.withSecurityRulesDisabled(async (ctx) => { list = (await getDocs(collection(ctx.firestore(), 'stories'))).docs.map((d) => ({ id: d.id, ...d.data() })); });
+    return list;
+  }
+  const clean = () => env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    for (const d of (await getDocs(collection(db, 'stories'))).docs) await deleteDoc(d.ref);
+    await setPoster(STAFF, false);
+    await setPoster(LEADER, false);
+  });
+  const viewer = (page) => page.$eval('.st-stage', (s) => ({ label: s.getAttribute('aria-label'), bars: [...s.querySelectorAll('.st-bar-fill')].map((f) => f.style.width), name: s.querySelector('.st-who b')?.textContent, views: s.querySelector('.st-views')?.hidden === false ? s.querySelector('.st-views').textContent : null, text: s.querySelector('.st-text')?.hidden === false ? s.querySelector('.st-text').textContent : null }));
+  const video = (page) => page.$eval('.st-stage video', (v) => ({ paused: v.paused, muted: v.muted, t: v.currentTime }));
+  const drag = async (page, from, to) => { await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(to[0], to[1], { steps: 6 }); await page.mouse.up(); };
+  const choosePicture = (page, selector) => page.evaluate(async (sel) => {
+    const c = document.createElement('canvas'); c.width = 900; c.height = 1200;
+    const g = c.getContext('2d'); g.fillStyle = '#2A1B6B'; g.fillRect(0, 0, 900, 1200); g.fillStyle = '#fff'; g.font = 'bold 100px sans-serif'; g.fillText('HELLO', 200, 600);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+    const dt = new DataTransfer(); dt.items.add(new File([blob], 'pic.jpg', { type: 'image/jpeg' }));
+    const input = document.querySelector(sel); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, selector);
+
+  before(async () => {
+    const { page, context } = await open('#/');
+    const grab = (constraints, mime, seconds) => page.evaluate(async (c, m, s) => {
+      const stream = await navigator.mediaDevices.getUserMedia(c);
+      const rec = new MediaRecorder(stream, { mimeType: m });
+      const chunks = []; rec.ondataavailable = (e) => chunks.push(e.data);
+      const stopped = new Promise((r) => { rec.onstop = r; });
+      rec.start(250);
+      await new Promise((r) => setTimeout(r, s * 1000));
+      rec.stop(); await stopped; stream.getTracks().forEach((t) => t.stop());
+      const buf = new Uint8Array(await new Blob(chunks, { type: m }).arrayBuffer());
+      let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      return btoa(bin);
+    }, constraints, mime, seconds);
+    files.set(V, { type: 'video/webm', body: Buffer.from(await grab({ video: true, audio: true }, 'video/webm', 9.5), 'base64') });
+    files.set(A, { type: 'audio/webm', body: Buffer.from(await grab({ audio: true }, 'audio/webm', 5), 'base64') });
+    await context.close();
+    assert.ok(files.get(V).body.length > 20000 && files.get(A).body.length > 2000, 'the fake camera and microphone made the recordings');
+  });
+  beforeEach(clean);
+  after(clean);
+
+  it('admins give a person "Can post stories" on the staff list; admins always can', async () => {
+    const { page, context } = await openAsStaff('/staff', ADMIN, { width: 760, height: 1100 });
+    await page.click('button[aria-pressed]::-p-text(Staff)');
+    await page.waitForSelector('#staff-postStories');
+    assert.equal(await page.$eval('label[for=staff-postStories]', (l) => l.textContent), 'Can post stories (admins always can)');
+    await waitText(page, 'Posts stories', '.items');
+    assert.match(await page.$eval('.items', (l, who) => [...l.querySelectorAll('.item')].find((i) => i.textContent.includes(who)).textContent, ADMIN), /Posts stories/, 'the admin is marked as a poster without the switch');
+    await page.click(`button[aria-label="Edit ${STAFF}"]`);
+    await page.waitForFunction((m) => document.querySelector('#staff-email')?.value === m, {}, STAFF);
+    await page.click('#staff-postStories');
+    await page.click('form button[type=submit]');
+    await waitText(page, 'Saved.', '[role=status]');
+    assert.equal((await readDoc('staff', STAFF)).postStories, true);
+    await shot(page, 'stories-staff-roles');
+    await context.close();
+  });
+
+  it('Home shows no circles until someone posts, then one per person with a live story, newest first, bright until watched', async () => {
+    const empty = await open('#/');
+    await empty.page.waitForSelector('.verse-card');
+    assert.equal(await empty.page.$eval('.st-strip', (s) => s.hidden), true, 'no row while nobody has a story');
+    assert.equal((await empty.page.$$('.st-circle')).length, 0);
+    await empty.context.close();
+    await seedStory('s1', {});
+    await seedStory('g1', { author: GRACE, authorName: 'Grace Lim', type: 'text', mediaUrl: undefined, mediaType: undefined, text: 'Praying for you all today', colours: ['#FF6A3D', '#E5326B'], duration: 6, parts: [{ start: 0, end: 1.5 }], createdAt: T(Date.now() - 2 * HOUR) });
+    await seedStory('old', { author: 'eve@lifecentre.sg', authorName: 'Eve', type: 'text', mediaUrl: undefined, mediaType: undefined, text: 'Yesterday', duration: 6, parts: [{ start: 0, end: 6 }], createdAt: T(Date.now() - 30 * HOUR), expiresAt: T(Date.now() - 6 * HOUR) });
+    const { page, errors, context } = await open('#/', { setup: fakeMedia() });
+    await page.waitForFunction(() => document.querySelectorAll('.st-circle').length === 2);
+    const row = await page.$$eval('.st-circle', (els) => els.map((c) => ({ label: c.querySelector('.st-label').textContent, seen: c.querySelector('.st-ring').classList.contains('seen'), aria: c.querySelector('.st-ring').getAttribute('aria-label') })));
+    assert.deepEqual(row, [{ label: 'Samuel', seen: false, aria: 'Stories from Samuel Tan, 1 story, new' }, { label: 'Grace', seen: false, aria: 'Stories from Grace Lim, 1 story, new' }], 'newest first, expired left out');
+    await shot(page, 'stories-home-row');
+    await checkAccessibility(page, 'Home with stories');
+    await page.click('.st-circle:nth-child(2) .st-ring');
+    await page.waitForSelector('.st-stage');
+    assert.deepEqual([(await viewer(page)).name, (await viewer(page)).text ?? await page.$eval('.st-textstory', (t) => t.textContent)], ['Grace Lim', 'Praying for you all today']);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.st-stage'));
+    assert.deepEqual(await page.$$eval('.st-ring', (els) => els.map((r) => r.classList.contains('seen'))), [false, true], 'grey once watched');
+    await page.reload();
+    await page.waitForFunction(() => document.querySelectorAll('.st-circle').length === 2);
+    assert.deepEqual(await page.$$eval('.st-ring', (els) => els.map((r) => r.classList.contains('seen'))), [false, true], 'remembered on the phone');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('the viewer plays a recording in parts with a bar per part: tap right and left, hold to pause, sound on, keys, drag to change person, swipe down to close, and the next person follows by itself', async () => {
+    await seedStory('s1', {});
+    await seedStory('g1', { author: GRACE, authorName: 'Grace Lim', type: 'text', mediaUrl: undefined, mediaType: undefined, text: 'Short one', duration: 6, parts: [{ start: 0, end: 1.5 }], createdAt: T(Date.now() - 2 * HOUR) });
+    const { page, errors, context } = await open('#/', { setup: fakeMedia() });
+    await page.waitForFunction(() => document.querySelectorAll('.st-circle').length === 2);
+    await page.click('.st-circle:first-child .st-ring');
+    await page.waitForSelector('.st-stage[role=dialog]');
+    assert.equal((await viewer(page)).bars.length, 3, 'a progress bar per part');
+    await page.waitForFunction(() => { const v = document.querySelector('.st-stage video'); return v && !v.paused && v.currentTime > 0.4; }, { timeout: 15000 });
+    assert.equal((await video(page)).muted, false, 'sound on');
+    await page.waitForFunction(() => parseInt(document.querySelector('.st-bar-fill').style.width, 10) > 5);
+    assert.match((await viewer(page)).label, /^Stories from Samuel Tan, part 1 of 3$/);
+    await shot(page, 'stories-viewer');
+    await checkAccessibility(page, 'Story viewer');
+    // tap right: the next part, which is further on in the same file
+    await page.mouse.click(300, 420);
+    await page.waitForFunction(() => document.querySelector('.st-stage').getAttribute('aria-label').endsWith('part 2 of 3'));
+    await page.waitForFunction(() => { const v = document.querySelector('.st-stage video'); return v.currentTime >= 2.9 && v.currentTime < 6; }, { timeout: 8000 });
+    assert.equal((await viewer(page)).bars[0], '100%', 'the first bar is full');
+    // tap left: back a part
+    await page.mouse.click(60, 420);
+    await page.waitForFunction(() => document.querySelector('.st-stage').getAttribute('aria-label').endsWith('part 1 of 3'));
+    await page.waitForFunction(() => { const v = document.querySelector('.st-stage video'); return v.currentTime < 3; }, { timeout: 8000 });
+    // hold to pause
+    await page.mouse.move(200, 420);
+    await page.mouse.down();
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal((await video(page)).paused, true, 'paused while held');
+    await page.mouse.up();
+    await page.waitForFunction(() => !document.querySelector('.st-stage video').paused);
+    // keys
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => document.querySelector('.st-stage').getAttribute('aria-label').endsWith('part 2 of 3'));
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(() => document.querySelector('.st-stage').getAttribute('aria-label').endsWith('part 1 of 3'));
+    // a sideways drag: the next person, and back
+    await drag(page, [300, 420], [120, 430]);
+    await page.waitForFunction(() => document.querySelector('.st-who b')?.textContent === 'Grace Lim');
+    assert.equal((await viewer(page)).bars.length, 1);
+    await drag(page, [100, 420], [300, 430]);
+    await page.waitForFunction(() => document.querySelector('.st-who b')?.textContent === 'Samuel Tan');
+    // PageDown: Grace; her short story ends and, being the last person, the viewer closes by itself
+    await page.keyboard.press('PageDown');
+    await page.waitForFunction(() => document.querySelector('.st-who b')?.textContent === 'Grace Lim');
+    await page.waitForFunction(() => !document.querySelector('.st-stage'), { timeout: 8000 });
+    // swipe down closes
+    await page.click('.st-circle:first-child .st-ring');
+    await page.waitForSelector('.st-stage');
+    await drag(page, [200, 300], [205, 480]);
+    await page.waitForFunction(() => !document.querySelector('.st-stage'));
+    assert.equal(await page.evaluate(() => document.activeElement?.className), 'st-ring seen', 'focus goes back to the circle');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('counts one view per phone, never the poster\'s own, and shows the poster the number', async () => {
+    await seedStory('s1', { type: 'photo', mediaUrl: 'https://media.test/stories/p.png', mediaType: 'image/png', duration: 5, parts: [{ start: 0, end: 1 }] });
+    const watch = async (page) => { await page.waitForSelector('.st-circle'); await page.click('.st-circle:first-child .st-ring'); await page.waitForSelector('.st-stage'); await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.st-stage')); };
+    const one = await open('#/', { setup: fakeMedia() });
+    await watch(one.page);
+    await one.page.waitForFunction(async () => true);
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal((await readDoc('stories', 's1')).views, 1);
+    await watch(one.page);
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal((await readDoc('stories', 's1')).views, 1, 'the same phone counts once');
+    await one.context.close();
+    const two = await open('#/', { setup: fakeMedia() });
+    await watch(two.page);
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal((await readDoc('stories', 's1')).views, 2, 'another phone counts');
+    await two.context.close();
+    const own = await open('#/staff', { setup: fakeMedia() });
+    await waitText(own.page, 'Sign in with Google');
+    await signIn(own.page, SAM, 'Samuel Tan');
+    await goto(own.page, '/');
+    await own.page.waitForSelector('.st-circle');
+    await own.page.click('.st-circle:first-child .st-ring');
+    await own.page.waitForSelector('.st-stage');
+    assert.equal((await viewer(own.page)).views, '2 views');
+    await own.page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal((await readDoc('stories', 's1')).views, 2, 'the poster does not count');
+    await own.context.close();
+  });
+
+  it('recording a video: the parts build up along the bottom as it runs, it stops by itself at the limit, and posts as one file watched in parts', async () => {
+    await setPoster(STAFF, true);
+    const calls = [];
+    const { page, context } = await openAsStaff('/account', STAFF, { setup: fakeMedia(calls) });
+    await page.goto(`${base.replace('?emulator', '?emulator&partSeconds=2')}#/stories/new`);
+    await page.waitForSelector('.st-opt');
+    assert.deepEqual(await page.$$eval('.st-opt b', (els) => els.map((b) => b.textContent)), ['Camera', 'From your phone', 'Voice', 'Text']);
+    await shot(page, 'stories-post');
+    await checkAccessibility(page, 'Post a story');
+    await page.click('.st-opt::-p-text(Camera)');
+    await page.waitForFunction(() => !!document.querySelector('video.st-cam')?.srcObject, { timeout: 10000 }); // the camera is on (the screen is drawn again when it arrives)
+    await page.click('[role=tab]::-p-text(Video)');
+    await page.waitForSelector('.st-parts');
+    assert.equal((await page.$$('.st-part')).length, 6, 'six places for parts');
+    await waitText(page, 'Up to 6 parts of 2 seconds', '.st-rec-time');
+    await page.click('.st-rec');
+    await page.waitForFunction(() => document.querySelectorAll('.st-part.on').length >= 3, { timeout: 10000 });
+    await shot(page, 'stories-recording');
+    assert.match(await text(page, '.st-rec-time'), /part 3 of up to 6/);
+    assert.equal(await page.$eval('.st-rec', (b) => b.getAttribute('aria-label')), 'Stop recording');
+    await page.waitForSelector('.st-preview', { timeout: 20000 }); // stopped by itself at 6 parts
+    await waitText(page, '6 parts · 0:12');
+    await page.type('#st-caption', 'Hello from the camera');
+    await page.click('.st-post-btn');
+    await page.waitForFunction(() => location.hash === '#/', { timeout: 30000 });
+    const sign = calls.find((c) => c.sign);
+    assert.deepEqual([sign.sign.kind, sign.sign.contentType.startsWith('video/'), sign.sign.size > 1000, calls.some((c) => c.put)], ['stories', true, true, true]);
+    const [story] = await allStories();
+    assert.deepEqual([story.type, story.author, story.text, story.parts.length, story.duration, story.views, story.mediaUrl.startsWith('https://media.test/stories/'), story.expiresAt.toMillis() - story.createdAt.toMillis() > 23 * HOUR], ['video', STAFF, 'Hello from the camera', 6, 12, 0, true, true]);
+    assert.deepEqual(story.parts, [{ start: 0, end: 2 }, { start: 2, end: 4 }, { start: 4, end: 6 }, { start: 6, end: 8 }, { start: 8, end: 10 }, { start: 10, end: 12 }]);
+    await page.waitForFunction(() => document.querySelectorAll('.st-circle').length === 1);
+    assert.equal(await page.$eval('.st-label', (l) => l.textContent), 'Your story');
+    await context.close();
+  });
+
+  it('a voice message records over a colour in parts, with a photo background if wanted; a text story and a photo from the phone post too', async () => {
+    await setPoster(STAFF, true);
+    const calls = [];
+    const { page, context } = await openAsStaff('/account', STAFF, { setup: fakeMedia(calls) });
+    await page.goto(`${base.replace('?emulator', '?emulator&partSeconds=2')}#/stories/new`);
+    await page.waitForSelector('.st-opt');
+    await page.click('.st-opt::-p-text(Voice)');
+    await page.waitForSelector('.st-voice-screen .st-rec');
+    assert.equal((await page.$$('.st-part')).length, 10, 'ten places for parts of voice');
+    await waitText(page, 'Up to 10 parts of 2 seconds', '.st-rec-time');
+    await page.click('.st-swatch:nth-child(3)');
+    await page.click('.st-rec');
+    await page.waitForFunction(() => document.querySelectorAll('.st-part.on').length >= 2 && /0:0[3-9]/.test(document.querySelector('.st-rec-time')?.textContent || ''), { timeout: 10000 });
+    assert.match(await text(page, '.st-rec-time'), /part 2 of up to 10/);
+    await page.click('.st-rec');
+    await page.waitForSelector('.st-preview');
+    assert.match(await page.$eval('.st-post .muted', (m) => m.textContent), /^2 parts · 0:0[3-4]$/);
+    await page.click('.st-post-btn');
+    await page.waitForFunction(() => location.hash === '#/', { timeout: 30000 });
+    let [story] = await allStories();
+    assert.deepEqual([story.type, story.parts.length, story.colours, calls.find((c) => c.sign).sign.contentType.startsWith('audio/')], ['audio', 2, ['#FF6A3D', '#E5326B'], true]);
+    // text
+    await page.goto(`${base}#/stories/new`);
+    await page.waitForSelector('.st-opt');
+    await page.click('.st-opt::-p-text(Text)');
+    await page.waitForSelector('#st-caption');
+    await page.click('.st-swatch:nth-child(2)');
+    await page.type('#st-caption', 'Service is at 10.30 tomorrow');
+    assert.equal(await text(page, '.st-prev-text'), 'Service is at 10.30 tomorrow');
+    await page.click('.st-post-btn');
+    await page.waitForFunction(() => location.hash === '#/', { timeout: 20000 });
+    const texts = (await allStories()).filter((s) => s.type === 'text');
+    assert.deepEqual([texts.length, texts[0].text, texts[0].mediaUrl, texts[0].colours, texts[0].parts], [1, 'Service is at 10.30 tomorrow', undefined, ['#2A1B6B', '#7A3FD6'], [{ start: 0, end: 6 }]]);
+    // a photo from the phone
+    await page.goto(`${base}#/stories/new`);
+    await page.waitForSelector('#st-file');
+    await choosePicture(page, '#st-file');
+    await page.waitForSelector('.st-preview img');
+    await page.type('#st-caption', 'Hello');
+    await page.click('.st-post-btn');
+    await page.waitForFunction(() => location.hash === '#/', { timeout: 30000 });
+    const photos = (await allStories()).filter((s) => s.type === 'photo');
+    assert.deepEqual([photos.length, photos[0].text, photos[0].parts, calls.filter((c) => c.sign).at(-1).sign.contentType], [1, 'Hello', [{ start: 0, end: 5 }], 'image/jpeg']);
+    await page.waitForFunction(() => document.querySelector('.st-circle button.st-ring')?.getAttribute('aria-label') === 'Your stories, 3 stories, new'); // the poster's own circle, once their stories have loaded
+    await page.click('.st-circle button.st-ring');
+    await page.waitForSelector('.st-stage');
+    assert.equal((await viewer(page)).bars.length, 4, 'the poster\'s three stories, with the voice one in two parts');
+    await page.keyboard.press('Escape');
+    await context.close();
+  });
+
+  it('Account: a Post a story button, the poster\'s stories with their view counts and Delete, and the name and photo shown on stories', async () => {
+    await setPoster(STAFF, true);
+    await seedStory('mine', { author: STAFF, authorName: 'Staff Member', views: 3 });
+    const calls = [];
+    const { page, errors, context } = await openAsStaff('/account', STAFF, { setup: fakeMedia(calls) });
+    await page.waitForSelector('a.btn[href="#/stories/new"]');
+    try { await waitText(page, '3 views', '.acct-stories'); } catch (e) {
+      throw new Error(`no story list on Account.\nPage: ${await page.$eval('#main', (m) => m.innerText.replace(/\n+/g, ' | ').slice(0, 900))}\nErrors: ${errors.join(' | ')}`);
+    }
+    assert.match(await text(page, '.acct-stories'), /Video.*3 parts · 0:09 · 3 views/s);
+    await page.type('#acct-name', 'Pastor Sam');
+    const middle = async (selector) => { const el = await page.$(selector); await el.evaluate((b) => b.scrollIntoView({ block: 'center' })); return el; }; // clear of the floating tab bar
+    await (await middle('button.btn.primary::-p-text(Save)')).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('[role=status]')].some((s) => s.textContent.includes('Saved.')), { timeout: 15000 });
+    assert.equal((await readDoc('staff', STAFF)).displayName, 'Pastor Sam');
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:session'))).displayName, 'Pastor Sam');
+    await (await middle('button[aria-label="Delete this video story"]')).click();
+    await waitText(page, 'You have no story up at the moment.');
+    assert.equal(await readDoc('stories', 'mine'), undefined);
+    // a story posted now carries the new name
+    await goto(page, '/stories/new');
+    await page.waitForSelector('.st-opt');
+    await page.click('.st-opt::-p-text(Text)');
+    await page.waitForSelector('#st-caption');
+    await page.type('#st-caption', 'Named');
+    await page.click('.st-post-btn');
+    await page.waitForFunction(() => location.hash === '#/', { timeout: 20000 });
+    assert.equal((await allStories())[0].authorName, 'Pastor Sam');
+    await context.close();
+    // someone not set up for stories
+    const other = await openAsStaff('/stories/new', LEADER);
+    await waitText(other.page, 'Not set up for stories');
+    await other.context.close();
   });
 });
 

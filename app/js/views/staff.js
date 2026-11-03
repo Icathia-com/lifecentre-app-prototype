@@ -60,10 +60,12 @@ const PANELS = {
       { name: 'name', label: 'Name', type: 'text', max: 80 },
       { name: 'role', label: 'Role', type: 'select', options: ['staff', 'leader', 'admin'] },
       { name: 'approvePopups', label: 'Can approve pop-ups', type: 'checkbox' },
+      { name: 'postStories', label: 'Can post stories (admins always can)', type: 'checkbox' },
     ],
     blank: () => ({ role: 'staff' }),
     fromItem: (s) => ({ ...s, email: s.id }),
-    show: (s) => [s.name || s.id, [s.name && s.id, s.role, s.approvePopups && 'Approves pop-ups']],
+    carry: ['displayName', 'photo'], // set by the person on Account; an admin's edit keeps them
+    show: (s) => [s.displayName || s.name || s.id, [(s.displayName || s.name) && s.id, s.role, s.approvePopups && 'Approves pop-ups', (s.postStories || s.role === 'admin') && 'Posts stories']],
   },
   // Launch pop-ups: admins run them; anyone with "Can approve pop-ups" decides on requests (see popups-panel.js).
   popups: {
@@ -147,6 +149,7 @@ function panel(col, spec, user) {
   async function onSubmit(e) {
     e.preventDefault();
     let values = readValues(e.currentTarget, spec.fields);
+    if (editing && spec.carry) for (const key of spec.carry) if (values[key] === undefined && editing[key] !== undefined) values[key] = editing[key];
     if (values.end && values.end < values.start) return say('The end must be after the start.', true);
     if (spec.prepare) {
       const prepared = spec.prepare(values);

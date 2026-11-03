@@ -15,6 +15,7 @@ This guide is for church staff, leaders and admins. You do not need any technica
 | Request a launch pop-up for an event | Yes | Yes | No |
 | Approve pop-up requests | Yes | With "Can approve pop-ups" | With "Can approve pop-ups" |
 | Make a pop-up live directly, and the pop-up master switch | Yes | No | No |
+| Post stories | Yes | With "Can post stories" | With "Can post stories" |
 
 ## Sign in
 
@@ -123,13 +124,37 @@ one**, which declines the new request and tells the requester why. Nobody can ap
    **Save as draft** keeps it for later; **Make live** shows it from its start time (replacing the live one, if any).
 3. **Take down** ends the live pop-up at once. A pop-up also ends by itself at its end time.
 
+## Stories
+
+Stories are short posts that everyone can watch from the circles at the top of Home for 24 hours, like Instagram stories.
+Admins, and anyone with **Can post stories** on the staff list, can post them.
+
+**Post one:** tap the **+** on your own circle on Home, or **Post a story** on Account, then choose:
+- **Camera**: take a photo, or switch to **Video** and tap the red button to record. Just keep going: the app splits the recording
+  into 30-second parts as it runs (you see them build up along the bottom) and stops by itself after 6 parts (3 minutes).
+- **From your phone**: a photo, video or audio file. A long video or audio is split into 30-second parts the same way, and only
+  the first 3 minutes (video) or 5 minutes (audio) are shown. Files over 60 MB cannot be uploaded.
+- **Voice**: record a voice message over a colour, or add a photo behind it. It stops by itself after 10 parts (5 minutes).
+- **Text**: a few words on a colour.
+You can add a line of text over a photo or video. Tap **Post**. You can post several stories a day.
+
+**Watching:** tap a circle. The bars across the top are the parts. Tap the right side for the next part, the left side for the one
+before, hold to pause, swipe left or right for the next or previous person, swipe down to close. Sound is on for video and voice.
+
+**Your stories:** on Account, under **Stories**, each of your live stories shows how many times it was watched (a number only) and a
+**Delete** button, which removes it, all parts included.
+
+**Your name and photo:** on Account, under **Your name and photo**, set the display name and picture shown on your stories. They start
+as your Google name and photo.
+
 ## Manage the staff list (admins only)
 
 1. Sign in, then tap **Staff**.
 2. To add someone, type their **Google account email**, their **Name**, and choose a **Role** (staff, leader or admin). Tap **Save**.
    The person must use that same Google account to sign in.
 3. To change someone's name or role, tap them in the list, change it, and tap **Save**.
-4. Tick **Can approve pop-ups** for anyone who should decide on launch pop-up requests. Admins can always decide.
+4. Tick **Can approve pop-ups** for anyone who should decide on launch pop-up requests, and **Can post stories** for anyone who
+   should post stories. Admins can always do both.
 5. To remove someone, tap **Delete** next to their name. You cannot delete yourself.
 
 ## If something goes wrong

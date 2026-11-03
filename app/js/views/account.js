@@ -4,11 +4,14 @@
 // Members and staff sign in separately (members for bookings, staff for posting), so each sign-in has its own row.
 import { h, fill } from '../util.js';
 import { ic } from '../ui.js';
-import { getAuthTools } from '../firebase.js';
-import { onSession } from '../session.js';
+import { data, getAuthTools } from '../firebase.js';
+import { onSession, updateProfile } from '../session.js';
 import { api, clearSession, onBookingSession } from '../booking-api.js';
 import { forgetMyBookings } from '../my-bookings.js';
 import { memberSignIn } from '../member-signin.js';
+import { uploadFile, shrinkPhoto } from '../uploads.js';
+import { timeAgo, clock } from '../stories.js';
+import { avatarEl } from './story-row.js';
 
 const ROLE = { admin: 'Admin', staff: 'Staff', leader: 'Leader' };
 
@@ -105,6 +108,58 @@ export function render(root) {
     ];
   }
 
+  // Staff: the display name and photo shown on their stories (Google's to begin with), changed here and nowhere else.
+  let profile = null; // { displayName, photo, status, busy } while the staff member edits it
+  function profileCard() {
+    profile ??= { displayName: staff.displayName || staff.name || '', photo: staff.photo || '', status: '', busy: false };
+    const p = profile;
+    const photoInput = h('input', { type: 'file', id: 'acct-photo', accept: 'image/*', class: 'sr', onchange: async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      p.busy = true; p.status = 'Uploading the photo…'; draw();
+      try { p.photo = await uploadFile(await shrinkPhoto(f, { max: 256 }), { kind: 'avatars' }); p.status = 'Photo ready. Tap Save.'; } catch (err) { p.status = err.message; }
+      p.busy = false; draw();
+    } });
+    return h('section', { class: 'card', 'aria-labelledby': 'acct-profile-h' },
+      h('h2', { id: 'acct-profile-h', class: 'label' }, 'Your name and photo'),
+      h('p', { class: 'muted' }, 'Shown on your stories.'),
+      h('div', { class: 'acct-profile' },
+        avatarEl({ photo: p.photo, name: p.displayName, email: staff.email }, 56),
+        h('label', { class: 'btn', for: 'acct-photo' }, ic('image', 16, 2), 'Change photo'), photoInput),
+      h('div', { class: 'field' }, h('label', { for: 'acct-name' }, 'Display name'), h('input', { type: 'text', id: 'acct-name', maxlength: '60', value: p.displayName, oninput: (e) => { p.displayName = e.target.value; } })),
+      h('div', { class: 'form-actions' }, h('button', { type: 'button', class: 'btn primary', disabled: p.busy ? '' : null, onclick: async () => {
+        p.busy = true; p.status = ''; draw();
+        try {
+          await data.admin.updateMe(staff.email, { displayName: p.displayName, photo: p.photo });
+          updateProfile({ displayName: p.displayName.trim(), photo: p.photo });
+          p.status = 'Saved.';
+        } catch (err) { p.status = err.code === 'permission-denied' ? 'This account is not on the staff list.' : `Could not save: ${err.message}`; }
+        p.busy = false; draw();
+      } }, 'Save')),
+      p.status ? h('p', { class: 'note', role: 'status' }, p.status) : null);
+  }
+
+  // Posters: a button to post, and their live stories with how many times each was watched (a number, never names).
+  let myStories = null; // null until loaded
+  function storiesCard() {
+    const rows = (myStories ?? []).map((s) => h('div', { class: 'acct-row' },
+      h('span', { class: 'acct-what' }, h('b', {}, `${{ photo: 'Photo', video: 'Video', audio: 'Voice', text: 'Text' }[s.type] ?? s.type}${s.text ? `: ${s.text.slice(0, 40)}` : ''}`),
+        h('small', {}, `${timeAgo(s.createdAt)} ago · ${s.parts?.length ?? 1} ${s.parts?.length === 1 ? 'part' : 'parts'} · ${clock(s.duration)} · ${s.views ?? 0} ${s.views === 1 ? 'view' : 'views'}`)),
+      h('button', { type: 'button', class: 'btn danger', 'aria-label': `Delete this ${s.type} story`, onclick: async () => {
+        if (!confirm('Delete this story? Everyone stops seeing it.')) return;
+        try { await data.admin.remove('stories', s.id); myStories = myStories.filter((x) => x.id !== s.id); draw(); } catch (err) { alert(`Could not delete: ${err.message}`); }
+      } }, 'Delete')));
+    return h('section', { class: 'card', 'aria-labelledby': 'acct-stories-h' },
+      h('h2', { id: 'acct-stories-h', class: 'label' }, 'Stories'),
+      h('a', { class: 'btn primary', href: '#/stories/new' }, 'Post a story'),
+      myStories === null ? h('p', { class: 'muted' }, 'Loading your stories…') : rows.length ? h('div', { class: 'acct-rows acct-stories' }, rows) : h('p', { class: 'muted' }, 'You have no story up at the moment.'));
+  }
+  async function loadMyStories() {
+    if (!staff?.postStories) return;
+    try { const { value } = await data.getStories(); myStories = value.filter((s) => s.author === staff.email); } catch { myStories = []; }
+    draw();
+  }
+
   const bookingsCard = () => h('section', { class: 'card', 'aria-labelledby': 'acct-add-member-h' },
     h('h2', { id: 'acct-add-member-h', class: 'label' }, 'Bookings'),
     showMemberForm ? memberForm() : h('button', { type: 'button', class: 'btn', onclick: () => { showMemberForm = true; draw(); host.querySelector('#bk-email')?.focus(); } }, 'Sign in for bookings'));
@@ -136,6 +191,9 @@ export function render(root) {
 
       next && !member ? bookingsCard() : null,
 
+      staff?.postStories ? storiesCard() : null,
+      staff?.role ? profileCard() : null,
+
       tools ? h('section', { class: 'card acct-tools', 'aria-labelledby': 'acct-tools-h' },
         h('h2', { id: 'acct-tools-h', class: 'label' }, toolsTitle),
         h('nav', { class: 'acct-links', 'aria-label': toolsTitle },
@@ -164,9 +222,11 @@ export function render(root) {
     const was = staff;
     staff = s?.email ? s : null;
     if (staff) googleError = '';
+    if (!staff || staff.email !== was?.email) { profile = null; myStories = null; }
     if (!firstSession && !was && staff && next && !noGoogle) { location.replace(next); return; }
     firstSession = false;
     draw();
+    if (staff?.postStories && myStories === null) loadMyStories();
   });
   const stopMember = onBookingSession((m) => { member = m; draw(); });
 

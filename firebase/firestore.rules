@@ -6,7 +6,8 @@ rules_version = '2';
 // Leader (also in /staff): can be recognised by the app, but cannot post or read drafts.
 // Videos (Watch): public read; admins and leaders post and edit; any staff-list member (admin, staff or leader) can remove one.
 // Pop-ups: everyone reads the one live pop-up; staff send requests; admins and people with "Can approve pop-ups" decide.
-// Admin: also manage /staff. Everything not listed here (stories for now) is denied.
+// Stories: everyone reads; admins and people with "Can post stories" post; anyone counts a view; the author or an admin deletes.
+// Admin: also manage /staff. Everything not listed here is denied.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -55,6 +56,19 @@ service cloud.firestore {
     // Who decides on launch pop-ups: admins, and anyone on the staff list with "Can approve pop-ups".
     function canApprovePopups() {
       return isAdmin() || hasSwitch('approvePopups');
+    }
+
+    // Who posts stories: admins, and anyone on the staff list with "Can post stories".
+    function canPostStories() {
+      return isAdmin() || hasSwitch('postStories');
+    }
+
+    function isHttps(v, max) {
+      return v is string && v.size() <= max && v.matches('^https://.{1,490}$');
+    }
+
+    function isColour(v) {
+      return v is string && v.matches('^#[0-9A-Fa-f]{6}$');
     }
 
     function configPath() {
@@ -168,12 +182,41 @@ service cloud.firestore {
         && d.updatedBy == userEmail();
     }
 
+    // A staff entry: the role and name an admin sets, the switches, and the display name and photo the person sets themselves.
     function validStaff(d) {
-      return d.keys().hasOnly(['role', 'name', 'approvePopups', 'updatedBy', 'updatedAt'])
+      return d.keys().hasOnly(['role', 'name', 'approvePopups', 'postStories', 'displayName', 'photo', 'updatedBy', 'updatedAt'])
         && d.keys().hasAll(['role', 'updatedBy'])
         && d.role in ['admin', 'leader', 'staff']
         && optionalText(d, 'name', 80)
         && (!('approvePopups' in d) || d.approvePopups is bool)
+        && (!('postStories' in d) || d.postStories is bool)
+        && optionalText(d, 'displayName', 60)
+        && (!('photo' in d) || d.photo == '' || isHttps(d.photo, 500))
+        && d.updatedBy == userEmail();
+    }
+
+    // A story: a photo, video, voice or text post that is gone 24 hours after posting. One file per recording, watched in
+    // parts of up to 30 seconds: at most 6 parts of video (3 minutes) or 10 of voice (5 minutes); a photo or text has one part.
+    function validStory(d) {
+      return d.keys().hasOnly(['author', 'authorName', 'authorPhoto', 'type', 'mediaUrl', 'mediaType', 'text', 'colours', 'bgImage',
+                               'duration', 'parts', 'views', 'createdAt', 'expiresAt', 'updatedBy', 'updatedAt'])
+        && d.keys().hasAll(['author', 'authorName', 'type', 'colours', 'duration', 'parts', 'views', 'createdAt', 'expiresAt', 'updatedBy'])
+        && isText(d.author, 120)
+        && isText(d.authorName, 80)
+        && (!('authorPhoto' in d) || isHttps(d.authorPhoto, 500))
+        && d.type in ['photo', 'video', 'audio', 'text']
+        && (d.type == 'text' ? !('mediaUrl' in d) : isHttps(d.mediaUrl, 500))
+        && optionalText(d, 'mediaType', 60)
+        && (d.type == 'text' ? isText(d.text, 300) : optionalText(d, 'text', 300))
+        && d.colours is list && d.colours.size() == 2 && isColour(d.colours[0]) && isColour(d.colours[1])
+        && (!('bgImage' in d) || isHttps(d.bgImage, 500))
+        && d.duration is int && d.duration >= 1
+        && d.duration <= (d.type == 'video' ? 180 : (d.type == 'audio' ? 300 : 15))
+        && d.parts is list && d.parts.size() >= 1
+        && d.parts.size() <= (d.type == 'video' ? 6 : (d.type == 'audio' ? 10 : 1))
+        && d.views is int && d.views >= 0
+        && d.createdAt is timestamp
+        && d.expiresAt is timestamp
         && d.updatedBy == userEmail();
     }
 
@@ -259,7 +302,27 @@ service cloud.firestore {
       allow create, update: if isAdmin()
         && email == email.lower()
         && validStaff(request.resource.data);
+      // People on the staff list change their own display name and photo, and nothing else about their entry.
+      allow update: if signedIn() && email == userEmail()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photo', 'updatedBy', 'updatedAt'])
+        && validStaff(request.resource.data);
       allow delete: if isAdmin() && email != userEmail();
+    }
+
+    // Stories. Everyone watches them; the people with "Can post stories" (and admins) post in their own name; anyone may count
+    // one more view and change nothing else; the author or an admin deletes. Expired ones are removed by the nightly clean-up.
+    match /stories/{id} {
+      allow read: if true;
+      allow create: if canPostStories()
+        && validStory(request.resource.data)
+        && request.resource.data.author == userEmail()
+        && request.resource.data.views == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt > request.time + duration.value(23, 'h')
+        && request.resource.data.expiresAt < request.time + duration.value(25, 'h');
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+        && request.resource.data.views == resource.data.views + 1;
+      allow delete: if isAdmin() || (isStaff() && resource.data.author == userEmail());
     }
 
     // One document. Admins set the master switch; admins and approvers change which pop-up is live (an approver may create

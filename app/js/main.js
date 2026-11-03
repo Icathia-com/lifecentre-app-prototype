@@ -19,6 +19,7 @@ startRouter({
     { path: '/events/location/:id', name: 'events', title: 'Location', load: () => import('./views/location.js') },
     { path: '/events/:id/edit', name: 'event-create', tab: 'events', title: 'Edit event', load: () => import('./views/event-create.js') },
     { path: '/events/:id', name: 'events', title: 'Event', load: () => import('./views/event.js') },
+    { path: '/stories/new', name: 'story-post', tab: 'home', title: 'Post a story', load: () => import('./views/story-post.js') },
     { path: '/day', name: 'day', tab: 'home', title: 'Day plan', load: () => import('./views/day.js') },
     { path: '/day/:date', name: 'day', tab: 'home', title: 'Day plan', load: () => import('./views/day.js') },
     { path: '/notifications', name: 'notifications', tab: 'home', title: 'Notifications', load: () => import('./views/notifications.js') },

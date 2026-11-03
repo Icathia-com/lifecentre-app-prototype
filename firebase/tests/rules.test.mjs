@@ -4,7 +4,7 @@ import { before, after, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
-  doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, orderBy, Timestamp,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, orderBy, Timestamp, serverTimestamp, increment,
 } from 'firebase/firestore';
 import { seedDocs } from '../seed/seed.mjs';
 
@@ -365,12 +365,79 @@ describe('launch pop-ups', () => {
   });
 });
 
-describe('collections without rules yet', () => {
-  it('stories are denied to everyone, including admin', async () => {
-    for (const db of [anon(), user(STAFF), user(ADMIN)]) {
-      await assertFails(getDoc(doc(db, 'stories', 's')));
-      await assertFails(setDoc(doc(db, 'stories', 's'), { title: 'x' }));
+describe('stories', () => {
+  const POSTER = 'leader@lifecentre.sg'; // a leader with "Can post stories"
+  const HOUR = 3600000;
+  const story = (email, extra = {}) => Object.fromEntries(Object.entries({ // a field set to undefined is left out
+    author: email, authorName: 'Sam', type: 'video', mediaUrl: 'https://pub-test.r2.dev/stories/2026/11/a.webm', mediaType: 'video/webm', colours: ['#1B1740', '#3558C8'],
+    duration: 75, parts: [{ start: 0, end: 30 }, { start: 30, end: 60 }, { start: 60, end: 75 }], views: 0, createdAt: serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 24 * HOUR), updatedBy: email, ...extra,
+  }).filter(([, v]) => v !== undefined));
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'staff', POSTER), { role: 'leader', postStories: true, updatedBy: ADMIN });
+      await setDoc(doc(db, 'stories', 's1'), { ...story(ADMIN), createdAt: T('2026-11-03T00:00:00Z'), views: 4 });
+    });
+  });
+  const parts = (n, len = 30) => Array.from({ length: n }, (_, k) => ({ start: k * len, end: (k + 1) * len }));
+
+  it('everyone reads and lists stories, signed in or not', async () => {
+    for (const db of [anon(), user('visitor@example.com'), user(STAFF)]) {
+      await assertSucceeds(getDoc(doc(db, 'stories', 's1')));
+      await assertSucceeds(getDocs(collection(db, 'stories')));
     }
+  });
+  it('admins and people with "Can post stories" post in their own name; plain staff, leaders without it and the public cannot', async () => {
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'stories', 'a'), story(ADMIN)));
+    await assertSucceeds(setDoc(doc(user(POSTER), 'stories', 'p'), story(POSTER, { type: 'text', mediaUrl: undefined, mediaType: undefined, text: 'Hello', duration: 6, parts: parts(1, 6) })));
+    await assertFails(setDoc(doc(user(POSTER), 'stories', 'x'), story(ADMIN))); // not in someone else's name
+    await assertFails(setDoc(doc(user(STAFF), 'stories', 'x'), story(STAFF)));
+    await assertFails(setDoc(doc(anon(), 'stories', 'x'), story(ADMIN)));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', POSTER), { role: 'leader', postStories: false, updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(POSTER), 'stories', 'y'), story(POSTER)));
+  });
+  it('keeps a story to the limits: parts of a recording, length by type, text length, https media, colours, zero views, 24 hours', async () => {
+    const db = user(ADMIN);
+    await assertSucceeds(setDoc(doc(db, 'stories', 'v6'), story(ADMIN, { duration: 180, parts: parts(6) })));
+    await assertSucceeds(setDoc(doc(db, 'stories', 'a10'), story(ADMIN, { type: 'audio', mediaUrl: 'https://pub-test.r2.dev/stories/a.weba', mediaType: 'audio/webm', duration: 300, parts: parts(10), bgImage: 'https://pub-test.r2.dev/stories/bg.jpg' })));
+    await assertSucceeds(setDoc(doc(db, 'stories', 'ph'), story(ADMIN, { type: 'photo', mediaUrl: 'https://pub-test.r2.dev/stories/p.jpg', mediaType: 'image/jpeg', duration: 5, parts: parts(1, 5), text: 'Over the picture', authorPhoto: 'https://pub-test.r2.dev/avatars/me.jpg' })));
+    for (const bad of [
+      { parts: parts(7), duration: 180 }, { duration: 181, parts: parts(6) }, { type: 'audio', parts: parts(11), duration: 300 }, { type: 'audio', duration: 301, parts: parts(10) },
+      { type: 'photo', duration: 16, parts: parts(1, 16) }, { type: 'photo', parts: parts(2, 5), duration: 10 }, { parts: [] }, { duration: 0 }, { duration: 2.5 },
+      { type: 'text', mediaUrl: undefined, text: '' }, { type: 'text', text: 'has media too' }, { type: 'text', mediaUrl: undefined, text: 'x'.repeat(301) }, { text: 'x'.repeat(301) },
+      { mediaUrl: 'http://example.org/a.webm' }, { mediaUrl: undefined }, { mediaUrl: 'javascript:alert(1)' }, { colours: ['blue', '#000000'] }, { colours: ['#000000'] }, { colours: 'red' },
+      { views: 1 }, { views: -1 }, { type: 'gif' }, { authorName: '' }, { bgImage: 'http://x.y/z.jpg' }, { likes: 3 },
+      { expiresAt: Timestamp.fromMillis(Date.now() + 30 * HOUR) }, { expiresAt: Timestamp.fromMillis(Date.now() + 20 * HOUR) }, { createdAt: T('2026-11-01T00:00:00Z') },
+    ]) await assertFails(setDoc(doc(db, 'stories', 'bad'), story(ADMIN, bad)));
+  });
+  it('anyone may count one more view and change nothing else; the author or an admin deletes', async () => {
+    for (const db of [anon(), user('visitor@example.com'), user(STAFF)]) {
+      const before = (await getDoc(doc(env.unauthenticatedContext().firestore(), 'stories', 's1'))).data().views;
+      await assertSucceeds(updateDoc(doc(db, 'stories', 's1'), { views: increment(1) }));
+      await assertSucceeds(updateDoc(doc(db, 'stories', 's1'), { views: before + 2 }));
+      await assertFails(updateDoc(doc(db, 'stories', 's1'), { views: increment(2) }));
+      await assertFails(updateDoc(doc(db, 'stories', 's1'), { views: before + 2 })); // not by 1
+      await assertFails(updateDoc(doc(db, 'stories', 's1'), { views: increment(1), text: 'changed' }));
+      await assertFails(updateDoc(doc(db, 'stories', 's1'), { text: 'changed' }));
+      await assertFails(deleteDoc(doc(db, 'stories', 's1')));
+    }
+    await assertFails(deleteDoc(doc(user(POSTER), 'stories', 's1'))); // someone else's
+    await assertSucceeds(deleteDoc(doc(user(ADMIN), 'stories', 's1')));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'stories', 'p1'), story(POSTER)));
+    await assertSucceeds(deleteDoc(doc(user(POSTER), 'stories', 'p1')));
+  });
+  it('a staff member changes only their own display name and photo; admins set "Can post stories"', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(updateDoc(doc(db, 'staff', STAFF), { displayName: 'Pastor Sam', photo: 'https://pub-test.r2.dev/avatars/sam.jpg', updatedBy: STAFF, updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(doc(db, 'staff', STAFF), { displayName: '', photo: '', updatedBy: STAFF }));
+    await assertFails(updateDoc(doc(db, 'staff', STAFF), { displayName: 'Sam', role: 'admin', updatedBy: STAFF }));
+    await assertFails(updateDoc(doc(db, 'staff', STAFF), { displayName: 'Sam', postStories: true, updatedBy: STAFF }));
+    await assertFails(updateDoc(doc(db, 'staff', STAFF), { photo: 'http://example.org/me.jpg', updatedBy: STAFF }));
+    await assertFails(updateDoc(doc(db, 'staff', STAFF), { displayName: 'x'.repeat(61), updatedBy: STAFF }));
+    await assertFails(updateDoc(doc(db, 'staff', ADMIN), { displayName: 'Not me', updatedBy: STAFF }));
+    await assertFails(updateDoc(doc(user('visitor@example.com'), 'staff', 'visitor@example.com'), { displayName: 'Me', updatedBy: 'visitor@example.com' })); // no entry to change
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'staff', STAFF), { role: 'staff', postStories: true, displayName: 'Pastor Sam', updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(ADMIN), 'staff', STAFF), { role: 'staff', postStories: 'yes', updatedBy: ADMIN }));
   });
 });
 

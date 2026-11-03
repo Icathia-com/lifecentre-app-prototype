@@ -19,6 +19,7 @@ export const TYPES = {
 export const KINDS = {
   popups: (entry) => ['admin', 'staff'].includes(entry.role),
   stories: (entry) => entry.role === 'admin' || entry.postStories === true,
+  avatars: (entry) => ['admin', 'staff', 'leader'].includes(entry.role), // a profile photo: anyone on the staff list
 };
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 

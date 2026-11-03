@@ -183,6 +183,27 @@ describe('staff writes', () => {
     store.clear();
     assert.equal((await publicData().getLivePopup()).value.popup, null, 'off: nothing for members');
   });
+  it('lists live stories newest first for everyone, counts a view, and lets a staff member set their own name and photo', async () => {
+    const ADMIN = 'admin@lifecentre.sg';
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', ADMIN), { role: 'admin', updatedBy: ADMIN }));
+    const admin = createData(env.authenticatedContext('a', { email: ADMIN, email_verified: true }).firestore(), { now: () => NOW });
+    assert.deepEqual((await publicData().getStories()).value, []);
+    const base = { author: ADMIN, authorName: 'Admin', colours: ['#1B1740', '#3558C8'], expiresAt: Date.now() + 86400000 };
+    const first = await admin.admin.save('stories', ADMIN, { ...base, type: 'text', text: 'First', duration: 6, parts: [{ start: 0, end: 6 }] });
+    await new Promise((r) => setTimeout(r, 20));
+    const second = await admin.admin.save('stories', ADMIN, { ...base, type: 'video', mediaUrl: 'https://pub-test.r2.dev/stories/v.webm', mediaType: 'video/webm', duration: 45, parts: [{ start: 0, end: 30 }, { start: 30, end: 45 }], text: 'Over it' });
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'stories', 'gone'), { ...base, type: 'text', text: 'Old', duration: 6, parts: [{ start: 0, end: 6 }], views: 0, createdAt: Timestamp.fromMillis(NOW - 90000000), expiresAt: Timestamp.fromMillis(NOW - 1000), updatedBy: ADMIN })); // expired by the test clock
+    store.clear();
+    const { value } = await publicData().getStories();
+    assert.deepEqual(value.map((s) => [s.id, s.type, s.text, s.parts.length, s.views, typeof s.createdAt]), [[second, 'video', 'Over it', 2, 0, 'number'], [first, 'text', 'First', 1, 0, 'number']]);
+    await publicData().countStoryView(second);
+    await publicData().countStoryView(second);
+    store.clear();
+    assert.equal((await publicData().getStories()).value[0].views, 2);
+    await staffData().admin.updateMe(STAFF, { displayName: '  Pastor Sam  ', photo: 'https://pub-test.r2.dev/avatars/sam.jpg' });
+    const me = await staffData().admin.getStaffEntry(STAFF);
+    assert.deepEqual([me.displayName, me.photo, me.role], ['Pastor Sam', 'https://pub-test.r2.dev/avatars/sam.jpg', 'staff']);
+  });
   it('saves a verse with only its passage, never an undefined value, and replaces a verse saved in the old shape', async () => {
     await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'verses', '2026-11-01'), { reference: 'Psalms 139:23 NKJV', text: 'Search me, O God, and know my heart.', translation: 'NKJV', updatedBy: STAFF }));
     // the values carry stray old fields and undefined ones, as a mixed-up old form could send them
