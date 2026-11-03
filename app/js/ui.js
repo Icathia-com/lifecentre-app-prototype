@@ -48,6 +48,11 @@ const PATHS = {
   shield: '<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M12 8v5M12 16.5v.01"/>',
   sound: '<path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
   mute: '<path d="M4 10v4h4l5 4V6L8 10z"/><path d="M17 9l5 6M22 9l-5 6"/>',
+  bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  download: '<path d="M12 4v12M6 10l6 6 6-6M4 20h16"/>',
+  hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 6a1.5 1.5 0 0 1 3 0v6M14 7.5a1.5 1.5 0 0 1 3 0V13"/><path d="M8 12.5a1.5 1.5 0 0 0-3 .5v3a6 6 0 0 0 6 6h2a6 6 0 0 0 6-6v-6"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
 };
 
 export function ic(name, size = 18, stroke = 2) {

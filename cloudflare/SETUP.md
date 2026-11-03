@@ -6,6 +6,12 @@ on the same Worker removes expired story records. Everything here stays inside C
 
 No secret is ever written into this repository. Secrets are typed into `wrangler secret put` and live only in Cloudflare.
 
+**Where things stand (3 Nov 2026):** the account exists (hello@lifecentre.sg, account id `cea7dea349ddbdadca0d69ee74bd7965`),
+the bucket `lifecentre-uploads` is created with its CORS rules and the 2-day lifecycle for `stories/`, public access is on at
+`https://pub-6e5175904733427ab0e9528a3c78c10e.r2.dev`, and the Worker is deployed at
+`https://lifecentre-uploads.lifecentre-app-prototype.workers.dev` (it answers `ok`). Still to do: Part 1 steps 4 and 5 (the R2 API
+token and the clean-up service account), then the three `secret put` lines in Part 3. Uploads fail until those secrets are set.
+
 ## Part 1: the account (you do this; it needs the church's card)
 
 1. Go to https://dash.cloudflare.com/sign-up and create the account with **hello@lifecentre.sg**. Verify the email.

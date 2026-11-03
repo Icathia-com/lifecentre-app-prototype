@@ -1,15 +1,21 @@
-// Post a story (people with "Can post stories", and admins): take a photo or video with the camera, pick one from the phone,
-// record a voice message over a colour or a photo, or write a text story on a colour. Text can go over photos and videos.
-// Recording video or voice just runs: the app splits it into consecutive 30-second parts as it goes (shown building up
-// along the bottom) and stops by itself at the limit (6 parts of video, 10 of voice). A picked video or audio is split the
-// same way. One file is kept per recording and watched in parts. Files are made smaller on the phone and anything over
-// 60 MB is refused.
+// Post a story, like Instagram. The camera opens straight away, full screen, with no menu in between:
+//   STORY  tap the shutter for a photo, hold it to record a video, slide up while holding to lock the recording hands-free.
+//   VOICE  the shutter is a microphone: a tap (or a hold) records a voice message over a colour or a photo from the phone.
+//   TEXT   words on a colour (tap the background to change it), then Next.
+// Then a preview: Aa puts words on it (drag to move, pinch or wheel or the keys to resize, a palette to recolour), the pen
+// draws with undo, the arrow saves the picture or recording to the phone, and "Your story" posts it.
+// A recording runs in consecutive 30-second parts: a ring round the shutter fills with a mark at every part, the parts build
+// up along the top, and it stops by itself at the limit (6 parts of video, 3 minutes; 10 of voice, 5 minutes). One file is
+// kept per recording and watched in parts. Pictures are made on the phone at 1080 by 1920 (photos and text stories with the
+// words drawn on; a see-through picture of the words laid over a video). Anything over 60 MB is refused.
 import { data } from '../firebase.js';
 import { onSession } from '../session.js';
-import { h, fill } from '../util.js';
+import { h, fill, icon } from '../util.js';
 import { ic } from '../ui.js';
-import { uploadFile, shrinkPhoto, MAX_UPLOAD_BYTES, TOO_BIG } from '../uploads.js';
-import { PART_SECONDS, PART_LIMITS, PALETTE, MAX_TEXT, DAY, splitParts, partsFor, shownSeconds, maxSeconds, clock } from '../stories.js';
+import { uploadFile, shrinkPhoto, plainType, MAX_UPLOAD_BYTES, TOO_BIG } from '../uploads.js';
+import { PART_SECONDS, PART_LIMITS, PALETTE, MAX_TEXT, DAY, HOLD_MS, LOCK_PX, MODES, splitParts, partsFor, shownSeconds, maxSeconds, clock, tapAction, releaseAction, lockReached, ringFraction, ringMarks, nextColours, layerWords } from '../stories.js';
+import { PEN_COLOURS, PEN_WIDTH, emptyOverlay, isEmpty, newLayer, clampSize, drawOverlay, hitLayer, composite, overlayImage } from '../story-canvas.js';
+import { avatarEl } from './story-row.js';
 
 // Shorter parts while testing against the local emulators (?partSeconds=2); 30 seconds everywhere else.
 const params = new URLSearchParams(location.search);
@@ -22,8 +28,11 @@ const MIMES = {
   audio: ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'],
 };
 const pickMime = (kind) => MIMES[kind].find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || '';
-const EXT_TYPE = { webm: 'video/webm', mp4: 'video/mp4', mov: 'video/quicktime', m4a: 'audio/mp4', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', weba: 'audio/webm' };
+const EXT = { 'video/webm': 'webm', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/webm': 'weba' };
 const REENCODE_OVER = 15 * 1024 * 1024; // a picked video bigger than this (or taller than 720p) is re-encoded on the phone when the browser can
+const RING_R = 44;
+const RING_C = 2 * Math.PI * RING_R;
+const limitSeconds = (type) => PART_LIMITS[type] * PART;
 
 // Reads a media file's length in seconds (and a video's height).
 function probe(file, kind) {
@@ -31,7 +40,13 @@ function probe(file, kind) {
     const el = document.createElement(kind === 'video' ? 'video' : 'audio');
     const url = URL.createObjectURL(file);
     el.preload = 'metadata';
-    el.onloadedmetadata = () => { const out = { duration: el.duration, height: el.videoHeight || 0 }; URL.revokeObjectURL(url); resolve(out); };
+    const done = () => { const out = { duration: el.duration, height: el.videoHeight || 0 }; URL.revokeObjectURL(url); resolve(out); };
+    el.onloadedmetadata = () => {
+      if (Number.isFinite(el.duration)) { done(); return; }
+      // A recording made on a phone carries no length: asking for the very end makes the browser work it out.
+      el.ondurationchange = () => { if (Number.isFinite(el.duration)) { el.ondurationchange = null; done(); } };
+      el.currentTime = 1e101;
+    };
     el.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read.')); };
     el.src = url;
   });
@@ -66,266 +81,705 @@ function reencode(file, { maxSeconds: limit, onProgress }) {
   });
 }
 
+const loadedImage = (url) => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('The picture could not be read.')); img.src = url; });
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
 export function render(root) {
   let session = null;
-  let step = 'choose'; // choose | camera | voice | text | edit | posting
-  let kind = null;     // photo | video | audio | text
-  let stream = null;
-  let recorder = null;
-  let rec = null;      // { t0, chunks, timer, mime } while recording
-  let elapsed = 0;     // seconds recorded so far
-  let draft = null;    // { kind, blob, mimeType, duration, parts, preview, text, colours, bgBlob, bgPreview }
-  let cameraMode = 'photo';
+  let closed = false;
+  let stage = 'camera';       // camera | preview
+  let mode = 'story';         // story | voice | text
   let facing = 'user';
-  let error = '';
+  let stream = null;
+  let streamTicket = 0;
+  let recorder = null;
+  let rec = null;             // { type, timer } while recording
+  let elapsed = 0;            // seconds recorded so far
+  let locked = false;         // the recording carries on with no finger on the shutter
+  let handsFree = false;
+  let timerOn = false;
+  let flash = false;
+  let moreOpen = false;
+  let colours = PALETTE[0];   // the background in voice and text mode
+  let voicePhoto = null;      // { blob, url }: a photo from the phone behind a voice message
+  let typed = '';             // text mode
+  let draft = null;           // { kind, blob, mimeType, url, duration, parts, colours, bg, note }
+  let overlay = emptyOverlay();
+  let tool = null;            // null | 'pen'
+  let editing = null;         // { id, text, colour } while words are typed
+  let penColour = '#FFFFFF';
+  let textColour = '#FFFFFF';
   let busy = '';
-  let colours = PALETTE[0];
-  const host = h('div', { class: 'stack st-post' });
+  let error = '';
+  let toast = '';
+  let toastTimer = 0;
+  let confirmOpen = false;
+  let lastThumb = '';
+  let press = null;           // { id, y0, started, timer } while the shutter is held
+  let lastPress = 0;
+  let boxes = [];             // where each piece of text sits on the editing canvas, in CSS pixels
+  let gesture = null;         // a stroke being drawn, or a piece of text being dragged or pinched
+  let camEl = null;           // the live camera, kept across redraws
+  let drawCanvas = null;
+  let mediaEl = null;
+  let audioEl = null;
+  let playing = false;
+  let observer = null;
+  // own-drag: the outlet's drag-to-scroll leaves this screen's drags alone. (Not "sp": that is the Home calendar's spacer class.)
+  const host = h('div', { class: 'story-cam own-drag', 'data-stage': stage, 'data-mode': mode });
   root.append(host);
+  const live = h('p', { class: 'sr', role: 'status' });
+  const announce = (t) => { live.textContent = ''; setTimeout(() => { live.textContent = t; }, 30); };
+  const say = (text) => { error = text; busy = ''; draw(); };
+  const recording = () => !!rec;
+  const title = () => (stage === 'preview' ? 'Your story' : mode === 'voice' ? 'Voice message' : mode === 'text' ? 'Text story' : 'Camera');
+  const focusLater = (selector) => setTimeout(() => { host.querySelector(selector)?.focus({ preventScroll: true }); }, 0);
+  const layerById = (id) => overlay.layers.find((l) => l.id === id);
+  if (local) window.__storyEditor = () => ({ stage, mode, colours: draft?.colours ?? colours, locked, recording: recording(), handsFree, overlay: JSON.parse(JSON.stringify(overlay)), draft: draft && { kind: draft.kind, parts: draft.parts, duration: draft.duration } });
 
-  const header = (title, back = () => goChoose()) => h('header', { class: 'cr-head' },
-    h('button', { type: 'button', class: 'round-btn', 'aria-label': step === 'choose' ? 'Back to Home' : 'Back', onclick: step === 'choose' ? () => { location.hash = '#/'; } : back }, ic('back', 20, 2.2)),
-    h('h1', { id: 'page-title', tabindex: '-1' }, title));
-  const say = (text) => { error = text; draw(); };
-
-  async function stopStream() {
-    if (rec?.timer) clearInterval(rec.timer);
-    if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch { /* fine */ } }
-    recorder = null; rec = null;
-    stream?.getTracks().forEach((t) => t.stop());
-    stream = null;
-  }
-  function goChoose() { stopStream(); step = 'choose'; kind = null; draft = null; error = ''; draw(); }
-
-  // ---- Camera (photo or video) and voice ----
-  async function openCamera() {
-    error = ''; step = 'camera'; kind = cameraMode === 'photo' ? 'photo' : 'video'; draw();
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
-    } catch { say('The camera could not be opened. Check the app may use the camera and microphone, or pick a photo or video from your phone.'); step = 'choose'; draw(); return; }
+  // ---- The camera and the microphone ----
+  const cam = () => (camEl ??= h('video', { class: 'sp-cam', autoplay: '', muted: '', playsinline: '' }, h('track', { kind: 'captions', srclang: 'en', label: 'Captions', src: 'data:text/vtt,WEBVTT' })));
+  function stopTracks() { stream?.getTracks().forEach((t) => t.stop()); stream = null; if (camEl) camEl.srcObject = null; }
+  // data-ready on the root says the screen has settled (the camera or microphone is on, or nothing was needed, or it failed).
+  async function openMedia() {
+    stopTracks();
+    error = '';
+    delete host.dataset.ready;
     draw();
-  }
-  async function openVoice() {
-    error = ''; step = 'voice'; kind = 'audio'; draw();
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { say('The microphone could not be opened. Check the app may use it.'); step = 'choose'; draw(); return; }
+    if (mode === 'text') { host.dataset.ready = '1'; return; }
+    const my = ++streamTicket;
+    if (!navigator.mediaDevices?.getUserMedia) { say(mode === 'voice' ? 'This browser cannot record a voice message.' : 'The camera is not available in this browser. Choose a photo or video from your phone instead.'); host.dataset.ready = '1'; return; }
+    const want = mode === 'voice' ? { audio: true } : { video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } }, audio: true };
+    let got;
+    try { got = await navigator.mediaDevices.getUserMedia(want); } catch {
+      if (my !== streamTicket || closed) return;
+      say(mode === 'voice' ? 'The microphone could not be opened. Check the app may use it.' : 'The camera could not be opened. Check the app may use the camera and microphone, or choose a photo or video from your phone.');
+      host.dataset.ready = '1';
+      return;
+    }
+    if (my !== streamTicket || closed) { got.getTracks().forEach((t) => t.stop()); return; }
+    stream = got;
+    if (mode === 'story') { cam().srcObject = stream; cam().play?.().catch(() => {}); applyTorch(); }
     draw();
+    host.dataset.ready = '1';
   }
-  async function flipCamera() { facing = facing === 'user' ? 'environment' : 'user'; stream?.getTracks().forEach((t) => t.stop()); stream = null; await openCamera(); }
+  const hasTorch = () => !!stream?.getVideoTracks?.()[0]?.getCapabilities?.()?.torch;
+  function applyTorch() { const track = stream?.getVideoTracks?.()[0]; if (track && hasTorch()) track.applyConstraints({ advanced: [{ torch: flash }] }).catch(() => {}); }
+  function flipCamera() { if (recording()) return; facing = facing === 'user' ? 'environment' : 'user'; openMedia(); }
+  function setMode(m) {
+    if (!MODES.includes(m) || m === mode || recording() || busy) return;
+    mode = m; locked = false;
+    openMedia();
+    if (m === 'text') focusLater('.sp-text-input');
+  }
+  const focusMode = () => focusLater('.sp-mode[aria-checked="true"]');
+  function cycleColours() {
+    colours = nextColours(colours);
+    const bg = host.querySelector('.sp-bg');
+    if (bg) bg.style.background = `linear-gradient(160deg, ${colours[0]}, ${colours[1]})`;
+    announce('Colour changed');
+  }
 
-  function takePhoto() {
-    const video = host.querySelector('video.st-cam');
-    if (!video || !video.videoWidth) return;
+  // ---- The shutter: tap, hold, slide up to lock; the keyboard does the same with Space or Enter and the up arrow ----
+  function pressStart(id, y) {
+    if (press || busy || confirmOpen || stage !== 'camera' || closed) return;
+    press = { id, y0: y, started: false, timer: 0 };
+    lastPress = performance.now();
+    host.querySelector('.sp-shutter')?.classList.add('held');
+    if (!recording() && mode !== 'text' && !handsFree && !timerOn) {
+      press.timer = setTimeout(() => { if (!press || press.id !== id) return; press.started = true; startRecording(mode === 'voice' ? 'audio' : 'video'); }, HOLD_MS);
+    }
+  }
+  function pressMove(id, y) {
+    if (!press || press.id !== id || !press.started || locked || !recording()) return;
+    if (lockReached(press.y0, y)) { locked = true; setRecState(); announce('Locked. Tap the shutter to stop.'); try { navigator.vibrate?.(15); } catch { /* fine */ } }
+  }
+  function pressEnd(id, cancelled, y) {
+    if (!press || press.id !== id) return;
+    const p = press;
+    press = null;
+    lastPress = performance.now();
+    clearTimeout(p.timer);
+    host.querySelector('.sp-shutter')?.classList.remove('held');
+    if (p.started) { // a hold that recorded: locked carries on, otherwise letting go stops it
+      // Lifting the finger high above the shutter locks too, in case the moves on the way up never came through.
+      if (!cancelled && !locked && recording() && Number.isFinite(y) && lockReached(p.y0, y)) { locked = true; announce('Locked. Tap the shutter to stop.'); }
+      if (recording() && releaseAction({ locked }) === 'stop') stopRecording(); else setRecState();
+      return;
+    }
+    if (!cancelled) tap();
+  }
+  function tap() {
+    if (busy || confirmOpen || stage !== 'camera') return;
+    const action = tapAction({ mode, recording: recording(), handsFree });
+    if (action === 'next') { nextFromText(); return; }
+    if (action === 'stop') { stopRecording(); return; }
+    if (timerOn) { countdown(3).then((ok) => { if (ok) doTap(action); }); return; }
+    doTap(action);
+  }
+  function doTap(action) {
+    if (action === 'photo') takePhoto();
+    else if (action === 'start') { locked = true; startRecording(mode === 'voice' ? 'audio' : 'video'); }
+  }
+  function attachShutter(button) {
+    button.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      try { button.setPointerCapture(e.pointerId); } catch { /* fine */ }
+      pressStart(e.pointerId, e.clientY);
+    });
+    button.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressStart('key', 0); }
+      else if (e.key === 'ArrowUp' && press?.id === 'key') { e.preventDefault(); pressMove('key', -LOCK_PX); }
+    });
+    button.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressEnd('key'); } });
+    button.addEventListener('click', () => { if (performance.now() - lastPress < 600) return; tap(); }); // a tap sent with no pointer or key events (some assistive tools)
+  }
+  host.addEventListener('pointermove', (e) => pressMove(e.pointerId, e.clientY));
+  host.addEventListener('pointerup', (e) => pressEnd(e.pointerId, false, e.clientY));
+  host.addEventListener('pointercancel', (e) => pressEnd(e.pointerId, true));
+
+  function countdown(n) {
+    return new Promise((resolve) => {
+      let left = n;
+      const step = () => {
+        if (closed || stage !== 'camera') { resolve(false); return; }
+        const el = host.querySelector('.sp-countdown');
+        if (left === 0) { if (el) el.textContent = ''; resolve(true); return; }
+        if (el) el.textContent = String(left);
+        announce(String(left));
+        left--;
+        setTimeout(step, 1000);
+      };
+      step();
+    });
+  }
+  const screenFlash = () => new Promise((resolve) => {
+    const fx = host.querySelector('.sp-flashfx');
+    if (!fx) { resolve(); return; }
+    fx.classList.add('on');
+    setTimeout(() => { resolve(); setTimeout(() => fx.classList.remove('on'), 120); }, 220);
+  });
+
+  async function takePhoto() {
+    const v = camEl;
+    if (!v || !v.videoWidth) { say('The camera is not ready yet.'); return; }
+    if (flash && !hasTorch()) await screenFlash(); // the screen lights the face when there is no torch
+    const W = 1080;
+    const H = 1920;
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 1080 / Math.max(video.videoWidth, video.videoHeight));
-    canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
-    if (facing === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); } // the preview is mirrored; so is the photo
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => { if (!blob) return; stopStream(); setDraft({ kind: 'photo', blob, mimeType: 'image/jpeg', duration: shownSeconds('photo', 0), parts: partsFor('photo', 0) }); }, 'image/jpeg', 0.86);
+    const s = Math.max(W / v.videoWidth, H / v.videoHeight); // fill the story's shape, cropping the sides or the top
+    const w = v.videoWidth * s;
+    const hh = v.videoHeight * s;
+    if (facing === 'user') { ctx.translate(W, 0); ctx.scale(-1, 1); } // the preview is mirrored; so is the photo
+    ctx.drawImage(v, (W - w) / 2, (H - hh) / 2, w, hh);
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+    if (!blob) { say('The photo could not be taken.'); return; }
+    announce('Photo taken');
+    setDraft({ kind: 'photo', blob, mimeType: 'image/jpeg', duration: shownSeconds('photo', 0), parts: partsFor('photo', 0) });
   }
 
   // One continuous recording; the parts are worked out from the time that has run.
   function startRecording(type) {
+    if (recording() || busy) return;
+    if (!stream) { say(type === 'audio' ? 'The microphone is not ready yet.' : 'The camera is not ready yet.'); return; }
+    if (!window.MediaRecorder) { say('This browser cannot record. Choose a video from your phone instead.'); return; }
     const mime = pickMime(type);
-    if (!window.MediaRecorder) { say('This browser cannot record. Pick a file from your phone instead.'); return; }
     const chunks = [];
-    recorder = new MediaRecorder(stream, { mimeType: mime || undefined, ...(type === 'video' ? { videoBitsPerSecond: 2500000, audioBitsPerSecond: 96000 } : { audioBitsPerSecond: 96000 }) });
+    try {
+      recorder = new MediaRecorder(new MediaStream(type === 'audio' ? stream.getAudioTracks() : stream.getTracks()), { mimeType: mime || undefined, ...(type === 'video' ? { videoBitsPerSecond: 2500000, audioBitsPerSecond: 96000 } : { audioBitsPerSecond: 96000 }) });
+    } catch { say('This browser cannot record. Choose a video from your phone instead.'); return; }
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
       const duration = Math.max(1, Math.round(elapsed));
       const blob = new Blob(chunks, { type: recorder?.mimeType || mime });
-      stream?.getTracks().forEach((t) => t.stop()); stream = null; recorder = null;
-      setDraft({ kind: type, blob, mimeType: blob.type, duration, parts: splitParts(Math.min(duration, limitSeconds(type)), { partSeconds: PART, maxParts: PART_LIMITS[type] }) });
+      recorder = null;
+      locked = false;
+      if (closed) return;
+      setDraft({ kind: type, blob, mimeType: blob.type, duration, parts: splitParts(Math.min(duration, limitSeconds(type)), { partSeconds: PART, maxParts: PART_LIMITS[type] }), bg: type === 'audio' ? voicePhoto : null });
     };
     elapsed = 0;
+    error = '';
     const t0 = performance.now();
-    rec = { t0, mime, timer: setInterval(() => {
+    rec = { type, timer: setInterval(() => {
       elapsed = (performance.now() - t0) / 1000;
       if (elapsed >= limitSeconds(type)) { elapsed = limitSeconds(type); stopRecording(); return; }
       paintRecording();
     }, 200) };
     recorder.start(1000);
-    draw();
+    announce('Recording');
+    host.querySelector('.sp-error')?.remove();
+    setRecState();
   }
-  const limitSeconds = (type) => PART_LIMITS[type] * PART;
   function stopRecording() {
     if (!rec) return;
-    clearInterval(rec.timer); rec = null;
+    clearInterval(rec.timer);
+    rec = null;
     if (recorder && recorder.state !== 'inactive') recorder.stop();
-    draw();
+    else { locked = false; setRecState(); }
   }
-  const recording = () => !!rec;
-
-  // The parts bar along the bottom of the recording screen: one segment per part so far, the last one growing.
-  function partsBar(type) {
-    const bar = h('div', { class: 'st-parts', role: 'progressbar', 'aria-label': 'Recording', 'aria-valuemin': '0', 'aria-valuemax': String(limitSeconds(type)), 'aria-valuenow': String(Math.floor(elapsed)) });
-    const parts = recording() || elapsed > 0 ? splitParts(elapsed, { partSeconds: PART, maxParts: PART_LIMITS[type] }) : [];
-    for (let k = 0; k < PART_LIMITS[type]; k++) {
+  const shutterLabel = () => (recording() ? 'Stop recording' : mode === 'text' ? 'Next' : mode === 'voice' ? 'Record a voice message' : handsFree ? 'Record a video' : timerOn ? 'Take a photo after 3 seconds' : 'Take a photo. Hold to record a video');
+  // The recording state is painted onto the controls in place, so a finger on the shutter keeps hold of it.
+  function setRecState() {
+    const s = host.querySelector('.sp-shutter');
+    if (!s) return;
+    const on = recording();
+    s.classList.toggle('rec', on);
+    s.classList.toggle('locked', on && locked);
+    s.setAttribute('aria-label', shutterLabel());
+    host.querySelectorAll('.sp-rail button, .sp-mode, .sp-flip, #sp-file').forEach((b) => { b.disabled = on; });
+    const lock = host.querySelector('.sp-lock');
+    if (lock) { lock.classList.toggle('on', on && locked); lock.classList.toggle('show', on && (locked || !!press)); }
+    const t = host.querySelector('.sp-time');
+    if (t) t.textContent = on ? clock(elapsed) : '';
+    if (!on) { const prog = host.querySelector('.sp-ring .prog'); if (prog) prog.style.strokeDashoffset = RING_C.toFixed(2); }
+  }
+  function paintRecording() {
+    const type = rec?.type;
+    if (!type) return;
+    const prog = host.querySelector('.sp-ring .prog');
+    if (prog) prog.style.strokeDashoffset = (RING_C * (1 - ringFraction(elapsed, limitSeconds(type)))).toFixed(2);
+    host.querySelector('.sp-parts')?.replaceWith(partsBar(type));
+    const t = host.querySelector('.sp-time');
+    if (t) t.textContent = clock(elapsed);
+  }
+  // The parts along the top: one segment per part so far, the last one growing (all of them, full, on the preview).
+  function partsBar(type, { done = false } = {}) {
+    const max = PART_LIMITS[type];
+    const total = done ? draft.duration : limitSeconds(type);
+    const parts = done ? draft.parts : (recording() || elapsed > 0 ? splitParts(elapsed, { partSeconds: PART, maxParts: max }) : []);
+    const bar = h('div', { class: 'sp-parts', role: 'progressbar', 'aria-label': done ? 'Parts' : 'Recording', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(Math.floor(done ? draft.duration : elapsed)), 'aria-valuetext': clock(done ? draft.duration : elapsed) });
+    for (let k = 0; k < (done ? parts.length : max); k++) {
       const p = parts[k];
-      const seg = h('span', { class: `st-part${p ? ' on' : ''}` }, p ? h('span', { class: 'st-part-fill', style: `width:${Math.round(((p.end - p.start) / PART) * 100)}%` }) : null);
-      bar.append(seg);
+      bar.append(h('span', { class: `sp-part${p ? ' on' : ''}` }, p ? h('span', { class: 'sp-part-fill', style: `width:${Math.round(((p.end - p.start) / PART) * 100)}%` }) : null));
     }
     return bar;
   }
-  const recLabel = (type) => `${clock(elapsed)} · part ${Math.min(PART_LIMITS[type], Math.max(1, Math.ceil(elapsed / PART) || 1))} of up to ${PART_LIMITS[type]}`;
-  function paintRecording() {
-    const bar = host.querySelector('.st-parts');
-    if (bar) bar.replaceWith(partsBar(kind));
-    const label = host.querySelector('.st-rec-time');
-    if (label) label.textContent = recLabel(kind);
-  }
+  const ring = (type) => icon(`<svg class="sp-ring" viewBox="0 0 96 96" aria-hidden="true"><circle class="track" cx="48" cy="48" r="${RING_R}"/><circle class="prog" cx="48" cy="48" r="${RING_R}" stroke-dasharray="${RING_C.toFixed(2)}" transform="rotate(-90 48 48)" style="stroke-dashoffset:${(RING_C * (1 - ringFraction(elapsed, limitSeconds(type)))).toFixed(2)}"/>${ringMarks(PART_LIMITS[type]).map((deg) => `<line class="mark" x1="48" y1="1" x2="48" y2="9" transform="rotate(${deg.toFixed(2)} 48 48)"/>`).join('')}</svg>`);
 
   // ---- From the phone ----
   async function pickFile(file) {
-    if (!file) return;
+    if (!file || busy) return;
     error = '';
     if (file.size > MAX_UPLOAD_BYTES) { say(TOO_BIG); return; }
     try {
       if (file.type.startsWith('image/')) {
         busy = 'Preparing the photo…'; draw();
-        setDraft({ kind: 'photo', blob: await shrinkPhoto(file, { max: 1080 }), mimeType: 'image/jpeg', duration: shownSeconds('photo', 0), parts: partsFor('photo', 0) });
-      } else if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
-        const type = file.type.startsWith('video/') ? 'video' : 'audio';
-        busy = 'Reading the file…'; draw();
-        const { duration, height } = await probe(file, type);
+        const blob = await shrinkPhoto(file, { max: 1920 });
+        if (closed) return;
+        if (lastThumb) URL.revokeObjectURL(lastThumb);
+        lastThumb = URL.createObjectURL(blob);
+        if (mode === 'voice') { if (voicePhoto?.url) URL.revokeObjectURL(voicePhoto.url); voicePhoto = { blob, url: URL.createObjectURL(blob) }; busy = ''; draw(); return; }
+        setDraft({ kind: 'photo', blob, mimeType: 'image/jpeg', duration: shownSeconds('photo', 0), parts: partsFor('photo', 0) });
+      } else if (file.type.startsWith('video/') && mode !== 'voice') {
+        busy = 'Reading the video…'; draw();
+        const { duration, height } = await probe(file, 'video');
         let blob = file; let mimeType = file.type; let length = duration;
-        if (type === 'video' && canReencode() && (file.size > REENCODE_OVER || height > 720)) {
+        if (canReencode() && (file.size > REENCODE_OVER || height > 720)) {
           busy = 'Making the video smaller… 0%'; draw();
-          const out = await reencode(file, { maxSeconds: maxSeconds('video'), onProgress: (f) => { busy = `Making the video smaller… ${Math.round(f * 100)}%`; const b = host.querySelector('.st-busy'); if (b) b.textContent = busy; } });
+          const out = await reencode(file, { maxSeconds: maxSeconds('video'), onProgress: (f) => { busy = `Making the video smaller… ${Math.round(f * 100)}%`; paintBusy(); } });
           blob = out.blob; mimeType = out.mimeType; length = out.duration;
         }
-        const shown = Math.max(1, Math.min(Math.round(length), maxSeconds(type)));
-        const notes = [length > maxSeconds(type) ? `Only the first ${type === 'video' ? '3 minutes' : '5 minutes'} will be shown.` : '', type === 'video' && !canReencode() ? 'On this phone the video is sent as it is, so keep it short.' : ''].filter(Boolean);
-        setDraft({ kind: type, blob, mimeType, duration: shown, parts: splitParts(shown, { partSeconds: PART, maxParts: PART_LIMITS[type] }), note: notes.join(' ') });
-      } else say('Pick a photo, a video or an audio file.');
-    } catch (e) { busy = ''; say(e.message || 'That file could not be used.'); }
+        if (closed) return;
+        const shown = Math.max(1, Math.min(Math.round(length), maxSeconds('video')));
+        setDraft({ kind: 'video', blob, mimeType, duration: shown, parts: splitParts(shown, { partSeconds: PART, maxParts: PART_LIMITS.video }), note: length > maxSeconds('video') ? 'Only the first 3 minutes will be shown.' : '' });
+      } else say(mode === 'voice' ? 'Choose a photo.' : 'Choose a photo or a video.');
+    } catch (e) { say(e.message || 'That file could not be used.'); }
   }
 
-  // ---- The draft, then posting ----
+  // ---- The draft and the preview ----
   function setDraft(d) {
-    busy = '';
-    if (draft?.preview) URL.revokeObjectURL(draft.preview);
-    draft = { text: '', colours, bgBlob: null, bgPreview: '', ...d, preview: URL.createObjectURL(d.blob) };
-    kind = d.kind; step = 'edit'; error = '';
+    busy = ''; error = '';
+    if (draft?.url) URL.revokeObjectURL(draft.url);
+    draft = { colours, bg: null, note: '', ...d, url: d.blob ? URL.createObjectURL(d.blob) : '' };
+    overlay = d.overlay ?? emptyOverlay();
+    tool = d.tool ?? null;
+    editing = null; boxes = []; gesture = null; moreOpen = false; locked = false; playing = false;
+    mediaEl = null; audioEl = null; drawCanvas = null;
+    stopTracks(); // the camera is off while the preview is up
+    stage = 'preview';
     draw();
+    focusLater(tool === 'pen' ? '.sp-rail button[aria-label="Draw"]' : '.sp-share');
   }
-  function textDraft() { kind = 'text'; draft = { kind: 'text', text: '', colours, duration: shownSeconds('text', 0), parts: partsFor('text', 0) }; step = 'edit'; error = ''; draw(); }
-  function pickBackground(file) {
-    if (!file || !draft) return;
-    shrinkPhoto(file, { max: 1080 }).then((blob) => { if (draft.bgPreview) URL.revokeObjectURL(draft.bgPreview); draft.bgBlob = blob; draft.bgPreview = URL.createObjectURL(blob); draw(); }).catch((e) => say(e.message));
+  function nextFromText() {
+    const text = typed.trim().slice(0, MAX_TEXT);
+    if (!text) return;
+    setDraft({ kind: 'text', duration: shownSeconds('text', 0), parts: partsFor('text', 0), overlay: { strokes: [], layers: [newLayer(text, { colour: textColour })] } });
   }
+  const drawingStory = () => setDraft({ kind: 'text', duration: shownSeconds('text', 0), parts: partsFor('text', 0), tool: 'pen' });
+  function discard() {
+    if (draft?.url) URL.revokeObjectURL(draft.url);
+    draft = null; overlay = emptyOverlay(); tool = null; editing = null; confirmOpen = false; typed = ''; error = '';
+    stage = 'camera';
+    openMedia();
+    focusLater('.sp-shutter');
+  }
+  function makeMedia(d) {
+    if (d.kind === 'photo') return h('img', { class: 'sp-media', src: d.url, alt: 'Your photo' });
+    if (d.kind === 'video') {
+      const v = h('video', { class: 'sp-media', src: d.url, loop: '', playsinline: '', 'webkit-playsinline': '' }, h('track', { kind: 'captions', srclang: 'en', label: 'Captions', src: 'data:text/vtt,WEBVTT' }));
+      v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+      return v;
+    }
+    if (d.kind === 'audio' && d.bg) return h('img', { class: 'sp-media cover', src: d.bg.url, alt: '' });
+    return null;
+  }
+  function voiceMark() {
+    audioEl ??= h('audio', { src: draft.url, preload: 'auto', onended: () => { playing = false; paintPlay(); } });
+    return h('div', { class: 'sp-voice-mark' },
+      h('span', { class: 'sp-voice-icon', 'aria-hidden': 'true' }, ic('mic', 40, 1.8)),
+      h('button', { type: 'button', class: 'sp-icon sp-play', 'aria-label': playing ? 'Pause' : 'Play', onclick: () => { if (playing) { audioEl.pause(); playing = false; } else { playing = true; audioEl.play().catch(() => { playing = false; paintPlay(); }); } paintPlay(); } }, ic(playing ? 'pause' : 'play', 24, 2)),
+      audioEl);
+  }
+  function paintPlay() { const b = host.querySelector('.sp-play'); if (!b) return; b.setAttribute('aria-label', playing ? 'Pause' : 'Play'); b.replaceChildren(ic(playing ? 'pause' : 'play', 24, 2)); }
 
-  async function post() {
+  // The editing canvas: the overlay drawn at the frame's size, the same routine as the posted picture.
+  function fitCanvas() {
+    if (!drawCanvas?.isConnected) return;
+    const r = drawCanvas.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const w = Math.round(r.width * dpr);
+    const hh = Math.round(r.height * dpr);
+    if (drawCanvas.width !== w || drawCanvas.height !== hh) { drawCanvas.width = w; drawCanvas.height = hh; }
+    paintOverlay();
+  }
+  function paintOverlay() {
+    if (!drawCanvas?.width) return;
+    const ctx = drawCanvas.getContext('2d');
+    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    const px = drawOverlay(ctx, drawCanvas.width, drawCanvas.height, overlay);
+    const k = drawCanvas.width / (drawCanvas.getBoundingClientRect().width || 1);
+    boxes = px.map((b) => ({ id: b.id, left: b.left / k, top: b.top / k, width: b.width / k, height: b.height / k }));
+    const frame = host.querySelector('.sp-frame');
+    if (frame) { frame.dataset.layers = String(overlay.layers.length); frame.dataset.strokes = String(overlay.strokes.length); }
+    const undo = host.querySelector('button[aria-label="Undo"]');
+    if (undo) undo.disabled = !overlay.strokes.length;
+  }
+  const bringToFront = (id) => { const l = layerById(id); if (l) { overlay.layers = [...overlay.layers.filter((x) => x.id !== id), l]; } };
+  function attachCanvas(canvas) {
+    const frac = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, e.clientX - r.left, e.clientY - r.top]; };
+    canvas.addEventListener('pointerdown', (e) => {
+      if (busy || editing || confirmOpen || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const [fx, fy, px, py] = frac(e);
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* fine */ }
+      if (tool === 'pen') {
+        const stroke = { colour: penColour, width: PEN_WIDTH, points: [[fx, fy]] };
+        overlay.strokes.push(stroke);
+        gesture = { kind: 'stroke', id: e.pointerId, stroke };
+        paintOverlay();
+        return;
+      }
+      if (gesture?.kind === 'drag') { // a second finger: pinch to resize
+        gesture.pointers.set(e.pointerId, [e.clientX, e.clientY]);
+        const pts = [...gesture.pointers.values()];
+        if (pts.length === 2) { gesture.pinch0 = dist(pts[0], pts[1]); gesture.size0 = layerById(gesture.id)?.size ?? 0.085; }
+        return;
+      }
+      const id = hitLayer(boxes, px, py);
+      if (!id) { gesture = { kind: 'none', id: e.pointerId }; return; }
+      const l = layerById(id);
+      gesture = { kind: 'drag', pid: e.pointerId, id, dx: fx - l.x, dy: fy - l.y, moved: false, pointers: new Map([[e.pointerId, [e.clientX, e.clientY]]]), pinch0: null };
+      bringToFront(id);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!gesture) return;
+      const [fx, fy] = frac(e);
+      if (gesture.kind === 'stroke') { if (e.pointerId === gesture.id) { gesture.stroke.points.push([fx, fy]); paintOverlay(); } return; }
+      if (gesture.kind !== 'drag') return;
+      if (gesture.pointers.has(e.pointerId)) gesture.pointers.set(e.pointerId, [e.clientX, e.clientY]);
+      const l = layerById(gesture.id);
+      if (!l) return;
+      if (gesture.pointers.size >= 2 && gesture.pinch0) {
+        const pts = [...gesture.pointers.values()];
+        l.size = clampSize((gesture.size0 * dist(pts[0], pts[1])) / gesture.pinch0);
+        gesture.moved = true;
+        paintOverlay();
+        return;
+      }
+      if (e.pointerId !== gesture.pid) return;
+      const nx = fx - gesture.dx;
+      const ny = fy - gesture.dy;
+      if (Math.abs(nx - l.x) > 0.005 || Math.abs(ny - l.y) > 0.005) gesture.moved = true;
+      if (gesture.moved) { l.x = Math.max(0.02, Math.min(0.98, nx)); l.y = Math.max(0.02, Math.min(0.98, ny)); paintOverlay(); }
+    });
+    const up = (e) => {
+      if (!gesture) return;
+      const ended = e.type !== 'pointercancel';
+      if (gesture.kind === 'stroke') {
+        if (e.pointerId !== gesture.id) return;
+        if (ended) { const [fx, fy] = frac(e); gesture.stroke.points.push([fx, fy]); } // where the pen lifted, even if no move came through
+        gesture = null;
+        paintOverlay();
+        return;
+      }
+      if (gesture.kind === 'drag') {
+        // The place the finger lifted is where the words end up, even when the moves in between never came through.
+        if (ended && gesture.pointers.size === 1 && e.pointerId === gesture.pid) {
+          const [fx, fy] = frac(e);
+          const l = layerById(gesture.id);
+          const nx = fx - gesture.dx;
+          const ny = fy - gesture.dy;
+          if (l && (Math.abs(nx - l.x) > 0.005 || Math.abs(ny - l.y) > 0.005)) { gesture.moved = true; l.x = Math.max(0.02, Math.min(0.98, nx)); l.y = Math.max(0.02, Math.min(0.98, ny)); paintOverlay(); }
+        }
+        gesture.pointers.delete(e.pointerId);
+        if (gesture.pointers.size) { gesture.pinch0 = null; return; }
+        const g = gesture;
+        gesture = null;
+        if (!g.moved && e.type !== 'pointercancel') startText(g.id); else paintLayerList();
+        return;
+      }
+      gesture = null;
+    };
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', (e) => {
+      if (tool === 'pen' || editing || !overlay.layers.length) return;
+      const [, , px, py] = frac(e);
+      const l = layerById(hitLayer(boxes, px, py) ?? overlay.layers.at(-1).id);
+      if (!l) return;
+      e.preventDefault();
+      l.size = clampSize(l.size * (e.deltaY < 0 ? 1.1 : 0.9));
+      paintOverlay();
+    }, { passive: false });
+  }
+  // Words: typed in a box over the picture, then a piece of text that can be moved, resized and recoloured.
+  function startText(id) {
+    if (busy || confirmOpen) return;
+    const l = id ? layerById(id) : null;
+    editing = { id: l ? l.id : null, text: l ? l.text : '', colour: l ? l.colour : textColour };
+    tool = null;
+    draw();
+    focusLater('.sp-edit-input');
+  }
+  function finishText() {
+    if (!editing) return;
+    const e = editing;
+    editing = null;
+    const text = e.text.trim().slice(0, MAX_TEXT);
+    textColour = e.colour;
+    if (e.id) {
+      const l = layerById(e.id);
+      if (!text) overlay.layers = overlay.layers.filter((x) => x.id !== e.id);
+      else if (l) { l.text = text; l.colour = e.colour; }
+    } else if (text) overlay.layers.push(newLayer(text, { colour: e.colour }));
+    draw();
+    focusLater('.sp-rail button[aria-label="Text"]');
+  }
+  function layerKeys(e, l) {
+    const step = 0.02;
+    const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    if (moves[e.key]) { e.preventDefault(); l.x = Math.max(0.02, Math.min(0.98, l.x + moves[e.key][0])); l.y = Math.max(0.02, Math.min(0.98, l.y + moves[e.key][1])); paintOverlay(); return; }
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); l.size = clampSize(l.size * 1.1); paintOverlay(); return; }
+    if (e.key === '-' || e.key === '_') { e.preventDefault(); l.size = clampSize(l.size / 1.1); paintOverlay(); return; }
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); overlay.layers = overlay.layers.filter((x) => x.id !== l.id); paintOverlay(); paintLayerList(); focusLater('.sp-rail button[aria-label="Text"]'); }
+  }
+  const layerLabel = (l) => `Text: ${l.text}. Enter edits it, the arrow keys move it, plus and minus resize it, Delete removes it`;
+  const layerList = () => h('div', { class: 'sp-layers' }, overlay.layers.map((l) => h('button', { type: 'button', 'aria-label': layerLabel(l), onkeydown: (e) => layerKeys(e, l), onclick: () => startText(l.id) }, l.text)));
+  function paintLayerList() { host.querySelector('.sp-layers')?.replaceWith(layerList()); }
+  function undo() { overlay.strokes.pop(); paintOverlay(); }
+  const swatches = (picked, onPick, label) => h('div', { class: 'sp-palette', role: 'radiogroup', 'aria-label': label },
+    PEN_COLOURS.map(([c, name]) => h('button', { type: 'button', class: 'sp-swatch', role: 'radio', 'aria-checked': String(c === picked), 'aria-label': name, style: `background:${c}`, onclick: (e) => { onPick(c); e.currentTarget.parentElement.querySelectorAll('[role=radio]').forEach((b) => b.setAttribute('aria-checked', String(b === e.currentTarget))); } })));
+
+  // ---- Saving and posting ----
+  const extOf = (type) => EXT[plainType(type)] || 'bin';
+  async function picture() {
+    return composite({ media: draft.kind === 'photo' ? await loadedImage(draft.url) : draft.kind === 'audio' && draft.bg ? await loadedImage(draft.bg.url) : null, fit: draft.kind === 'audio' ? 'cover' : 'contain', colours: draft.colours, overlay });
+  }
+  async function saveToPhone() {
     if (!draft || busy) return;
-    const text = (draft.text || '').trim();
-    if (draft.kind === 'text' && !text) { say('Write something first.'); return; }
-    if (text.length > MAX_TEXT) { say(`Keep the text to ${MAX_TEXT} characters.`); return; }
-    step = 'posting'; busy = 'Posting…'; error = ''; draw();
+    try {
+      const still = draft.kind === 'photo' || draft.kind === 'text';
+      const blob = still ? await picture() : draft.blob;
+      const link = h('a', { href: URL.createObjectURL(blob), download: still ? 'life-centre-story.jpg' : `life-centre-story.${extOf(draft.mimeType || blob.type)}` });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+      showToast('Saved');
+    } catch (e) { say(e.message || 'Could not save.'); }
+  }
+  function showToast(text) { toast = text; clearTimeout(toastTimer); draw(); toastTimer = setTimeout(() => { toast = ''; if (!closed) draw(); }, 2000); }
+  async function post() {
+    if (!draft || busy || editing) return;
+    const words = layerWords(overlay.layers);
+    let type = draft.kind;
+    if (type === 'text' && !words) {
+      if (isEmpty(overlay)) { say('Write something first.'); return; }
+      type = 'photo'; // a drawing on a colour is a picture
+    }
+    error = ''; busy = 'Posting…'; draw();
     try {
       const values = {
         author: session.email, authorName: (session.displayName || session.name || session.email).slice(0, 80), authorPhoto: session.photo || undefined,
-        type: draft.kind, colours: draft.colours, duration: draft.duration, parts: draft.parts, expiresAt: Date.now() + DAY, text: text || undefined,
+        type, colours: draft.colours, expiresAt: Date.now() + DAY, text: words || undefined,
       };
-      if (draft.blob) { busy = 'Uploading…'; draw(); values.mediaUrl = await uploadFile(draft.blob, { kind: 'stories' }); values.mediaType = draft.mimeType || draft.blob.type; }
-      if (draft.bgBlob) values.bgImage = await uploadFile(draft.bgBlob, { kind: 'stories' });
+      if (type === 'photo' || type === 'text') {
+        values.duration = shownSeconds(type, 0); values.parts = partsFor(type, 0);
+        busy = 'Making the picture…'; paintBusy();
+        const blob = await picture();
+        busy = 'Uploading…'; paintBusy();
+        values.mediaUrl = await uploadFile(blob, { kind: 'stories' });
+        values.mediaType = 'image/jpeg';
+      } else {
+        values.duration = draft.duration; values.parts = draft.parts;
+        busy = type === 'video' ? 'Uploading your video…' : 'Uploading your voice message…'; paintBusy();
+        values.mediaUrl = await uploadFile(draft.blob, { kind: 'stories' });
+        values.mediaType = plainType(draft.mimeType || draft.blob.type);
+        if (type === 'video' && !isEmpty(overlay)) { busy = 'Adding the words…'; paintBusy(); values.overlay = await uploadFile(await overlayImage(overlay), { kind: 'stories' }); }
+        if (type === 'audio' && (draft.bg || !isEmpty(overlay))) { busy = 'Making the picture…'; paintBusy(); values.bgImage = await uploadFile(await picture(), { kind: 'stories' }); }
+      }
       await data.admin.save('stories', session.email, values);
       busy = '';
       location.hash = '#/';
     } catch (e) {
-      step = 'edit'; busy = '';
+      busy = '';
       // The rules refuse a story whose 24-hour expiry disagrees with the server by more than an hour: a wrong phone clock.
       say(e.code === 'permission-denied' ? (session?.postStories ? 'Could not post. Check the phone\'s date and time, then try again.' : 'This account is not allowed to post stories.') : (e.message || 'Could not post. Please try again.'));
     }
   }
+  function paintBusy() { const t = host.querySelector('.sp-busy-text'); if (t) t.textContent = busy; }
 
   // ---- Screens ----
-  const swatches = (picked, onPick) => h('div', { class: 'st-swatches', role: 'group', 'aria-label': 'Background colour' },
-    PALETTE.map(([a, b], k) => h('button', { type: 'button', class: `st-swatch${picked[0] === a ? ' on' : ''}`, 'aria-label': `Colour ${k + 1}`, 'aria-pressed': String(picked[0] === a), style: `background:linear-gradient(135deg,${a},${b})`, onclick: () => onPick([a, b]) })));
-  const fileInput = (id, accept, onPick, capture) => h('input', { type: 'file', id, class: 'sr', accept, capture, onchange: (e) => onPick(e.target.files?.[0]) });
+  const heading = () => h('h1', { id: 'page-title', class: 'sr', tabindex: '-1' }, title());
+  const errorEl = () => (error ? h('p', { class: 'sp-error', role: 'alert' }, error) : null);
+  const moreButton = () => h('button', { type: 'button', class: `sp-icon${moreOpen ? ' up' : ''}`, 'aria-label': moreOpen ? 'Fewer tools' : 'More tools', 'aria-expanded': String(moreOpen), onclick: () => { moreOpen = !moreOpen; draw(); focusLater(`.sp-rail button[aria-label="${moreOpen ? 'Fewer tools' : 'More tools'}"]`); } }, ic('down', 22, 2.2));
 
-  function chooseScreen() {
-    const pick = fileInput('st-file', 'image/*,video/*,audio/*', pickFile);
-    return [header('Post a story'),
-      h('p', { class: 'muted st-intro' }, 'Everyone can watch it on Home for 24 hours.'),
-      h('div', { class: 'st-options' },
-        h('button', { type: 'button', class: 'st-opt', onclick: () => { cameraMode = 'photo'; openCamera(); } }, ic('image', 26, 1.8), h('b', {}, 'Camera'), h('small', {}, 'Take a photo or record a video')),
-        h('label', { class: 'st-opt', for: 'st-file' }, ic('doc', 26, 1.8), h('b', {}, 'From your phone'), h('small', {}, 'A photo, video or audio file'), pick),
-        h('button', { type: 'button', class: 'st-opt', onclick: openVoice }, ic('mic', 26, 1.8), h('b', {}, 'Voice'), h('small', {}, 'Record over a colour or a photo')),
-        h('button', { type: 'button', class: 'st-opt', onclick: textDraft }, ic('edit', 26, 1.8), h('b', {}, 'Text'), h('small', {}, 'Words on a colour'))),
-      busy ? h('p', { class: 'note st-busy', role: 'status' }, busy) : null,
-      error ? h('p', { class: 'error', role: 'alert' }, error) : null];
+  // Taps and swipes on the camera view: sideways changes the mode; a tap on a colour background changes the colour.
+  function attachView(view, { buttons = false } = {}) { // buttons: a swipe may start on one of the view's own buttons (the mode strip)
+    let start = null;
+    view.addEventListener('pointerdown', (e) => {
+      if (e.target.closest(buttons ? 'textarea, input, label, a' : 'textarea, button, input, label, a')) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      if (!buttons) { try { view.setPointerCapture(e.pointerId); } catch { /* fine */ } } // not over buttons: a capture would take their taps away
+    });
+    const end = (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      start = null;
+      if (e.type === 'pointercancel' || recording()) return;
+      if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) { const i = MODES.indexOf(mode); setMode(MODES[(i + (dx < 0 ? 1 : 2)) % 3]); return; }
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && mode !== 'story' && !(mode === 'voice' && voicePhoto)) cycleColours();
+    };
+    view.addEventListener('pointerup', end);
+    view.addEventListener('pointercancel', end);
   }
 
   function cameraScreen() {
-    const video = h('video', { class: `st-cam${facing === 'user' ? ' mirror' : ''}`, autoplay: '', muted: '', playsinline: '' });
-    if (stream) video.srcObject = stream;
-    const isVideo = cameraMode === 'video';
-    return [header(isVideo ? 'Record a video' : 'Take a photo'),
-      h('div', { class: 'st-camera' }, video,
-        h('div', { class: 'st-cam-top' },
-          h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Camera mode' },
-            h('button', { type: 'button', role: 'tab', 'aria-selected': String(!isVideo), disabled: recording() ? '' : null, onclick: () => { cameraMode = 'photo'; kind = 'photo'; draw(); } }, 'Photo'),
-            h('button', { type: 'button', role: 'tab', 'aria-selected': String(isVideo), disabled: recording() ? '' : null, onclick: () => { cameraMode = 'video'; kind = 'video'; draw(); } }, 'Video')),
-          h('button', { type: 'button', class: 'wt-top-btn', 'aria-label': 'Switch camera', disabled: recording() ? '' : null, onclick: flipCamera }, ic('repeat', 20, 2))),
-        h('div', { class: 'st-cam-bottom' },
-          isVideo ? partsBar('video') : null,
-          isVideo ? h('p', { class: 'st-rec-time', 'aria-live': 'off' }, recording() ? recLabel('video') : `Up to ${PART_LIMITS.video} parts of ${PART} seconds`) : null,
-          isVideo
-            ? h('button', { type: 'button', class: `st-rec${recording() ? ' on' : ''}`, 'aria-label': recording() ? 'Stop recording' : 'Start recording', onclick: () => (recording() ? stopRecording() : startRecording('video')) }, h('span', { class: 'st-rec-dot' }))
-            : h('button', { type: 'button', class: 'st-rec photo', 'aria-label': 'Take the photo', onclick: takePhoto }, h('span', { class: 'st-rec-dot' })))),
-      error ? h('p', { class: 'error', role: 'alert' }, error) : null];
+    const type = mode === 'voice' ? 'audio' : 'video';
+    const isRec = recording();
+    const view = h('div', { class: 'sp-view' });
+    if (mode === 'story') { cam().classList.toggle('mirror', facing === 'user'); view.append(cam()); }
+    else {
+      view.append(h('div', { class: 'sp-bg', style: `background:linear-gradient(160deg, ${colours[0]}, ${colours[1]})` }, mode === 'voice' && voicePhoto ? h('img', { src: voicePhoto.url, alt: '' }) : null));
+      if (mode === 'text') view.append(h('textarea', { class: 'sp-text-input', 'aria-label': 'Your words', maxlength: String(MAX_TEXT), rows: '4', oninput: (e) => { typed = e.target.value; const s = host.querySelector('.sp-shutter'); if (s) s.disabled = !typed.trim(); } }, typed));
+      else view.append(h('div', { class: 'sp-voice-mark', 'aria-hidden': 'true' }, h('span', { class: 'sp-voice-icon' }, ic('mic', 40, 1.8))));
+    }
+    view.append(h('div', { class: 'sp-countdown', 'aria-hidden': 'true' }), h('div', { class: 'sp-flashfx', 'aria-hidden': 'true' }));
+    attachView(view);
+    const top = h('div', { class: 'sp-top' },
+      h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Close', onclick: () => { stopRecording(); location.hash = '#/'; } }, ic('close', 22, 2.4)),
+      mode === 'story'
+        ? h('button', { type: 'button', class: 'sp-icon', 'aria-label': flash ? 'Flash on' : 'Flash off', 'aria-pressed': String(flash), onclick: () => { flash = !flash; applyTorch(); draw(); focusLater('.sp-top button[aria-pressed]'); } }, ic('bolt', 22, 2))
+        : h('span'));
+    const rail = h('div', { class: 'sp-rail', role: 'toolbar', 'aria-label': 'Tools', 'aria-orientation': 'vertical' },
+      h('button', { type: 'button', class: 'sp-icon sp-aa', 'aria-label': 'Text', disabled: isRec ? '' : null, onclick: () => setMode('text') }, 'Aa'),
+      h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Draw', disabled: isRec ? '' : null, onclick: drawingStory }, ic('edit', 20, 2)),
+      moreButton(),
+      moreOpen ? h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Hands-free', 'aria-pressed': String(handsFree), disabled: isRec ? '' : null, onclick: () => { handsFree = !handsFree; draw(); focusLater('.sp-rail button[aria-label="Hands-free"]'); } }, ic('hand', 20, 2)) : null,
+      moreOpen ? h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Timer', 'aria-pressed': String(timerOn), disabled: isRec ? '' : null, onclick: () => { timerOn = !timerOn; draw(); focusLater('.sp-rail button[aria-label="Timer"]'); } }, ic('timer', 20, 2)) : null);
+    const shutter = h('button', { type: 'button', class: `sp-shutter${isRec ? ' rec' : ''}${isRec && locked ? ' locked' : ''}`, 'aria-label': shutterLabel(), disabled: mode === 'text' && !typed.trim() ? '' : null },
+      h('span', { class: 'sp-shutter-dot' }, mode === 'voice' && !isRec ? ic('mic', 26, 2.2) : mode === 'text' ? ic('check', 28, 2.6) : null));
+    attachShutter(shutter);
+    const wrap = h('div', { class: 'sp-shutter-wrap' }, mode !== 'text' ? ring(type) : null, shutter,
+      h('span', { class: 'sp-time', 'aria-hidden': 'true' }, isRec ? clock(elapsed) : ''),
+      h('span', { class: `sp-lock${isRec && locked ? ' show on' : ''}`, 'aria-hidden': 'true' }, ic('lock', 18, 2.2)));
+    const pick = h('label', { class: 'sp-pick', style: lastThumb ? `background-image:url("${lastThumb}")` : null }, lastThumb ? null : ic('image', 22, 2),
+      h('input', { type: 'file', id: 'sp-file', class: 'sr', accept: mode === 'voice' ? 'image/*' : 'image/*,video/*', 'aria-label': mode === 'voice' ? 'Choose a photo from your phone' : 'Choose from your phone', disabled: isRec ? '' : null, onchange: (e) => pickFile(e.target.files?.[0]) }));
+    const flip = mode === 'story' ? h('button', { type: 'button', class: 'sp-icon sp-flip', 'aria-label': 'Switch camera', disabled: isRec ? '' : null, onclick: flipCamera }, ic('repeat', 22, 2)) : h('span');
+    const modes = h('div', { class: 'sp-modes', role: 'radiogroup', 'aria-label': 'What to post' }, MODES.map((m) => h('button', {
+      type: 'button', class: 'sp-mode', role: 'radio', 'aria-checked': String(m === mode), tabindex: m === mode ? '0' : '-1', disabled: isRec ? '' : null,
+      onclick: () => setMode(m),
+      onkeydown: (e) => {
+        const i = MODES.indexOf(mode);
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); setMode(MODES[(i + 1) % 3]); focusMode(); }
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); setMode(MODES[(i + 2) % 3]); focusMode(); }
+      },
+    }, m.toUpperCase())));
+    attachView(modes, { buttons: true });
+    const bottom = h('div', { class: 'sp-bottom' }, h('div', { class: 'sp-controls' }, mode === 'text' ? h('span') : pick, wrap, flip), modes);
+    return [heading(), mode !== 'text' ? partsBar(type) : null, view, top, rail, bottom, busy ? h('div', { class: 'sp-status', role: 'status' }, busy) : null, errorEl(), live];
   }
 
-  function voiceScreen() {
-    return [header('Record a voice message'),
-      h('div', { class: 'st-voice-screen', style: `background:linear-gradient(160deg,${colours[0]},${colours[1]})` },
-        h('div', { class: 'st-voice-mic', 'aria-hidden': 'true' }, ic('mic', 48, 1.6)),
-        h('div', { class: 'st-cam-bottom' },
-          partsBar('audio'),
-          h('p', { class: 'st-rec-time' }, recording() ? recLabel('audio') : `Up to ${PART_LIMITS.audio} parts of ${PART} seconds`),
-          h('button', { type: 'button', class: `st-rec${recording() ? ' on' : ''}`, 'aria-label': recording() ? 'Stop recording' : 'Start recording', onclick: () => (recording() ? stopRecording() : startRecording('audio')) }, h('span', { class: 'st-rec-dot' })))),
-      h('p', { class: 'muted' }, 'Background colour (or add a photo after recording):'),
-      swatches(colours, (c) => { colours = c; draw(); }),
-      error ? h('p', { class: 'error', role: 'alert' }, error) : null];
-  }
-
-  function editScreen() {
+  function previewScreen() {
     const d = draft;
-    const bg = `linear-gradient(160deg,${d.colours[0]},${d.colours[1]})`;
-    let preview;
-    if (d.kind === 'photo') preview = h('img', { class: 'st-prev-media', src: d.preview, alt: 'Your photo' });
-    else if (d.kind === 'video') preview = h('video', { class: 'st-prev-media', src: d.preview, controls: '', playsinline: '' });
-    else if (d.kind === 'audio') preview = h('div', { class: 'st-prev-audio' }, d.bgPreview ? h('img', { class: 'st-prev-media', src: d.bgPreview, alt: '' }) : null, h('div', { class: 'st-voice', 'aria-hidden': 'true' }, ic('mic', 44, 1.8), h('span', {}, 'Voice')), h('audio', { src: d.preview, controls: '' }));
-    else preview = h('div', { class: 'st-textstory st-prev-text' }, d.text || 'Your words here');
-    const textOverlay = d.kind !== 'text' && d.text ? h('p', { class: 'st-text st-prev-overlay' }, d.text) : null;
-    const bgPick = d.kind === 'audio' ? fileInput('st-bg', 'image/*', pickBackground) : null;
-    return [header(d.kind === 'text' ? 'Text story' : 'Your story', () => { if (d.kind === 'photo' || d.kind === 'video') openCamera(); else if (d.kind === 'audio') openVoice(); else goChoose(); }),
-      h('div', { class: 'st-preview', style: bg }, preview, textOverlay),
-      d.note ? h('p', { class: 'note' }, d.note) : null,
-      d.kind !== 'text' ? h('p', { class: 'muted' }, `${d.parts.length} ${d.parts.length === 1 ? 'part' : 'parts'} · ${clock(d.duration)}`) : null,
-      h('div', { class: 'field' },
-        h('label', { for: 'st-caption' }, d.kind === 'text' ? 'Your words' : 'Add text (optional)'),
-        h('textarea', { id: 'st-caption', maxlength: String(MAX_TEXT), rows: d.kind === 'text' ? '4' : '2', placeholder: d.kind === 'text' ? 'What would you like to say?' : 'A line over the picture', oninput: (e) => { d.text = e.target.value; const over = host.querySelector('.st-prev-overlay, .st-prev-text'); if (over) over.textContent = d.text || (d.kind === 'text' ? 'Your words here' : ''); } }, d.text)),
-      d.kind === 'text' || d.kind === 'audio' ? swatches(d.colours, (c) => { d.colours = c; colours = c; draw(); }) : null,
-      d.kind === 'audio' ? h('div', { class: 'form-actions' }, h('label', { class: 'btn', for: 'st-bg' }, ic('image', 16, 2), d.bgPreview ? 'Change the photo' : 'Photo background'), bgPick) : null,
-      error ? h('p', { class: 'error', role: 'alert' }, error) : null,
-      h('div', { class: 'form-actions' },
-        h('button', { type: 'button', class: 'btn primary st-post-btn', disabled: busy ? '' : null, onclick: post }, 'Post'),
-        h('button', { type: 'button', class: 'btn', onclick: goChoose }, 'Start again'))];
+    const frame = h('div', { class: 'sp-frame', style: `background:linear-gradient(160deg, ${d.colours[0]}, ${d.colours[1]})`, 'data-layers': String(overlay.layers.length), 'data-strokes': String(overlay.strokes.length) });
+    if (!mediaEl) mediaEl = makeMedia(d);
+    if (mediaEl) frame.append(mediaEl);
+    if (d.kind === 'audio') frame.append(voiceMark());
+    if (!drawCanvas) {
+      drawCanvas = h('canvas', { class: 'sp-draw', 'aria-hidden': 'true' });
+      attachCanvas(drawCanvas);
+      observer?.disconnect();
+      observer = new ResizeObserver(() => fitCanvas());
+      observer.observe(drawCanvas);
+      document.fonts?.ready?.then(() => paintOverlay());
+    }
+    drawCanvas.classList.toggle('pen', tool === 'pen');
+    frame.append(drawCanvas);
+    if (editing) {
+      const ta = h('textarea', { class: 'sp-edit-input', 'aria-label': 'Your words', maxlength: String(MAX_TEXT), rows: '3', style: `color:${editing.colour}`, oninput: (e) => { editing.text = e.target.value; }, onkeydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); finishText(); } } }, editing.text);
+      frame.append(h('div', { class: 'sp-editor', role: 'group', 'aria-label': 'Words' }, swatches(editing.colour, (c) => { editing.colour = c; ta.style.color = c; }, 'Text colour'), ta,
+        h('button', { type: 'button', class: 'sp-icon sp-done', 'aria-label': 'Done', onclick: finishText }, ic('check', 26, 2.6))));
+    }
+    requestAnimationFrame(fitCanvas);
+    const top = h('div', { class: 'sp-top' },
+      h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Discard', disabled: busy ? '' : null, onclick: () => { if (editing) { finishText(); return; } confirmOpen = true; draw(); focusLater('.sp-dialog .plain'); } }, ic('close', 22, 2.4)),
+      tool === 'pen'
+        ? h('div', { class: 'sp-top-tools' },
+          h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Undo', disabled: overlay.strokes.length ? null : '', onclick: undo }, ic('undo', 22, 2.2)),
+          h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Done', onclick: () => { tool = null; draw(); focusLater('.sp-rail button[aria-label="Draw"]'); } }, ic('check', 24, 2.6)))
+        : h('span'));
+    const rail = editing ? null : h('div', { class: 'sp-rail', role: 'toolbar', 'aria-label': 'Tools', 'aria-orientation': 'vertical' },
+      h('button', { type: 'button', class: 'sp-icon sp-aa', 'aria-label': 'Text', disabled: busy ? '' : null, onclick: () => startText(null) }, 'Aa'),
+      h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Draw', 'aria-pressed': String(tool === 'pen'), disabled: busy ? '' : null, onclick: () => { tool = tool === 'pen' ? null : 'pen'; draw(); focusLater('.sp-rail button[aria-label="Draw"]'); } }, ic('edit', 20, 2)),
+      moreButton(),
+      moreOpen ? h('button', { type: 'button', class: 'sp-icon', 'aria-label': 'Background colour', disabled: busy ? '' : null, onclick: () => { d.colours = nextColours(d.colours); colours = d.colours; draw(); focusLater('.sp-rail button[aria-label="Background colour"]'); } }, ic('palette', 20, 2)) : null);
+    const palette = tool === 'pen' && !editing ? swatches(penColour, (c) => { penColour = c; }, 'Pen colour') : null;
+    const actions = editing ? null : h('div', { class: 'sp-bottom sp-actions' },
+      h('button', { type: 'button', class: 'sp-icon sp-save', 'aria-label': 'Save to your phone', disabled: busy ? '' : null, onclick: saveToPhone }, ic('download', 22, 2)),
+      h('button', { type: 'button', class: 'sp-share', disabled: busy ? '' : null, onclick: post }, avatarEl({ photo: session.photo, name: session.displayName || session.name, email: session.email }, 32), 'Your story'));
+    const dialog = confirmOpen ? h('div', { class: 'sp-dialog', role: 'alertdialog', 'aria-modal': 'true', 'aria-labelledby': 'sp-confirm-h', onkeydown: (e) => { if (e.key === 'Escape') { confirmOpen = false; draw(); focusLater('button[aria-label="Discard"]'); } } },
+      h('p', { id: 'sp-confirm-h' }, 'Discard this story?'),
+      h('button', { type: 'button', class: 'danger', onclick: discard }, 'Discard'),
+      h('button', { type: 'button', class: 'plain', onclick: () => { confirmOpen = false; draw(); focusLater('button[aria-label="Discard"]'); } }, 'Keep')) : null;
+    const busyEl = busy ? h('div', { class: 'sp-busy', role: 'status' }, h('div', { class: 'sp-progress', 'aria-hidden': 'true' }, h('span')), h('span', { class: 'sp-busy-text' }, busy)) : null;
+    return [heading(), d.kind === 'video' || d.kind === 'audio' ? partsBar(d.kind, { done: true }) : null, frame, top, rail, palette, layerList(), actions,
+      d.note && !busy ? h('p', { class: 'sp-note' }, d.note) : null, dialog, busyEl, toast ? h('div', { class: 'sp-status', role: 'status' }, toast) : null, errorEl(), live];
   }
 
-  const postingScreen = () => [header('Posting'), h('p', { class: 'note st-busy', role: 'status' }, busy || 'Posting…')];
+  const notPoster = () => [h('div', { class: 'sp-notposter' },
+    h('header', { class: 'cr-head' }, h('button', { type: 'button', class: 'round-btn', 'aria-label': 'Back to Home', onclick: () => { location.hash = '#/'; } }, ic('back', 20, 2.2)), h('h1', { id: 'page-title', tabindex: '-1' }, 'Post a story')),
+    h('section', { class: 'card' },
+      h('h2', { class: 'big' }, session?.email ? 'Not set up for stories' : 'Staff only'),
+      h('p', { class: 'muted' }, session?.email ? 'Ask an admin to turn on "Can post stories" for you on the staff list.' : 'Sign in with Google on Account first.'),
+      h('a', { class: 'link', href: '#/account' }, 'Account')))];
 
   function draw() {
-    if (!session?.postStories) {
-      fill(host, header('Post a story'), h('section', { class: 'card' },
-        h('h2', { class: 'big' }, session?.email ? 'Not set up for stories' : 'Staff only'),
-        h('p', { class: 'muted' }, session?.email ? 'Ask an admin to turn on "Can post stories" for you on the staff list.' : 'Sign in with Google on Account first.'),
-        h('a', { class: 'link', href: '#/account' }, 'Account')));
-      return;
-    }
-    const screen = step === 'camera' ? cameraScreen() : step === 'voice' ? voiceScreen() : step === 'edit' ? editScreen() : step === 'posting' ? postingScreen() : chooseScreen();
-    fill(host, screen);
+    if (closed) return;
+    host.dataset.stage = stage;
+    host.dataset.mode = mode;
+    if (!session?.postStories) { fill(host, notPoster()); return; }
+    fill(host, stage === 'preview' && draft ? previewScreen() : cameraScreen());
+    // Media put back on the page after a redraw carries on playing.
+    if (stage === 'camera' && camEl?.srcObject) camEl.play?.().catch(() => {});
+    if (stage === 'preview' && mediaEl?.tagName === 'VIDEO') mediaEl.play().catch(() => {});
+    if (stage === 'preview' && playing && audioEl) audioEl.play().catch(() => {});
   }
 
   let first = true;
@@ -333,7 +787,22 @@ export function render(root) {
     const changed = first || next?.postStories !== session?.postStories || next?.email !== session?.email;
     first = false;
     session = next;
-    if (changed) draw();
+    if (!changed) return;
+    if (session?.postStories && stage === 'camera') openMedia(); else draw();
   });
-  return () => { stop(); stopStream(); if (draft?.preview) URL.revokeObjectURL(draft.preview); };
+  return () => {
+    closed = true;
+    stop();
+    if (rec?.timer) clearInterval(rec.timer);
+    rec = null;
+    if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch { /* fine */ } }
+    recorder = null;
+    stopTracks();
+    observer?.disconnect();
+    clearTimeout(toastTimer);
+    if (draft?.url) URL.revokeObjectURL(draft.url);
+    if (voicePhoto?.url) URL.revokeObjectURL(voicePhoto.url);
+    if (lastThumb) URL.revokeObjectURL(lastThumb);
+    if (local) delete window.__storyEditor;
+  };
 }

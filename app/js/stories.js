@@ -59,3 +59,55 @@ export const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.flo
 
 // Only https addresses from the database ever reach a src.
 export const safeMedia = (u) => (typeof u === 'string' && /^https:\/\/\S+$/.test(u) ? u : '');
+
+// ---- Posting (the camera, like Instagram): the shutter, the recording ring, the colours and the words on a story ----
+export const MODES = ['story', 'voice', 'text'];
+export const HOLD_MS = 250;  // a press on the shutter this long records instead of taking a photo
+export const LOCK_PX = 70;   // sliding up this far while holding locks the recording, so no finger need stay on the shutter
+
+// What a plain tap on the shutter does. Text mode goes on to the preview; a recording that is running (locked, or hands-free)
+// stops; the microphone, and the camera with hands-free on, start a recording that keeps going; otherwise it is a photo.
+export function tapAction({ mode, recording, handsFree }) {
+  if (mode === 'text') return 'next';
+  if (recording) return 'stop';
+  return mode === 'voice' || handsFree ? 'start' : 'photo';
+}
+// Letting go after a hold that was recording: a locked recording carries on, a held one stops.
+export const releaseAction = ({ locked }) => (locked ? 'keep' : 'stop');
+export const lockReached = (y0, y) => y0 - y >= LOCK_PX;
+
+// The ring round the shutter while recording: how far round it has filled (0 to 1), and the marks between the parts (degrees).
+export const ringFraction = (elapsed, limit) => Math.max(0, Math.min(1, limit > 0 ? elapsed / limit : 0));
+export const ringMarks = (maxParts) => Array.from({ length: Math.max(0, maxParts - 1) }, (_, k) => ((k + 1) / maxParts) * 360);
+
+// The background colours after the current pair, round and round the palette.
+export function nextColours(current) {
+  const at = PALETTE.findIndex(([a, b]) => a === current?.[0] && b === current?.[1]);
+  return PALETTE[(at + 1) % PALETTE.length];
+}
+
+// The words of a story for screen readers and captions: every piece of text on it, top to bottom, within the limit.
+export const layerWords = (layers) => layers.map((l) => String(l.text || '').trim()).filter(Boolean).join('\n').slice(0, MAX_TEXT);
+
+// Breaks text into lines no wider than `maxWidth`, with `measure(text)` giving a width: words wrap, a word too long for a
+// line is broken, and new lines in the text are kept. Used the same way on screen and when the picture is drawn.
+export function wrapLines(text, maxWidth, measure) {
+  const lines = [];
+  for (const para of String(text ?? '').split('\n')) {
+    let line = '';
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      const next = line ? `${line} ${word}` : word;
+      if (measure(next) <= maxWidth) { line = next; continue; }
+      if (line) lines.push(line);
+      if (measure(word) <= maxWidth) { line = word; continue; }
+      let piece = '';
+      for (const ch of word) {
+        if (piece && measure(piece + ch) > maxWidth) { lines.push(piece); piece = ''; }
+        piece += ch;
+      }
+      line = piece;
+    }
+    lines.push(line);
+  }
+  return lines;
+}

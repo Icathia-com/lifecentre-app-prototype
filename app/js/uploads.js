@@ -3,7 +3,7 @@
 // first, and anything over 60 MB is refused here before it is sent. Nothing secret lives in the app: the Worker holds the keys.
 import { getAuthTools } from './firebase.js';
 
-export const UPLOAD_API = 'https://lifecentre-uploads.lifecentre.workers.dev'; // the Worker's address, set when it is deployed
+export const UPLOAD_API = 'https://lifecentre-uploads.lifecentre-app-prototype.workers.dev'; // the Worker's address (deployed 3 Nov 2026)
 export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 export const TOO_BIG = 'That file is over 60 MB. Please choose a smaller one.';
 

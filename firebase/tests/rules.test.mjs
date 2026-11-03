@@ -408,6 +408,8 @@ describe('stories', () => {
   it('admins and people with "Can post stories" post in their own name; plain staff, leaders without it and the public cannot', async () => {
     await assertSucceeds(setDoc(doc(user(ADMIN), 'stories', 'a'), story(ADMIN)));
     await assertSucceeds(setDoc(doc(user(POSTER), 'stories', 'p'), story(POSTER, { type: 'text', mediaUrl: undefined, mediaType: undefined, text: 'Hello', duration: 6, parts: parts(1, 6) })));
+    await assertSucceeds(setDoc(doc(user(POSTER), 'stories', 'tp'), story(POSTER, { type: 'text', mediaUrl: 'https://pub-test.r2.dev/stories/2026/11/t.jpg', mediaType: 'image/jpeg', text: 'Hello', duration: 6, parts: parts(1, 6) }))); // the editor's picture of the words
+    await assertSucceeds(setDoc(doc(user(POSTER), 'stories', 'vo'), story(POSTER, { overlay: 'https://pub-test.r2.dev/stories/2026/11/o.png' }))); // words and drawings laid over a video
     await assertFails(setDoc(doc(user(POSTER), 'stories', 'x'), story(ADMIN))); // not in someone else's name
     await assertFails(setDoc(doc(user(STAFF), 'stories', 'x'), story(STAFF)));
     await assertFails(setDoc(doc(anon(), 'stories', 'x'), story(ADMIN)));
@@ -423,9 +425,9 @@ describe('stories', () => {
       { parts: parts(7), duration: 180 }, { duration: 181, parts: parts(6) }, { type: 'audio', parts: parts(11), duration: 300 }, { type: 'audio', duration: 301, parts: parts(10) },
       { type: 'photo', duration: 16, parts: parts(1, 16) }, { type: 'photo', parts: parts(2, 5), duration: 10 }, { parts: [] }, { duration: 0 }, { duration: 2.5 },
       { parts: ['x'] }, { parts: [{ start: 5, end: 75 }, { start: 30, end: 75 }] }, { parts: [{ start: 0, end: 30 }, { start: 30, end: 60 }] }, { parts: [{ start: 0, end: 75, extra: 1 }] },
-      { type: 'text', mediaUrl: undefined, text: '' }, { type: 'text', text: 'has media too' }, { type: 'text', mediaUrl: undefined, text: 'x'.repeat(301) }, { text: 'x'.repeat(301) },
+      { type: 'text', mediaUrl: undefined, text: '' }, { type: 'text', text: '' }, { type: 'text', mediaUrl: undefined, text: 'x'.repeat(301) }, { text: 'x'.repeat(301) },
       { mediaUrl: 'http://example.org/a.webm' }, { mediaUrl: undefined }, { mediaUrl: 'javascript:alert(1)' }, { colours: ['blue', '#000000'] }, { colours: ['#000000'] }, { colours: 'red' },
-      { views: 1 }, { views: -1 }, { type: 'gif' }, { authorName: '' }, { bgImage: 'http://x.y/z.jpg' }, { likes: 3 },
+      { views: 1 }, { views: -1 }, { type: 'gif' }, { authorName: '' }, { bgImage: 'http://x.y/z.jpg' }, { overlay: 'http://x.y/o.png' }, { overlay: 'javascript:alert(1)' }, { likes: 3 },
       { expiresAt: Timestamp.fromMillis(Date.now() + 30 * HOUR) }, { expiresAt: Timestamp.fromMillis(Date.now() + 20 * HOUR) }, { createdAt: T('2026-11-01T00:00:00Z') },
     ]) await assertFails(setDoc(doc(db, 'stories', 'bad'), story(ADMIN, bad)));
   });

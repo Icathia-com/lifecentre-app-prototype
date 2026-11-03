@@ -96,18 +96,23 @@ export function openStories({ groups, startIndex = 0, me = null, onClose, host =
     const [a, b] = Array.isArray(story.colours) && story.colours.length === 2 ? story.colours : PALETTE[0];
     media.style.background = `linear-gradient(160deg, ${a}, ${b})`;
     const bgImage = safeMedia(story.bgImage);
+    const overlay = safeMedia(story.overlay);
+    const picture = safeMedia(story.mediaUrl);
     const kids = [];
     if (story.type === 'video') {
-      el = h('video', { class: 'st-video', src: safeMedia(story.mediaUrl), playsinline: '', 'webkit-playsinline': '', preload: 'auto' },
+      el = h('video', { class: 'st-video', src: picture, playsinline: '', 'webkit-playsinline': '', preload: 'auto' },
         h('track', { kind: 'captions', srclang: 'en', label: 'Captions', src: captionsFor(story) }));
-      kids.push(el);
+      kids.push(el, overlay ? h('img', { class: 'st-overlay', src: overlay, alt: '' }) : null); // the words and drawings laid over it
     } else if (story.type === 'audio') {
-      el = h('audio', { src: safeMedia(story.mediaUrl), preload: 'auto' });
-      kids.push(bgImage ? h('img', { class: 'st-photo', src: bgImage, alt: '' }) : null, h('div', { class: 'st-voice', 'aria-hidden': 'true' }, ic('mic', 44, 1.8), h('span', {}, 'Voice')), el);
-    } else if (story.type === 'photo') kids.push(h('img', { class: 'st-photo', src: safeMedia(story.mediaUrl), alt: story.text || '' }));
+      el = h('audio', { src: picture, preload: 'auto' });
+      kids.push(bgImage ? h('img', { class: 'st-photo cover', src: bgImage, alt: '' }) : null, h('div', { class: 'st-voice', 'aria-hidden': 'true' }, ic('mic', 44, 1.8), h('span', {}, 'Voice')), el);
+    } else if (story.type === 'photo' || picture) kids.push(h('img', { class: 'st-photo', src: picture, alt: story.text || '' })); // a text story from the editor is a picture of its words
     else kids.push(h('div', { class: 'st-textstory' }, story.text || ''));
-    media.replaceChildren(...kids.filter(Boolean));
-    caption.textContent = story.type === 'text' ? '' : (story.text || '');
+    // Everything sits in a 9:16 frame, the shape the editor works in, so words laid over a video land where they were put.
+    media.replaceChildren(h('div', { class: 'st-frame' }, kids.filter(Boolean)));
+    // The editor draws the words on pictures and lays them over videos; only a recording without that shows them as a caption.
+    const drawnOn = story.type === 'text' || story.type === 'photo' || !!overlay || (story.type === 'audio' && !!bgImage);
+    caption.textContent = drawnOn ? '' : (story.text || '');
     caption.hidden = !caption.textContent;
     if (el) { el.muted = false; el.volume = 1; el.ready = whenSeekable(el); }
   }

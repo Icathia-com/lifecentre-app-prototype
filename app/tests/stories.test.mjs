@@ -1,7 +1,8 @@
 // Stories: the 30-second parts, the limits, who has a live story, and what is remembered on the phone.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitParts, partsFor, shownSeconds, maxSeconds, groupByAuthor, seenAll, markSeen, flatten, circleLabel, timeAgo, clock, safeMedia, PART_LIMITS } from '../js/stories.js';
+import { splitParts, partsFor, shownSeconds, maxSeconds, groupByAuthor, seenAll, markSeen, flatten, circleLabel, timeAgo, clock, safeMedia, PART_LIMITS, PALETTE, tapAction, releaseAction, lockReached, ringFraction, ringMarks, nextColours, layerWords, wrapLines } from '../js/stories.js';
+import { hitLayer, fitBox, emptyOverlay, isEmpty, clampSize, MIN_SIZE, MAX_SIZE } from '../js/story-canvas.js';
 
 const NOW = Date.parse('2026-11-03T06:00:00Z');
 const HOUR = 3600000;
@@ -61,5 +62,51 @@ describe('who has a live story', () => {
   it('writes times and keeps media to https', () => {
     assert.deepEqual([timeAgo(NOW - 5 * 60000, NOW), timeAgo(NOW - 3 * HOUR, NOW), clock(75), clock(0), clock(600)], ['5m', '3h', '1:15', '0:00', '10:00']);
     assert.deepEqual([safeMedia('https://pub.r2.dev/s.webm'), safeMedia('http://x/s.webm'), safeMedia('javascript:x'), safeMedia(undefined)], ['https://pub.r2.dev/s.webm', '', '', '']);
+  });
+});
+
+describe('the camera (posting like Instagram)', () => {
+  it('knows what a tap on the shutter does: a photo, a hands-free recording, a stop, or on to the preview', () => {
+    assert.equal(tapAction({ mode: 'story', recording: false, handsFree: false }), 'photo');
+    assert.equal(tapAction({ mode: 'story', recording: false, handsFree: true }), 'start');
+    assert.equal(tapAction({ mode: 'voice', recording: false, handsFree: false }), 'start');
+    assert.equal(tapAction({ mode: 'story', recording: true, handsFree: false }), 'stop');
+    assert.equal(tapAction({ mode: 'voice', recording: true, handsFree: true }), 'stop');
+    assert.equal(tapAction({ mode: 'text', recording: false, handsFree: false }), 'next');
+    assert.deepEqual([releaseAction({ locked: true }), releaseAction({ locked: false })], ['keep', 'stop'], 'letting go after a hold');
+    assert.deepEqual([lockReached(500, 431), lockReached(500, 430), lockReached(500, 560)], [false, true, false], 'sliding up 70 pixels locks');
+  });
+  it('fills the ring round the shutter and marks every part', () => {
+    assert.deepEqual([ringFraction(0, 180), ringFraction(90, 180), ringFraction(200, 180), ringFraction(5, 0)], [0, 0.5, 1, 0]);
+    assert.deepEqual(ringMarks(6), [60, 120, 180, 240, 300]);
+    assert.equal(ringMarks(10).length, 9);
+    assert.deepEqual(ringMarks(1), []);
+  });
+  it('cycles the background colours and gathers the words for screen readers', () => {
+    assert.deepEqual(nextColours(PALETTE[0]), PALETTE[1]);
+    assert.deepEqual(nextColours(PALETTE.at(-1)), PALETTE[0]);
+    assert.deepEqual(nextColours(['#000000', '#111111']), PALETTE[0], 'an unknown pair starts the palette again');
+    assert.equal(layerWords([{ text: ' Hello ' }, { text: '' }, { text: 'church' }]), 'Hello\nchurch');
+    assert.equal(layerWords([{ text: 'x'.repeat(400) }]).length, 300);
+    assert.equal(layerWords([]), '');
+  });
+  it('wraps words into lines no wider than the space, breaking a word only when it must', () => {
+    const measure = (t) => t.length * 10;
+    assert.deepEqual(wrapLines('Service at ten thirty', 100, measure), ['Service at', 'ten thirty']);
+    assert.deepEqual(wrapLines('one\ntwo three', 100, measure), ['one', 'two three']);
+    assert.deepEqual(wrapLines('extraordinarily long', 50, measure), ['extra', 'ordin', 'arily', 'long']);
+    assert.deepEqual(wrapLines('', 100, measure), ['']);
+    assert.deepEqual(wrapLines('a  b', 100, measure), ['a b']);
+  });
+  it('finds the piece of text under a tap (the top one first), keeps sizes within reach, and fits a picture in the stage', () => {
+    const boxes = [{ id: 'a', left: 0, top: 0, width: 100, height: 50 }, { id: 'b', left: 50, top: 25, width: 100, height: 50 }];
+    assert.deepEqual([hitLayer(boxes, 10, 10), hitLayer(boxes, 75, 40), hitLayer(boxes, 140, 70), hitLayer(boxes, 300, 300), hitLayer([], 1, 1)], ['a', 'b', 'b', null, null]);
+    assert.deepEqual([clampSize(0.001), clampSize(5), clampSize(0.1), clampSize('x')], [MIN_SIZE, MAX_SIZE, 0.1, 0.085]);
+    assert.deepEqual([isEmpty(emptyOverlay()), isEmpty({ strokes: [], layers: [{ id: 't1', text: 'x' }] }), isEmpty(null)], [true, false, true]);
+    const contain = fitBox(1600, 900, 1080, 1920, 'contain');
+    assert.deepEqual([contain.x, Math.round(contain.y), contain.width, Math.round(contain.height)], [0, 656, 1080, 608], 'a landscape clip sits in the middle with bars above and below');
+    const cover = fitBox(1600, 900, 1080, 1920, 'cover');
+    assert.deepEqual([Math.round(cover.x), cover.y, Math.round(cover.width), cover.height], [-1167, 0, 3413, 1920], 'cover fills the stage and crops the sides');
+    assert.deepEqual(fitBox(1080, 1920, 1080, 1920), { x: 0, y: 0, width: 1080, height: 1920 });
   });
 });

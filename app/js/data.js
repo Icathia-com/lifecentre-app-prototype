@@ -23,7 +23,7 @@ const readers = {
   staff: (id, d) => clean({ id, role: d.role, name: d.name, approvePopups: d.approvePopups, postStories: d.postStories, displayName: d.displayName, photo: d.photo }),
   stories: (id, d) => clean({
     id, author: d.author, authorName: d.authorName, authorPhoto: d.authorPhoto, type: d.type, mediaUrl: d.mediaUrl, mediaType: d.mediaType, text: d.text,
-    colours: d.colours, bgImage: d.bgImage, duration: d.duration, parts: d.parts, views: d.views ?? 0, createdAt: ms(d.createdAt), expiresAt: ms(d.expiresAt),
+    colours: d.colours, bgImage: d.bgImage, overlay: d.overlay, duration: d.duration, parts: d.parts, views: d.views ?? 0, createdAt: ms(d.createdAt), expiresAt: ms(d.expiresAt),
   }),
   videos: (id, d) => clean({ id, title: d.title, org: d.org, desc: d.desc, src: d.src, videoId: d.videoId, url: d.url, dur: d.dur, sample: d.sample, createdAt: ms(d.createdAt) }),
   popups: (id, d) => clean({
@@ -47,7 +47,7 @@ const writers = {
   staff: (v) => ({ role: v.role, ...clean({ name: v.name, displayName: v.displayName, photo: v.photo }), ...(v.approvePopups ? { approvePopups: true } : {}), ...(v.postStories ? { postStories: true } : {}) }),
   stories: (v) => ({
     author: v.author, authorName: v.authorName, type: v.type, colours: v.colours, duration: v.duration, parts: v.parts, views: 0, expiresAt: Timestamp.fromMillis(v.expiresAt),
-    ...clean({ authorPhoto: v.authorPhoto, mediaUrl: v.mediaUrl, mediaType: v.mediaType, text: v.text, bgImage: v.bgImage }),
+    ...clean({ authorPhoto: v.authorPhoto, mediaUrl: v.mediaUrl, mediaType: v.mediaType, text: v.text, bgImage: v.bgImage, overlay: v.overlay }),
   }),
   videos: (v) => ({ title: v.title, src: v.src, ...clean({ org: v.org, desc: v.desc, videoId: v.videoId, url: v.url, dur: v.dur }) }),
   popups: (v) => ({

@@ -197,19 +197,22 @@ service cloud.firestore {
 
     // A story: a photo, video, voice or text post that is gone 24 hours after posting. One file per recording, watched in
     // parts of up to 30 seconds: at most 6 parts of video (3 minutes) or 10 of voice (5 minutes); a photo or text has one part.
+    // The editor draws the words on photos and text stories (a text story then carries a picture in mediaUrl) and lays them
+    // over a video as a see-through picture (overlay).
     function validStory(d) {
-      return d.keys().hasOnly(['author', 'authorName', 'authorPhoto', 'type', 'mediaUrl', 'mediaType', 'text', 'colours', 'bgImage',
+      return d.keys().hasOnly(['author', 'authorName', 'authorPhoto', 'type', 'mediaUrl', 'mediaType', 'text', 'colours', 'bgImage', 'overlay',
                                'duration', 'parts', 'views', 'createdAt', 'expiresAt', 'updatedBy', 'updatedAt'])
         && d.keys().hasAll(['author', 'authorName', 'type', 'colours', 'duration', 'parts', 'views', 'createdAt', 'expiresAt', 'updatedBy'])
         && isText(d.author, 120)
         && isText(d.authorName, 80)
         && (!('authorPhoto' in d) || isHttps(d.authorPhoto, 500))
         && d.type in ['photo', 'video', 'audio', 'text']
-        && (d.type == 'text' ? !('mediaUrl' in d) : isHttps(d.mediaUrl, 500))
+        && (d.type == 'text' ? (!('mediaUrl' in d) || isHttps(d.mediaUrl, 500)) : isHttps(d.mediaUrl, 500))
         && optionalText(d, 'mediaType', 60)
         && (d.type == 'text' ? isText(d.text, 300) : optionalText(d, 'text', 300))
         && d.colours is list && d.colours.size() == 2 && isColour(d.colours[0]) && isColour(d.colours[1])
         && (!('bgImage' in d) || isHttps(d.bgImage, 500))
+        && (!('overlay' in d) || isHttps(d.overlay, 500))
         && d.duration is int && d.duration >= 1
         && d.duration <= (d.type == 'video' ? 180 : (d.type == 'audio' ? 300 : 15))
         && d.parts is list && d.parts.size() >= 1

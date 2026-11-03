@@ -30,7 +30,7 @@ export function createStoriesRow({ onOpen, onPost }) {
       onclick: () => onOpen(index),
     }, avatarEl(group));
     return h('div', { class: 'st-circle' }, button,
-      own ? h('a', { class: 'st-plus', href: '#/stories/new', 'aria-label': 'Post a story', onclick: (e) => { if (onPost) { e.preventDefault(); onPost(); } } }) : null,
+      own ? h('a', { class: 'st-plus', href: '#/stories/new', 'aria-label': 'Add to your story', onclick: (e) => { if (onPost) { e.preventDefault(); onPost(); } } }) : null,
       h('span', { class: 'st-label', 'aria-hidden': 'true' }, own ? 'Your story' : circleLabel(group)));
   }
 

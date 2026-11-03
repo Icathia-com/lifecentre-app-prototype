@@ -130,14 +130,25 @@ one**, which declines the new request and tells the requester why. Nobody can ap
 Stories are short posts that everyone can watch from the circles at the top of Home for 24 hours, like Instagram stories.
 Admins, and anyone with **Can post stories** on the staff list, can post them.
 
-**Post one:** tap the **+** on your own circle on Home, or **Post a story** on Account, then choose:
-- **Camera**: take a photo, or switch to **Video** and tap the red button to record. Just keep going: the app splits the recording
-  into 30-second parts as it runs (you see them build up along the bottom) and stops by itself after 6 parts (3 minutes).
-- **From your phone**: a photo, video or audio file. A long video or audio is split into 30-second parts the same way, and only
-  the first 3 minutes (video) or 5 minutes (audio) are shown. Files over 60 MB cannot be uploaded.
-- **Voice**: record a voice message over a colour, or add a photo behind it. It stops by itself after 10 parts (5 minutes).
-- **Text**: a few words on a colour.
-You can add a line of text over a photo or video. Tap **Post**. You can post several stories a day.
+**Post one:** if you can post, your own circle is always first on Home, labelled **Your story**, with a small **+**. Tap the **+**
+(or **Post a story** on Account) and the camera opens straight away, full screen, like Instagram. If you have a story up, tapping
+your circle plays it and the **+** still opens the camera.
+- **STORY**: tap the big white button for a photo, or hold it to record a video. Slide your finger up while holding to lock the
+  recording so you can let go; tap the button again to stop. A ring round the button fills as you record, with a mark at every
+  30-second part, and the parts build up along the top. It stops by itself after 6 parts (3 minutes). The small square at the
+  bottom left opens your phone's photos and videos, the arrows at the bottom right switch between the front and back cameras,
+  and the flash is at the top right.
+- **VOICE**: swipe the words under the button, or tap **VOICE**. Tap the microphone to record (tap it again to stop), or hold it.
+  Tap the background to change its colour, or choose a photo from your phone to go behind your voice. Up to 10 parts (5 minutes).
+- **TEXT**: a colour with a cursor. Type, tap the background to change the colour, then tap the tick.
+- **The tools on the left** (on the camera and on the preview): **Aa** puts words on your story, the **pen** draws, and the small
+  **arrow** shows more: on the camera, **hands-free** (a tap starts and stops recording) and a **3-second timer**; on the
+  preview, the **background colour**.
+- **The preview**: drag words to move them, pinch (or use the mouse wheel, or the plus and minus keys) to resize them, and tap
+  them to edit or recolour. The pen has colours and **undo**. The **X** discards, after asking. The **down arrow** saves the
+  picture or the recording to your phone. **Your story**, with your photo on it, posts it. You can post several stories a day.
+- A long video from your phone is split into 30-second parts the same way, and only the first 3 minutes are shown. Files over
+  60 MB cannot be uploaded.
 
 Good to know: on an iPhone a video picked from the phone is sent as it is (other phones make it smaller first), so keep it short.
 A story's file stays available for up to two days after it is deleted or has expired, while the app itself stops showing it at once.
