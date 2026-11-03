@@ -100,13 +100,13 @@ async function checkAccessibility(page, label) {
   assert.deepEqual(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`), [], `${label} has accessibility problems`);
 }
 
-async function signIn(page, email) {
-  await page.evaluate(async (mail) => {
+async function signIn(page, email, name) { // name: the Google account's display name, when a test needs one
+  await page.evaluate(async (mail, n) => {
     const { getAuthTools } = await import('/app/js/firebase.js');
     const { GoogleAuthProvider, signInWithCredential } = await import('firebase/auth');
     const { auth } = await getAuthTools();
-    await signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({ sub: `id-${mail}`, email: mail, email_verified: true })));
-  }, email);
+    await signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({ sub: `id-${mail}`, email: mail, email_verified: true, ...(n ? { name: n } : {}) })));
+  }, email, name);
   await page.waitForFunction((m) => JSON.parse(localStorage.getItem('lc:v1:session') || 'null')?.email === m, { timeout: 15000 }, email);
 }
 
@@ -123,7 +123,7 @@ describe('Home', () => {
   it('shows the greeting, verse, "Coming up" banner (the pinned event) and church calendar', async () => {
     const { page, errors, context } = await open();
     await waitText(page, 'Psalm 23:1');
-    assert.equal(await text(page, '#page-title'), 'Today');
+    assert.match(await text(page, '#page-title .sr'), /^Good (morning|afternoon|evening)\. [A-Z][a-z]+day, \d{1,2} [A-Z][a-z]+$/);
     assert.match(await text(page, '.verse-card blockquote'), /The LORD is my shepherd/);
     assert.equal(await page.$('.verse-card .badge'), null); // not sample
     await page.waitForSelector('.banner');
@@ -2281,7 +2281,7 @@ describe('Installable app and offline use', () => {
     await goto(page, '/contact');
     assert.equal(await pageTitle(page), 'Contact us');
     await goto(page, '/');
-    assert.equal(await pageTitle(page), 'Today');
+    assert.match(await pageTitle(page), /^Good (morning|afternoon|evening)/);
     await goto(page, '/watch');
     await page.waitForSelector('.wt-slide', { timeout: 15000 });
     assert.deepEqual(errors, []);
@@ -2860,6 +2860,105 @@ describe('the verse of the day in Bible versions', () => {
     const saved = await readDoc('verses', day);
     assert.deepEqual(Object.keys(saved).sort(), ['passageId', 'reference', 'updatedAt', 'updatedBy']);
     assert.deepEqual([saved.passageId, saved.reference], ['PSA.139.23-24', 'Psalm 139:23-24']);
+    await context.close();
+  });
+});
+
+describe('Home greeting', () => {
+  const HOUR = 3600000;
+  const SG = 'Asia/Singapore';
+  // Opens the page with its clock moved to the given Singapore time today; the clock keeps ticking from there.
+  const clockAt = (hour, minute = 0, second = 0) => (p) => p.evaluateOnNewDocument((start) => {
+    const real = Date.now; const shift = start - real(); Date.now = () => real() + shift;
+  }, dayStart(TODAY) + ((hour * 60 + minute) * 60 + second) * 1000);
+  // The booking system answers a signed-in member with no bookings, so a test session is not thrown away.
+  const noBookings = async (p) => {
+    await p.setRequestInterception(true);
+    p.on('request', (req) => (req.url().startsWith('https://script.google.com/') ? req.respond({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, upcoming: [], past: [] }) }) : req.continue()));
+  };
+  const asMember = (name) => async (p) => { // signed in for bookings on this phone before the page opens
+    await p.evaluateOnNewDocument((n) => localStorage.setItem('lc:v1:booking-session', JSON.stringify({ token: 'a'.repeat(64), name: n, email: 'member@example.org' })), name);
+    await noBookings(p);
+  };
+  const both = (...steps) => async (p) => { for (const step of steps) await step(p); };
+  const memberIn = (page, name) => page.evaluate(async (n) => { const m = await import('/app/js/booking-api.js'); m.setSession({ token: 'b'.repeat(64), name: n, email: 'member@example.org' }); }, name);
+  const memberOut = (page) => page.evaluate(async () => { const m = await import('/app/js/booking-api.js'); m.clearSession(); });
+  const googleOut = (page) => page.evaluate(async () => { const { getAuthTools } = await import('/app/js/firebase.js'); const { signOut } = await import('firebase/auth'); const { auth } = await getAuthTools(); await signOut(auth); });
+  const lines = (page) => page.$eval('.greeting .lines', (el) => ({
+    light: el.querySelector('.hello').textContent, bold: el.querySelector('h1 .name').textContent, date: el.querySelector('.date').textContent,
+    sr: el.querySelector('h1 .sr').textContent, hidden: ['.hello', 'h1 .name', '.date'].map((s) => el.querySelector(s).getAttribute('aria-hidden')), today: /\bToday\b/.test(el.textContent),
+  }));
+  const boldIs = (page, value) => page.waitForFunction((v) => document.querySelector('.greeting h1 .name')?.textContent === v, { timeout: 8000 }, value);
+  const noon = dayStart(TODAY) + 12 * HOUR;
+  const longDate = `${new Intl.DateTimeFormat('en-GB', { timeZone: SG, weekday: 'long' }).format(noon)}, ${new Intl.DateTimeFormat('en-GB', { timeZone: SG, day: 'numeric', month: 'long' }).format(noon)}`; // "Tuesday, 3 November"
+  const shortDate = new Intl.DateTimeFormat('en-US', { timeZone: SG, weekday: 'short', month: 'short', day: 'numeric' }).format(noon); // "Tue, Nov 3"
+
+  it('says Good morning from 5am, Good afternoon from noon and Good evening from 6pm, by the Singapore clock', async () => {
+    for (const [hour, minute, expected] of [[5, 0, 'morning'], [11, 59, 'morning'], [12, 0, 'afternoon'], [17, 59, 'afternoon'], [18, 0, 'evening'], [23, 30, 'evening'], [0, 10, 'evening'], [4, 59, 'evening']]) {
+      const { page, context } = await open('#/', { setup: clockAt(hour, minute) });
+      const l = await lines(page);
+      assert.deepEqual([l.light, l.bold, l.date, l.today], ['Good', expected, shortDate, false], `at ${hour}:${String(minute).padStart(2, '0')}`);
+      await context.close();
+    }
+  });
+  it('greets a signed-in member by first name on the bold line, then the date, and reads as one sentence', async () => {
+    const { page, errors, context } = await open('#/', { setup: both(clockAt(9), asMember('Theersha test')) });
+    const l = await lines(page);
+    assert.deepEqual([l.light, l.bold, l.date, l.sr, l.hidden, l.today], ['Good morning', 'Theersha', shortDate, `Good morning, Theersha. ${longDate}`, ['true', 'true', 'true'], false]);
+    await shot(page, 'home-greeting-member');
+    await checkAccessibility(page, 'Home greeting, signed in');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+  it('signed out, splits the greeting over the two lines, "Good" then "morning", before the date', async () => {
+    const { page, context } = await open('#/', { setup: clockAt(9) });
+    const l = await lines(page);
+    assert.deepEqual([l.light, l.bold, l.date, l.sr], ['Good', 'morning', shortDate, `Good morning. ${longDate}`]);
+    await shot(page, 'home-greeting-signed-out');
+    await context.close();
+  });
+  it('uses the first name of the Google sign-in when there is no member sign-in, the member name when there are both, and follows sign-outs at once', async () => {
+    const { page, context } = await open('#/staff', { setup: both(clockAt(15), noBookings) });
+    await waitText(page, 'Sign in with Google');
+    await signIn(page, STAFF, 'Samuel Tan');
+    await goto(page, '/');
+    await boldIs(page, 'Samuel');
+    assert.equal((await lines(page)).light, 'Good afternoon');
+    await memberIn(page, 'Theersha test');
+    await boldIs(page, 'Theersha');
+    await memberOut(page);
+    await boldIs(page, 'Samuel');
+    await googleOut(page);
+    await boldIs(page, 'afternoon');
+    assert.equal((await lines(page)).light, 'Good');
+    await context.close();
+  });
+  it('changes straight away when a member signs in or out, with no reload', async () => {
+    const { page, context } = await open('#/', { setup: both(clockAt(20), noBookings) });
+    assert.deepEqual([(await lines(page)).light, (await lines(page)).bold], ['Good', 'evening']);
+    await memberIn(page, 'Grace Lim');
+    await boldIs(page, 'Grace');
+    assert.equal((await lines(page)).light, 'Good evening');
+    await memberOut(page);
+    await boldIs(page, 'evening');
+    assert.equal((await lines(page)).light, 'Good');
+    await context.close();
+  });
+  it('moves on from Good morning to Good afternoon at noon while the app stays open', async () => {
+    const { page, context } = await open('#/', { setup: both(clockAt(11, 59, 58), asMember('Theersha test')) });
+    assert.equal((await lines(page)).light, 'Good morning');
+    await page.waitForFunction(() => document.querySelector('.greeting .hello').textContent === 'Good afternoon', { timeout: 8000 });
+    assert.equal((await lines(page)).sr, `Good afternoon, Theersha. ${longDate}`);
+    await context.close();
+  });
+  it('keeps a very long first name on one line, cut short with an ellipsis, and reads the whole word', async () => {
+    const { page, context } = await open('#/', { setup: both(clockAt(9), asMember('Maximilianotheodorusbartholomew Lim')) });
+    const box = await page.$eval('.greeting h1 .name', (el) => {
+      const cs = getComputedStyle(el);
+      return { text: el.textContent, clipped: el.scrollWidth > el.clientWidth, overflow: cs.textOverflow, wrap: cs.whiteSpace, lines: Math.round(el.getBoundingClientRect().height / parseFloat(cs.lineHeight)), inside: el.getBoundingClientRect().right <= innerWidth };
+    });
+    assert.deepEqual(box, { text: 'Maximilianotheodorusbartholomew', clipped: true, overflow: 'ellipsis', wrap: 'nowrap', lines: 1, inside: true });
+    assert.equal((await lines(page)).sr, `Good morning, Maximilianotheodorusbartholomew. ${longDate}`);
     await context.close();
   });
 });

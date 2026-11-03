@@ -10,6 +10,7 @@ import { myBookings } from '../my-bookings.js';
 import { onBookingSession } from '../booking-api.js';
 import { openTaskSheet } from '../task-sheet.js';
 import { createVerseCard } from '../verse-card.js';
+import { greetingLines, msUntilGreetingChange } from '../greeting.js';
 
 const COLW = 100;    // every day column is 100px wide, so a wider screen simply shows more days
 const TOTAL = 553;   // 26 weeks back and the year ahead, drawn only a few columns at a time
@@ -88,8 +89,25 @@ export function render(root) {
     avatar.replaceChildren(who ? who[0].toUpperCase() : icon(PERSON));
     avatar.setAttribute('aria-label', who ? `Account, signed in as ${memberSession?.email || staffSession?.email}` : 'Account, sign in');
   };
-  const stopSession = onSession((session) => { staffSession = session?.email ? session : null; showAvatar(); });
-  const stopMember = onBookingSession((session) => { memberSession = session; showAvatar(); });
+  // The greeting at the top: the time of day in Singapore and the person's first name (the member sign-in first, else the Google
+  // sign-in). Screen readers hear it as one sentence in the heading; the three visible lines are hidden from them. It changes
+  // when the time of day does and whenever someone signs in or out.
+  const greetLight = h('p', { class: 'hello', 'aria-hidden': 'true' });
+  const greetSr = h('span', { class: 'sr' });
+  const greetName = h('span', { class: 'name', 'aria-hidden': 'true' });
+  const greetDate = h('p', { class: 'date', 'aria-hidden': 'true' });
+  let greetTimer = 0;
+  const showGreeting = () => {
+    const g = greetingLines({ name: memberSession?.name || staffSession?.name, ms: Date.now() });
+    greetLight.textContent = g.light;
+    greetName.textContent = g.bold;
+    greetDate.textContent = g.date;
+    greetSr.textContent = g.sentence;
+    clearTimeout(greetTimer);
+    greetTimer = setTimeout(showGreeting, msUntilGreetingChange(Date.now()) + 50); // a moment past the next change
+  };
+  const stopSession = onSession((session) => { staffSession = session?.email ? session : null; showAvatar(); showGreeting(); });
+  const stopMember = onBookingSession((session) => { memberSession = session; showAvatar(); showGreeting(); });
 
   const calEl = h('section', { class: 'glass cal', 'aria-labelledby': 'cal-h' },
     h('div', { class: 'cal-head' }, h('h2', { class: 'month-h' }, monthButton), badge),
@@ -102,9 +120,9 @@ export function render(root) {
     h('header', { class: 'greeting' },
       h('div', { class: 'top-row' }, h('a', { class: 'round-btn', href: '#/notifications', 'aria-label': 'Notifications' }, ic('bell', 20)), avatar),
       h('div', { class: 'lines' },
-        h('p', { class: 'hello' }, 'Hello'),
-        h('h1', { id: 'page-title', tabindex: '-1' }, 'Today'),
-        h('p', { class: 'date' }, formatDay(Date.now(), { weekday: 'short', month: 'short', day: 'numeric' }, 'en-US')))),
+        greetLight,
+        h('h1', { id: 'page-title', tabindex: '-1' }, greetSr, greetName),
+        greetDate)),
     verseBox,
     bannerBox,
     calEl,
@@ -329,6 +347,7 @@ export function render(root) {
   return () => {
     alive = false;
     clearTimeout(timer);
+    clearTimeout(greetTimer);
     closeSheet?.();
     stopSession();
     stopMember();
