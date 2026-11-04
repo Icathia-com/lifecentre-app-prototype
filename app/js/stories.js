@@ -63,7 +63,8 @@ export const safeMedia = (u) => (typeof u === 'string' && /^https:\/\/\S+$/.test
 // ---- Posting (the camera, like Instagram): the shutter, the recording ring, the colours and the words on a story ----
 export const MODES = ['story', 'voice', 'text'];
 export const HOLD_MS = 250;  // a press on the shutter this long records instead of taking a photo
-export const LOCK_PX = 70;   // sliding up this far while holding locks the recording, so no finger need stay on the shutter
+export const LOCK_PX = 70;   // sliding this far to the left while holding, onto the lock, keeps the recording going with no finger on the shutter
+export const ZOOM_RANGE = { min: 1, max: 4 }; // digital zoom, where the camera cannot zoom itself
 
 // What a plain tap on the shutter does. Text mode goes on to the preview; a recording that is running (locked, or hands-free)
 // stops; the microphone, and the camera with hands-free on, start a recording that keeps going; otherwise it is a photo.
@@ -74,7 +75,55 @@ export function tapAction({ mode, recording, handsFree }) {
 }
 // Letting go after a hold that was recording: a locked recording carries on, a held one stops.
 export const releaseAction = ({ locked }) => (locked ? 'keep' : 'stop');
-export const lockReached = (y0, y) => y0 - y >= LOCK_PX;
+// The lock sits to the left of the shutter: the finger has slid LOCK_PX or more to the left of where it pressed.
+export const lockReached = (x0, x) => x0 - x >= LOCK_PX;
+
+// ---- Zoom and the camera ----
+export const clampZoom = (z, range = ZOOM_RANGE) => Math.max(range.min, Math.min(range.max, Number.isFinite(z) ? z : range.min));
+// A finger sliding up the screen from the shutter zooms in, down zooms out, like Instagram: 150 pixels up is about 2.7 times.
+export const zoomFromSlide = (base, dy, range = ZOOM_RANGE) => clampZoom(base * Math.exp(-dy / 150), range);
+// "1x", "0.5x", "2.3x": one decimal unless it is a whole number.
+export const formatZoom = (z) => { const tenths = Math.round(z * 10) / 10; return `${Number.isInteger(tenths) ? Math.round(tenths) : tenths}x`; };
+
+// The part of a camera picture sw by sh that fills a 9:16 story at a digital zoom: the middle, cropped to the shape, then
+// shrunk by the zoom. The same crop is shown on screen, taken as a photo and recorded, so what is seen is what is posted.
+export function cropRect(sw, sh, zoom = 1, aspect = 9 / 16) {
+  const z = Math.max(1, Number.isFinite(zoom) ? zoom : 1);
+  let width = sw;
+  let height = sh;
+  if (sw / sh > aspect) width = sh * aspect; else height = sw / aspect;
+  width /= z;
+  height /= z;
+  return { x: (sw - width) / 2, y: (sh - height) / 2, width, height };
+}
+
+// What the camera is asked for: a portrait picture the shape of a story, about 1080 by 1920, from one side (or one named
+// camera), with no microphone. The browser may never crop or scale to get that shape (resizeMode none): a cropped picture is
+// a zoomed-in one. The app crops to the story shape itself, the same way on screen and in what is posted. zoom: true asks for
+// the camera's own zoom where the phone has one.
+export function cameraConstraints(facing, deviceId = null) {
+  const video = { width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 }, frameRate: { ideal: 30 }, resizeMode: { exact: 'none' }, zoom: true };
+  if (deviceId) video.deviceId = { exact: deviceId }; else video.facingMode = facing;
+  return { video, audio: false };
+}
+const SIDE = { user: /front|user/i, environment: /back|rear|environment/i };
+// The main camera on a side, never a telephoto or other special lens. iPhones name their lenses ("Back Camera", "Back Telephoto
+// Camera", "Back Ultra Wide Camera"); Android numbers them ("camera2 0, facing back") and the lowest number on a side is the
+// main lens. Null when the labels are not known (before the first permission) or no camera matches the side.
+export function pickCamera(devices, facing) {
+  const side = SIDE[facing] ?? SIDE.environment;
+  const list = (devices || []).filter((d) => d.kind === 'videoinput' && side.test(d.label || ''));
+  if (!list.length) return null;
+  const plain = list.filter((d) => !/tele|zoom|ultra|wide|macro|depth|dual|triple/i.test(d.label));
+  const pool = plain.length ? plain : list;
+  const number = (d) => { const m = /camera2?\s*(\d+)/i.exec(d.label); return m ? Number(m[1]) : 999; };
+  return [...pool].sort((a, b) => number(a) - number(b))[0].deviceId;
+}
+// A named ultra-wide camera on a side (iPhones name it; Android usually does not), or null.
+export function ultraWideOf(devices, facing) {
+  const side = SIDE[facing] ?? SIDE.environment;
+  return (devices || []).find((d) => d.kind === 'videoinput' && side.test(d.label || '') && /ultra|0\.5/i.test(d.label) && !/tele/i.test(d.label))?.deviceId ?? null;
+}
 
 // The ring round the shutter while recording: how far round it has filled (0 to 1), and the marks between the parts (degrees).
 export const ringFraction = (elapsed, limit) => Math.max(0, Math.min(1, limit > 0 ? elapsed / limit : 0));

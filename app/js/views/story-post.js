@@ -1,5 +1,7 @@
 // Post a story, like Instagram. The camera opens straight away, full screen, with no menu in between:
-//   STORY  tap the shutter for a photo, hold it to record a video, slide up while holding to lock the recording hands-free.
+//   STORY  tap the shutter for a photo, hold it to record a video; while holding, slide up or down to zoom and slide left onto
+//          the lock to keep recording hands-free. Pinch the picture to zoom, tap it to focus. The live picture is a 9:16
+//          frame from the main lens, shown exactly as it will be posted, with no sound (the microphone opens only while recording).
 //   VOICE  the shutter is a microphone: a tap (or a hold) records a voice message over a colour or a photo from the phone.
 //   TEXT   words on a colour (tap the background to change it), then Next.
 // Then a preview: Aa puts words on it (drag to move, pinch or wheel or the keys to resize, a palette to recolour), the pen
@@ -13,7 +15,7 @@ import { onSession } from '../session.js';
 import { h, fill, icon } from '../util.js';
 import { ic } from '../ui.js';
 import { uploadFile, shrinkPhoto, plainType, MAX_UPLOAD_BYTES, TOO_BIG } from '../uploads.js';
-import { PART_SECONDS, PART_LIMITS, PALETTE, MAX_TEXT, DAY, HOLD_MS, LOCK_PX, MODES, splitParts, partsFor, shownSeconds, maxSeconds, clock, tapAction, releaseAction, lockReached, ringFraction, ringMarks, nextColours, layerWords } from '../stories.js';
+import { PART_SECONDS, PART_LIMITS, PALETTE, MAX_TEXT, DAY, HOLD_MS, LOCK_PX, MODES, ZOOM_RANGE, splitParts, partsFor, shownSeconds, maxSeconds, clock, tapAction, releaseAction, lockReached, ringFraction, ringMarks, nextColours, layerWords, clampZoom, zoomFromSlide, formatZoom, cropRect, cameraConstraints, pickCamera, ultraWideOf } from '../stories.js';
 import { PEN_COLOURS, PEN_WIDTH, emptyOverlay, isEmpty, newLayer, clampSize, drawOverlay, hitLayer, composite, overlayImage } from '../story-canvas.js';
 import { avatarEl } from './story-row.js';
 
@@ -125,6 +127,20 @@ export function render(root) {
   let audioEl = null;
   let playing = false;
   let observer = null;
+  let zoom = 1;               // the zoom shown: the camera's own when it can zoom, otherwise a digital crop
+  let zoomCaps = null;        // { min, max } when the camera zooms itself
+  let digital = 1;            // the digital zoom in the crop (1 when the camera zooms itself)
+  let zoomTimer = 0;
+  let focusTimer = 0;
+  let devices = [];           // the cameras, known once permission has been given
+  let lens = 'main';          // main | ultra: which back camera is in use
+  let ultraWide = null;       // a named ultra-wide camera's id, 'zoom' when the main camera zooms below 1x, or null
+  let mic = null;             // the microphone, open only while recording
+  let canvasRec = null;       // the canvas that records exactly the picture on screen, when the camera's own picture would differ
+  let starting = false;       // the microphone is being opened for a recording
+  let cancelStart = false;    // the finger left the shutter before that finished
+  let pinch = null;           // { d0, z0 } while two fingers are on the picture
+  let lastConstraints = null; // what the camera was asked for (for the tests)
   // own-drag: the outlet's drag-to-scroll leaves this screen's drags alone. (Not "sp": that is the Home calendar's spacer class.)
   const host = h('div', { class: 'story-cam own-drag', 'data-stage': stage, 'data-mode': mode });
   root.append(host);
@@ -135,39 +151,111 @@ export function render(root) {
   const title = () => (stage === 'preview' ? 'Your story' : mode === 'voice' ? 'Voice message' : mode === 'text' ? 'Text story' : 'Camera');
   const focusLater = (selector) => setTimeout(() => { host.querySelector(selector)?.focus({ preventScroll: true }); }, 0);
   const layerById = (id) => overlay.layers.find((l) => l.id === id);
-  if (local) window.__storyEditor = () => ({ stage, mode, colours: draft?.colours ?? colours, locked, recording: recording(), handsFree, overlay: JSON.parse(JSON.stringify(overlay)), draft: draft && { kind: draft.kind, parts: draft.parts, duration: draft.duration } });
+  if (local) window.__storyEditor = () => ({
+    stage, mode, colours: draft?.colours ?? colours, locked, recording: recording(), handsFree, overlay: JSON.parse(JSON.stringify(overlay)), draft: draft && { kind: draft.kind, parts: draft.parts, duration: draft.duration },
+    zoom, digital, cameraZooms: !!zoomCaps, ultraWide: !!ultraWide, lens, constraints: lastConstraints,
+    previewAudioTracks: stream ? stream.getAudioTracks().length : null, micOpen: !!mic, throughCanvas: !!canvasRec,
+    recorderTracks: recorder ? { video: recorder.stream.getVideoTracks().length, audio: recorder.stream.getAudioTracks().length } : null,
+  });
 
-  // ---- The camera and the microphone ----
-  const cam = () => (camEl ??= h('video', { class: 'sp-cam', autoplay: '', muted: '', playsinline: '' }, h('track', { kind: 'captions', srclang: 'en', label: 'Captions', src: 'data:text/vtt,WEBVTT' })));
-  function stopTracks() { stream?.getTracks().forEach((t) => t.stop()); stream = null; if (camEl) camEl.srcObject = null; }
-  // data-ready on the root says the screen has settled (the camera or microphone is on, or nothing was needed, or it failed).
+  // ---- The camera (picture only: the microphone is opened only while recording, so nothing ever plays back) ----
+  function cam() {
+    if (!camEl) {
+      camEl = h('video', { class: 'sp-cam', autoplay: '', muted: '', playsinline: '', 'webkit-playsinline': '' }, h('track', { kind: 'captions', srclang: 'en', label: 'Captions', src: 'data:text/vtt,WEBVTT' }));
+      camEl.muted = true; camEl.defaultMuted = true; camEl.volume = 0; camEl.playsInline = true; // the attribute alone does not silence a video made in script
+    }
+    return camEl;
+  }
+  const videoTrack = () => stream?.getVideoTracks?.()[0] ?? null;
+  function stopMic() { mic?.getTracks().forEach((t) => t.stop()); mic = null; }
+  function stopTracks() { stream?.getTracks().forEach((t) => t.stop()); stream = null; if (camEl) camEl.srcObject = null; stopMic(); canvasRec?.stop(); canvasRec = null; }
+  const cameraFor = () => (lens === 'ultra' && typeof ultraWide === 'string' ? ultraWide : pickCamera(devices, facing));
+  // data-ready on the root says the screen has settled (the camera is on, or nothing was needed, or it failed).
   async function openMedia() {
     stopTracks();
     error = '';
     delete host.dataset.ready;
     draw();
-    if (mode === 'text') { host.dataset.ready = '1'; return; }
+    if (mode !== 'story') { host.dataset.ready = '1'; return; } // voice: the microphone opens when recording starts; text: nothing
     const my = ++streamTicket;
-    if (!navigator.mediaDevices?.getUserMedia) { say(mode === 'voice' ? 'This browser cannot record a voice message.' : 'The camera is not available in this browser. Choose a photo or video from your phone instead.'); host.dataset.ready = '1'; return; }
-    const want = mode === 'voice' ? { audio: true } : { video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } }, audio: true };
+    if (!navigator.mediaDevices?.getUserMedia) { say('The camera is not available in this browser. Choose a photo or video from your phone instead.'); host.dataset.ready = '1'; return; }
+    const open = async (deviceId) => { lastConstraints = cameraConstraints(facing, deviceId); return navigator.mediaDevices.getUserMedia(lastConstraints); };
     let got;
-    try { got = await navigator.mediaDevices.getUserMedia(want); } catch {
+    try { got = await open(cameraFor()); } catch {
       if (my !== streamTicket || closed) return;
-      say(mode === 'voice' ? 'The microphone could not be opened. Check the app may use it.' : 'The camera could not be opened. Check the app may use the camera and microphone, or choose a photo or video from your phone.');
+      say('The camera could not be opened. Check the app may use the camera, or choose a photo or video from your phone.');
       host.dataset.ready = '1';
       return;
     }
+    // With permission given, the cameras have names: use the main lens of this side if the browser picked another.
+    if (!devices.length) {
+      try { devices = await navigator.mediaDevices.enumerateDevices(); } catch { devices = []; }
+      const better = cameraFor();
+      const current = got.getVideoTracks()[0]?.getSettings?.().deviceId;
+      if (better && current && better !== current && my === streamTicket && !closed) {
+        try { const again = await open(better); got.getTracks().forEach((t) => t.stop()); got = again; } catch { /* keep the camera we have */ }
+      }
+    }
     if (my !== streamTicket || closed) { got.getTracks().forEach((t) => t.stop()); return; }
     stream = got;
-    if (mode === 'story') { cam().srcObject = stream; cam().play?.().catch(() => {}); applyTorch(); }
+    const caps = videoTrack()?.getCapabilities?.() || {};
+    zoomCaps = caps.zoom && Number.isFinite(caps.zoom.min) && Number.isFinite(caps.zoom.max) && caps.zoom.max > caps.zoom.min ? { min: caps.zoom.min, max: caps.zoom.max } : null;
+    ultraWide = ultraWideOf(devices, facing) || (zoomCaps && zoomCaps.min < 1 ? 'zoom' : null);
+    cam().srcObject = stream;
+    cam().play?.().catch(() => {});
+    applyZoom(lens === 'ultra' && ultraWide === 'zoom' ? zoomCaps.min : 1, { quiet: true });
+    applyTorch();
     draw();
     host.dataset.ready = '1';
   }
-  const hasTorch = () => !!stream?.getVideoTracks?.()[0]?.getCapabilities?.()?.torch;
-  function applyTorch() { const track = stream?.getVideoTracks?.()[0]; if (track && hasTorch()) track.applyConstraints({ advanced: [{ torch: flash }] }).catch(() => {}); }
-  function flipCamera() { if (recording()) return; facing = facing === 'user' ? 'environment' : 'user'; openMedia(); }
+  const hasTorch = () => !!videoTrack()?.getCapabilities?.()?.torch;
+  function applyTorch() { const track = videoTrack(); if (track && hasTorch()) track.applyConstraints({ advanced: [{ torch: flash }] }).catch(() => {}); }
+  function flipCamera() { if (recording() || starting) return; facing = facing === 'user' ? 'environment' : 'user'; lens = 'main'; openMedia(); }
+
+  // ---- Zoom: the camera's own where it has one, otherwise a digital crop of the picture (the same crop is posted) ----
+  const namedWide = () => typeof ultraWide === 'string' && ultraWide !== 'zoom';
+  const shownZoom = () => (lens === 'ultra' && namedWide() ? zoom * 0.5 : zoom); // the wide lens counts as 0.5x
+  const chipOn = (value) => (value < 1 ? lens === 'ultra' : lens === 'main' && Math.abs(zoom - 1) < 0.05);
+  function applyZoom(z, { quiet = false } = {}) {
+    if (zoomCaps) { zoom = clampZoom(z, zoomCaps); digital = 1; videoTrack()?.applyConstraints({ advanced: [{ zoom }] }).catch(() => {}); }
+    else { zoom = clampZoom(z, ZOOM_RANGE); digital = zoom; }
+    if (ultraWide === 'zoom') lens = zoom < 1 ? 'ultra' : 'main'; // one camera that zooms out below 1x
+    if (camEl) camEl.style.transform = `${facing === 'user' ? 'scaleX(-1) ' : ''}scale(${digital})`;
+    host.querySelectorAll('.sp-chip').forEach((b) => b.setAttribute('aria-pressed', String(chipOn(Number(b.dataset.zoom)))));
+    if (quiet) return;
+    const label = host.querySelector('.sp-zoom');
+    if (label) { label.textContent = formatZoom(shownZoom()); label.classList.add('show'); }
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => { host.querySelector('.sp-zoom')?.classList.remove('show'); announce(`Zoom ${formatZoom(shownZoom())}`); }, 1000);
+  }
+  function setLens(which) {
+    if (recording() || starting) return;
+    if (which === 'ultra' && !ultraWide) return;
+    if (ultraWide === 'zoom') { applyZoom(which === 'ultra' ? zoomCaps.min : 1); return; } // the same camera, zoomed out or back
+    if (which === lens) { applyZoom(1); return; }
+    lens = which;
+    openMedia(); // the other camera
+  }
+  // A tap on the picture asks the camera to focus there, where it can.
+  function focusAt(clientX, clientY) {
+    const frame = host.querySelector('.sp-cam-frame');
+    const track = videoTrack();
+    if (!frame || !track) return;
+    const r = frame.getBoundingClientRect();
+    const fx = (clientX - r.left) / r.width;
+    const fy = (clientY - r.top) / r.height;
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+    const caps = track.getCapabilities?.() || {};
+    const wanted = {};
+    if (Array.isArray(caps.focusMode) && caps.focusMode.includes('single-shot')) wanted.focusMode = 'single-shot';
+    if (caps.pointsOfInterest) wanted.pointsOfInterest = [{ x: facing === 'user' ? 1 - fx : fx, y: fy }];
+    if (!Object.keys(wanted).length) return;
+    track.applyConstraints({ advanced: [wanted] }).catch(() => {});
+    const ring = frame.querySelector('.sp-focus');
+    if (ring) { ring.style.left = `${clientX - r.left}px`; ring.style.top = `${clientY - r.top}px`; ring.classList.add('show'); clearTimeout(focusTimer); focusTimer = setTimeout(() => ring.classList.remove('show'), 800); }
+  }
   function setMode(m) {
-    if (!MODES.includes(m) || m === mode || recording() || busy) return;
+    if (!MODES.includes(m) || m === mode || recording() || starting || busy) return;
     mode = m; locked = false;
     openMedia();
     if (m === 'text') focusLater('.sp-text-input');
@@ -180,21 +268,23 @@ export function render(root) {
     announce('Colour changed');
   }
 
-  // ---- The shutter: tap, hold, slide up to lock; the keyboard does the same with Space or Enter and the up arrow ----
-  function pressStart(id, y) {
+  // ---- The shutter: tap, hold, slide up or down to zoom, slide left onto the lock; the keyboard: Space or Enter, the arrows ----
+  function pressStart(id, x, y) {
     if (press || busy || confirmOpen || stage !== 'camera' || closed) return;
-    press = { id, y0: y, started: false, timer: 0 };
+    press = { id, x0: x, y0: y, zoom0: zoom, started: false, timer: 0 };
     lastPress = performance.now();
+    cancelStart = false;
     host.querySelector('.sp-shutter')?.classList.add('held');
-    if (!recording() && mode !== 'text' && !handsFree && !timerOn) {
+    if (!recording() && !starting && mode !== 'text' && !handsFree && !timerOn) {
       press.timer = setTimeout(() => { if (!press || press.id !== id) return; press.started = true; startRecording(mode === 'voice' ? 'audio' : 'video'); }, HOLD_MS);
     }
   }
-  function pressMove(id, y) {
-    if (!press || press.id !== id || !press.started || locked || !recording()) return;
-    if (lockReached(press.y0, y)) { locked = true; setRecState(); announce('Locked. Tap the shutter to stop.'); try { navigator.vibrate?.(15); } catch { /* fine */ } }
+  function pressMove(id, x, y) {
+    if (!press || press.id !== id || !press.started || !recording()) return;
+    if (mode === 'story' && Number.isFinite(y)) applyZoom(zoomFromSlide(press.zoom0, y - press.y0, zoomCaps || ZOOM_RANGE)); // up zooms in, down zooms out
+    if (!locked && Number.isFinite(x) && lockReached(press.x0, x)) { locked = true; setRecState(); announce('Locked. Tap the shutter to stop.'); try { navigator.vibrate?.(15); } catch { /* fine */ } }
   }
-  function pressEnd(id, cancelled, y) {
+  function pressEnd(id, cancelled, x) {
     if (!press || press.id !== id) return;
     const p = press;
     press = null;
@@ -202,9 +292,10 @@ export function render(root) {
     clearTimeout(p.timer);
     host.querySelector('.sp-shutter')?.classList.remove('held');
     if (p.started) { // a hold that recorded: locked carries on, otherwise letting go stops it
-      // Lifting the finger high above the shutter locks too, in case the moves on the way up never came through.
-      if (!cancelled && !locked && recording() && Number.isFinite(y) && lockReached(p.y0, y)) { locked = true; announce('Locked. Tap the shutter to stop.'); }
-      if (recording() && releaseAction({ locked }) === 'stop') stopRecording(); else setRecState();
+      // Lifting the finger over the lock counts too, in case the moves on the way never came through.
+      if (!cancelled && !locked && Number.isFinite(x) && lockReached(p.x0, x)) { locked = true; announce('Locked. Tap the shutter to stop.'); }
+      if (!recording()) { if (!locked) cancelStart = true; setRecState(); return; } // the microphone was still opening
+      if (releaseAction({ locked }) === 'stop') stopRecording(); else setRecState();
       return;
     }
     if (!cancelled) tap();
@@ -226,19 +317,25 @@ export function render(root) {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       e.preventDefault();
       try { button.setPointerCapture(e.pointerId); } catch { /* fine */ }
-      pressStart(e.pointerId, e.clientY);
+      pressStart(e.pointerId, e.clientX, e.clientY);
     });
     button.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { // zoom from the keyboard, held or not
+        if (mode !== 'story') return;
+        e.preventDefault();
+        applyZoom(zoom * (e.key === 'ArrowUp' ? 1.25 : 0.8), {});
+        return;
+      }
       if (e.repeat) return;
-      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressStart('key', 0); }
-      else if (e.key === 'ArrowUp' && press?.id === 'key') { e.preventDefault(); pressMove('key', -LOCK_PX); }
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressStart('key', 0, 0); }
+      else if (e.key === 'ArrowLeft' && press?.id === 'key') { e.preventDefault(); pressMove('key', -LOCK_PX, NaN); }
     });
-    button.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressEnd('key'); } });
+    button.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressEnd('key', false, NaN); } });
     button.addEventListener('click', () => { if (performance.now() - lastPress < 600) return; tap(); }); // a tap sent with no pointer or key events (some assistive tools)
   }
-  host.addEventListener('pointermove', (e) => pressMove(e.pointerId, e.clientY));
-  host.addEventListener('pointerup', (e) => pressEnd(e.pointerId, false, e.clientY));
-  host.addEventListener('pointercancel', (e) => pressEnd(e.pointerId, true));
+  host.addEventListener('pointermove', (e) => pressMove(e.pointerId, e.clientX, e.clientY));
+  host.addEventListener('pointerup', (e) => pressEnd(e.pointerId, false, e.clientX));
+  host.addEventListener('pointercancel', (e) => pressEnd(e.pointerId, true, NaN));
 
   function countdown(n) {
     return new Promise((resolve) => {
@@ -271,33 +368,84 @@ export function render(root) {
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
-    const s = Math.max(W / v.videoWidth, H / v.videoHeight); // fill the story's shape, cropping the sides or the top
-    const w = v.videoWidth * s;
-    const hh = v.videoHeight * s;
+    const r = cropRect(v.videoWidth, v.videoHeight, digital); // the part on screen: the story's shape, and the digital zoom
     if (facing === 'user') { ctx.translate(W, 0); ctx.scale(-1, 1); } // the preview is mirrored; so is the photo
-    ctx.drawImage(v, (W - w) / 2, (H - hh) / 2, w, hh);
-    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+    ctx.drawImage(v, r.x, r.y, r.width, r.height, 0, 0, W, H);
+    const blob = await new Promise((r2) => canvas.toBlob(r2, 'image/jpeg', 0.9));
     if (!blob) { say('The photo could not be taken.'); return; }
     announce('Photo taken');
     setDraft({ kind: 'photo', blob, mimeType: 'image/jpeg', duration: shownSeconds('photo', 0), parts: partsFor('photo', 0) });
   }
 
-  // One continuous recording; the parts are worked out from the time that has run.
-  function startRecording(type) {
-    if (recording() || busy) return;
-    if (!stream) { say(type === 'audio' ? 'The microphone is not ready yet.' : 'The camera is not ready yet.'); return; }
+  // The camera's own picture is recorded when it is already what is on screen: a 9:16 picture, the back camera, no digital
+  // zoom. Otherwise (a mirrored selfie, a digital zoom, or a camera that only gives a wider picture) the picture on screen is
+  // drawn to a canvas and that is recorded, so what is seen is what is posted.
+  function needsCanvas() {
+    if (!camEl?.videoWidth || typeof HTMLCanvasElement.prototype.captureStream !== 'function') return false; // no way to record the screen's picture: the camera's own is recorded
+    const portrait = Math.abs(camEl.videoWidth / camEl.videoHeight - 9 / 16) < 0.03;
+    return digital !== 1 || facing === 'user' || !portrait;
+  }
+  function startCanvasFeed() {
+    const v = camEl;
+    const first = cropRect(v.videoWidth, v.videoHeight, 1);
+    const H = Math.min(1280, Math.round(first.height / 2) * 2);
+    const W = Math.round((H * 9) / 16 / 2) * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const out = canvas.captureStream(30);
+    let on = true;
+    let raf = 0;
+    let last = 0;
+    const draw = (t = 0) => {
+      if (!on) return;
+      if (t - last >= 30) { // about 30 frames a second, whatever the screen's own rate
+        last = t;
+        const r = cropRect(v.videoWidth, v.videoHeight, digital);
+        ctx.save();
+        if (facing === 'user') { ctx.translate(W, 0); ctx.scale(-1, 1); }
+        ctx.drawImage(v, r.x, r.y, r.width, r.height, 0, 0, W, H);
+        ctx.restore();
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return { stream: out, stop: () => { on = false; cancelAnimationFrame(raf); out.getTracks().forEach((t) => t.stop()); } };
+  }
+  // One continuous recording; the parts are worked out from the time that has run. The microphone opens here and closes at the end.
+  async function startRecording(type) {
+    if (recording() || starting || busy) return;
+    if (type === 'video' && !stream) { say('The camera is not ready yet.'); return; }
     if (!window.MediaRecorder) { say('This browser cannot record. Choose a video from your phone instead.'); return; }
+    starting = true;
+    let got;
+    try { got = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch {
+      starting = false;
+      say('The microphone could not be opened. Check the app may use it.');
+      return;
+    }
+    const wrongTime = closed || stage !== 'camera' || mode !== (type === 'audio' ? 'voice' : 'story') || (type === 'video' && !stream) || cancelStart;
+    if (wrongTime) { got.getTracks().forEach((t) => t.stop()); starting = false; cancelStart = false; locked = false; setRecState(); return; }
+    mic = got;
+    let picture = [];
+    if (type === 'video') {
+      if (needsCanvas()) { try { canvasRec = startCanvasFeed(); picture = canvasRec.stream.getVideoTracks(); } catch { canvasRec = null; picture = stream.getVideoTracks(); } }
+      else picture = stream.getVideoTracks();
+    }
     const mime = pickMime(type);
     const chunks = [];
     try {
-      recorder = new MediaRecorder(new MediaStream(type === 'audio' ? stream.getAudioTracks() : stream.getTracks()), { mimeType: mime || undefined, ...(type === 'video' ? { videoBitsPerSecond: 2500000, audioBitsPerSecond: 96000 } : { audioBitsPerSecond: 96000 }) });
-    } catch { say('This browser cannot record. Choose a video from your phone instead.'); return; }
+      recorder = new MediaRecorder(new MediaStream([...picture, ...mic.getAudioTracks()]), { mimeType: mime || undefined, ...(type === 'video' ? { videoBitsPerSecond: 2500000, audioBitsPerSecond: 96000 } : { audioBitsPerSecond: 96000 }) });
+    } catch { stopMic(); canvasRec?.stop(); canvasRec = null; starting = false; say('This browser cannot record. Choose a video from your phone instead.'); return; }
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
       const duration = Math.max(1, Math.round(elapsed));
       const blob = new Blob(chunks, { type: recorder?.mimeType || mime });
       recorder = null;
       locked = false;
+      stopMic();
+      canvasRec?.stop();
+      canvasRec = null;
       if (closed) return;
       setDraft({ kind: type, blob, mimeType: blob.type, duration, parts: splitParts(Math.min(duration, limitSeconds(type)), { partSeconds: PART, maxParts: PART_LIMITS[type] }), bg: type === 'audio' ? voicePhoto : null });
     };
@@ -310,6 +458,7 @@ export function render(root) {
       paintRecording();
     }, 200) };
     recorder.start(1000);
+    starting = false;
     announce('Recording');
     host.querySelector('.sp-error')?.remove();
     setRecState();
@@ -319,7 +468,7 @@ export function render(root) {
     clearInterval(rec.timer);
     rec = null;
     if (recorder && recorder.state !== 'inactive') recorder.stop();
-    else { locked = false; setRecState(); }
+    else { locked = false; stopMic(); canvasRec?.stop(); canvasRec = null; setRecState(); }
   }
   const shutterLabel = () => (recording() ? 'Stop recording' : mode === 'text' ? 'Next' : mode === 'voice' ? 'Record a voice message' : handsFree ? 'Record a video' : timerOn ? 'Take a photo after 3 seconds' : 'Take a photo. Hold to record a video');
   // The recording state is painted onto the controls in place, so a finger on the shutter keeps hold of it.
@@ -648,23 +797,42 @@ export function render(root) {
   const errorEl = () => (error ? h('p', { class: 'sp-error', role: 'alert' }, error) : null);
   const moreButton = () => h('button', { type: 'button', class: `sp-icon${moreOpen ? ' up' : ''}`, 'aria-label': moreOpen ? 'Fewer tools' : 'More tools', 'aria-expanded': String(moreOpen), onclick: () => { moreOpen = !moreOpen; draw(); focusLater(`.sp-rail button[aria-label="${moreOpen ? 'Fewer tools' : 'More tools'}"]`); } }, ic('down', 22, 2.2));
 
-  // Taps and swipes on the camera view: sideways changes the mode; a tap on a colour background changes the colour.
+  // Taps and swipes on the camera view: sideways changes the mode; a tap on a colour background changes the colour; on the
+  // live picture a tap focuses there and two fingers pinch to zoom.
   function attachView(view, { buttons = false } = {}) { // buttons: a swipe may start on one of the view's own buttons (the mode strip)
     let start = null;
+    const fingers = new Map();
     view.addEventListener('pointerdown', (e) => {
       if (e.target.closest(buttons ? 'textarea, input, label, a' : 'textarea, button, input, label, a')) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      start = { id: e.pointerId, x: e.clientX, y: e.clientY };
       if (!buttons) { try { view.setPointerCapture(e.pointerId); } catch { /* fine */ } } // not over buttons: a capture would take their taps away
+      fingers.set(e.pointerId, [e.clientX, e.clientY]);
+      if (fingers.size >= 2 && mode === 'story' && stage === 'camera') { // a second finger: a pinch, not a tap or a swipe
+        const [a, b] = [...fingers.values()];
+        pinch = { d0: Math.max(1, dist(a, b)), z0: zoom };
+        start = null;
+        return;
+      }
+      start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    });
+    view.addEventListener('pointermove', (e) => {
+      if (!fingers.has(e.pointerId)) return;
+      fingers.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pinch && fingers.size >= 2) { const [a, b] = [...fingers.values()]; applyZoom(pinch.z0 * (dist(a, b) / pinch.d0)); }
     });
     const end = (e) => {
+      fingers.delete(e.pointerId);
+      if (pinch) { if (fingers.size < 2) pinch = null; start = null; return; }
       if (!start || e.pointerId !== start.id) return;
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
       start = null;
       if (e.type === 'pointercancel' || recording()) return;
       if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy)) { const i = MODES.indexOf(mode); setMode(MODES[(i + (dx < 0 ? 1 : 2)) % 3]); return; }
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && mode !== 'story' && !(mode === 'voice' && voicePhoto)) cycleColours();
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+        if (mode === 'story') focusAt(e.clientX, e.clientY);
+        else if (!(mode === 'voice' && voicePhoto)) cycleColours();
+      }
     };
     view.addEventListener('pointerup', end);
     view.addEventListener('pointercancel', end);
@@ -674,8 +842,11 @@ export function render(root) {
     const type = mode === 'voice' ? 'audio' : 'video';
     const isRec = recording();
     const view = h('div', { class: 'sp-view' });
-    if (mode === 'story') { cam().classList.toggle('mirror', facing === 'user'); view.append(cam()); }
-    else {
+    if (mode === 'story') { // the live picture in the 9:16 frame a story has, so what is seen is what is posted
+      cam().classList.toggle('mirror', facing === 'user');
+      cam().style.transform = `${facing === 'user' ? 'scaleX(-1) ' : ''}scale(${digital})`;
+      view.append(h('div', { class: 'sp-cam-frame' }, cam(), h('span', { class: 'sp-focus', 'aria-hidden': 'true' })), h('span', { class: 'sp-zoom', 'aria-hidden': 'true' }, formatZoom(shownZoom())));
+    } else {
       view.append(h('div', { class: 'sp-bg', style: `background:linear-gradient(160deg, ${colours[0]}, ${colours[1]})` }, mode === 'voice' && voicePhoto ? h('img', { src: voicePhoto.url, alt: '' }) : null));
       if (mode === 'text') view.append(h('textarea', { class: 'sp-text-input', 'aria-label': 'Your words', maxlength: String(MAX_TEXT), rows: '4', oninput: (e) => { typed = e.target.value; const s = host.querySelector('.sp-shutter'); if (s) s.disabled = !typed.trim(); } }, typed));
       else view.append(h('div', { class: 'sp-voice-mark', 'aria-hidden': 'true' }, h('span', { class: 'sp-voice-icon' }, ic('mic', 40, 1.8))));
@@ -712,7 +883,10 @@ export function render(root) {
       },
     }, m.toUpperCase())));
     attachView(modes, { buttons: true });
-    const bottom = h('div', { class: 'sp-bottom' }, h('div', { class: 'sp-controls' }, mode === 'text' ? h('span') : pick, wrap, flip), modes);
+    const chip = (value, label) => h('button', { type: 'button', class: 'sp-chip', 'data-zoom': String(value), 'aria-label': label, 'aria-pressed': String(chipOn(value)), disabled: isRec ? '' : null, onclick: () => setLens(value < 1 ? 'ultra' : 'main') }, formatZoom(value));
+    const wideValue = ultraWide === 'zoom' ? zoomCaps.min : 0.5;
+    const chips = mode === 'story' && stream ? h('div', { class: 'sp-zoom-chips', role: 'group', 'aria-label': 'Zoom' }, ultraWide ? chip(wideValue, `Zoom ${formatZoom(wideValue)}, the wide lens`) : null, chip(1, 'Zoom 1x')) : null;
+    const bottom = h('div', { class: 'sp-bottom' }, chips, h('div', { class: 'sp-controls' }, mode === 'text' ? h('span') : pick, wrap, flip), modes);
     return [heading(), mode !== 'text' ? partsBar(type) : null, view, top, rail, bottom, busy ? h('div', { class: 'sp-status', role: 'status' }, busy) : null, errorEl(), live];
   }
 
@@ -797,9 +971,11 @@ export function render(root) {
     rec = null;
     if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch { /* fine */ } }
     recorder = null;
-    stopTracks();
+    stopTracks(); // the camera, the microphone and the recording canvas
     observer?.disconnect();
     clearTimeout(toastTimer);
+    clearTimeout(zoomTimer);
+    clearTimeout(focusTimer);
     if (draft?.url) URL.revokeObjectURL(draft.url);
     if (voicePhoto?.url) URL.revokeObjectURL(voicePhoto.url);
     if (lastThumb) URL.revokeObjectURL(lastThumb);

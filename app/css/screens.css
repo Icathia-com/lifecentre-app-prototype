@@ -714,8 +714,19 @@ body[data-route='story-post'] .screen { padding: 0; gap: 0; overflow: hidden; ba
 .story-cam { position: absolute; inset: 0; overflow: hidden; background: #000; color: #fff; touch-action: none; user-select: none; -webkit-user-select: none; }
 .story-cam textarea { user-select: text; -webkit-user-select: text; touch-action: auto; }
 .sp-view { position: absolute; inset: 0; }
-.sp-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+/* The live picture sits in the 9:16 frame a story has (centred, bars above and below on tall phones), zoomed by a transform
+   when the camera cannot zoom itself; the photo and the recording take the very same crop. */
+.sp-cam-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(100%, calc(100dvh * 9 / 16)); aspect-ratio: 9 / 16; max-height: 100%; overflow: hidden; background: #000; }
+.sp-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; transform-origin: center; transition: transform 0.08s linear; }
 .sp-cam.mirror { transform: scaleX(-1); }
+.sp-focus { position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.sp-focus.show { opacity: 1; }
+.sp-zoom { position: absolute; left: 50%; bottom: 258px; z-index: 6; transform: translateX(-50%); padding: 5px 11px; border-radius: 14px; background: rgba(0, 0, 0, 0.55); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+.sp-zoom.show { opacity: 1; }
+.sp-zoom-chips { display: flex; gap: 8px; }
+.sp-chip { min-width: 40px; height: 32px; padding: 0 10px; border: 0; border-radius: 16px; background: rgba(0, 0, 0, 0.42); color: #fff; font: 700 12px / 1 Manrope, system-ui, sans-serif; cursor: pointer; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.sp-chip[aria-pressed='true'] { background: #fff; color: #000; }
+.sp-chip:focus-visible { outline: 3px solid #4DA3FF; outline-offset: 2px; }
 .sp-bg { position: absolute; inset: 0; }
 .sp-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .sp-text-input, .sp-edit-input { display: block; margin: 0; padding: 0; border: 0; background: transparent; color: #fff; font: 700 34px / 1.25 Manrope, system-ui, sans-serif; text-align: center; resize: none; outline: none; caret-color: currentColor; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); overflow: hidden; }
@@ -750,7 +761,7 @@ body[data-route='story-post'] .screen { padding: 0; gap: 0; overflow: hidden; ba
 .sp-shutter.rec .sp-shutter-dot { background: #FF3D6E; transform: scale(0.55); border-radius: 14px; }
 .sp-shutter.rec.locked .sp-shutter-dot { border-radius: 8px; }
 .sp-time { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); white-space: nowrap; }
-.sp-lock { position: absolute; top: -78px; left: 50%; transform: translateX(-50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0, 0, 0, 0.45); color: #fff; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+.sp-lock { position: absolute; top: 50%; left: -72px; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0, 0, 0, 0.45); color: #fff; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; pointer-events: none; } /* to the left of the shutter: slide onto it to record hands-free */
 .sp-lock.show { opacity: 1; }
 .sp-lock.on { background: #fff; color: #000; }
 .sp-modes { display: flex; gap: 22px; }
@@ -763,8 +774,8 @@ body[data-route='story-post'] .screen { padding: 0; gap: 0; overflow: hidden; ba
 .sp-countdown { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 120px; font-weight: 800; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); pointer-events: none; }
 .sp-flashfx { position: absolute; inset: 0; z-index: 5; background: #fff; opacity: 0; pointer-events: none; }
 .sp-flashfx.on { opacity: 1; }
-.sp-error { position: absolute; left: 20px; right: 20px; bottom: 200px; z-index: 7; margin: 0; padding: 12px 16px; border-radius: 14px; background: rgba(200, 30, 60, 0.88); color: #fff; font-size: 14px; font-weight: 600; text-align: center; }
-.sp-status { position: absolute; left: 50%; bottom: 210px; z-index: 7; transform: translateX(-50%); padding: 10px 18px; border-radius: 20px; background: rgba(0, 0, 0, 0.6); font-size: 14px; font-weight: 700; white-space: nowrap; pointer-events: none; }
+.sp-error { position: absolute; left: 20px; right: 20px; bottom: 256px; z-index: 7; margin: 0; padding: 12px 16px; border-radius: 14px; background: rgba(200, 30, 60, 0.88); color: #fff; font-size: 14px; font-weight: 600; text-align: center; }
+.sp-status { position: absolute; left: 50%; bottom: 262px; z-index: 7; transform: translateX(-50%); padding: 10px 18px; border-radius: 20px; background: rgba(0, 0, 0, 0.6); font-size: 14px; font-weight: 700; white-space: nowrap; pointer-events: none; }
 .sp-note { position: absolute; left: 20px; right: 20px; bottom: 90px; z-index: 6; margin: 0; padding: 8px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.5); font-size: 13px; text-align: center; }
 /* the preview */
 .sp-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(100%, calc(100dvh * 9 / 16)); aspect-ratio: 9 / 16; max-height: 100%; overflow: hidden; }

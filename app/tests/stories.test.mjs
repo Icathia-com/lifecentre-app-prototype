@@ -1,7 +1,7 @@
 // Stories: the 30-second parts, the limits, who has a live story, and what is remembered on the phone.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitParts, partsFor, shownSeconds, maxSeconds, groupByAuthor, seenAll, markSeen, flatten, circleLabel, timeAgo, clock, safeMedia, PART_LIMITS, PALETTE, tapAction, releaseAction, lockReached, ringFraction, ringMarks, nextColours, layerWords, wrapLines } from '../js/stories.js';
+import { splitParts, partsFor, shownSeconds, maxSeconds, groupByAuthor, seenAll, markSeen, flatten, circleLabel, timeAgo, clock, safeMedia, PART_LIMITS, PALETTE, tapAction, releaseAction, lockReached, ringFraction, ringMarks, nextColours, layerWords, wrapLines, ZOOM_RANGE, clampZoom, zoomFromSlide, formatZoom, cropRect, cameraConstraints, pickCamera, ultraWideOf } from '../js/stories.js';
 import { hitLayer, fitBox, emptyOverlay, isEmpty, clampSize, MIN_SIZE, MAX_SIZE } from '../js/story-canvas.js';
 
 const NOW = Date.parse('2026-11-03T06:00:00Z');
@@ -74,7 +74,7 @@ describe('the camera (posting like Instagram)', () => {
     assert.equal(tapAction({ mode: 'voice', recording: true, handsFree: true }), 'stop');
     assert.equal(tapAction({ mode: 'text', recording: false, handsFree: false }), 'next');
     assert.deepEqual([releaseAction({ locked: true }), releaseAction({ locked: false })], ['keep', 'stop'], 'letting go after a hold');
-    assert.deepEqual([lockReached(500, 431), lockReached(500, 430), lockReached(500, 560)], [false, true, false], 'sliding up 70 pixels locks');
+    assert.deepEqual([lockReached(200, 131), lockReached(200, 130), lockReached(200, 260)], [false, true, false], 'sliding 70 pixels to the left, onto the lock, locks');
   });
   it('fills the ring round the shutter and marks every part', () => {
     assert.deepEqual([ringFraction(0, 180), ringFraction(90, 180), ringFraction(200, 180), ringFraction(5, 0)], [0, 0.5, 1, 0]);
@@ -108,5 +108,42 @@ describe('the camera (posting like Instagram)', () => {
     const cover = fitBox(1600, 900, 1080, 1920, 'cover');
     assert.deepEqual([Math.round(cover.x), cover.y, Math.round(cover.width), cover.height], [-1167, 0, 3413, 1920], 'cover fills the stage and crops the sides');
     assert.deepEqual(fitBox(1080, 1920, 1080, 1920), { x: 0, y: 0, width: 1080, height: 1920 });
+  });
+  it('zooms: clamped to the camera or to 1x-4x, a slide up from the shutter zooms in, and the level reads 1x, 0.5x, 2.3x', () => {
+    assert.deepEqual([clampZoom(0.2), clampZoom(9), clampZoom(2.5), clampZoom(NaN), clampZoom(0.5, { min: 0.5, max: 8 })], [1, 4, 2.5, 1, 0.5]);
+    assert.deepEqual(ZOOM_RANGE, { min: 1, max: 4 });
+    assert.equal(zoomFromSlide(1, 0), 1);
+    assert.ok(zoomFromSlide(1, -150) > 2.6 && zoomFromSlide(1, -150) < 2.8, 'about 2.7 times after 150 pixels up');
+    assert.equal(zoomFromSlide(2, 150), clampZoom(2 / Math.E), 'down zooms out');
+    assert.equal(zoomFromSlide(1, 100), 1, 'never below 1x');
+    assert.equal(zoomFromSlide(3, -500), 4, 'never above the top');
+    assert.deepEqual([formatZoom(1), formatZoom(0.5), formatZoom(2.26), formatZoom(1.96), formatZoom(4)], ['1x', '0.5x', '2.3x', '2x', '4x']);
+  });
+  it('crops the camera picture to the story shape, then by the zoom, from the middle', () => {
+    assert.deepEqual(cropRect(1080, 1920), { x: 0, y: 0, width: 1080, height: 1920 }, 'a portrait picture is used whole');
+    const landscape = cropRect(1920, 1080);
+    assert.deepEqual([Math.round(landscape.x), landscape.y, Math.round(landscape.width), landscape.height], [656, 0, 608, 1080], 'a landscape picture: the middle 9:16 slice');
+    const zoomed = cropRect(1080, 1920, 2);
+    assert.deepEqual(zoomed, { x: 270, y: 480, width: 540, height: 960 }, 'twice the zoom shows the middle half');
+    assert.deepEqual(cropRect(1080, 1920, 0.3), cropRect(1080, 1920, 1), 'zoom never goes below 1x in the crop');
+  });
+  it('asks the camera for a 9:16 picture at about 1080 by 1920 with no microphone, and picks the main lens on a side', () => {
+    const want = cameraConstraints('environment');
+    assert.deepEqual(want, { video: { width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 }, frameRate: { ideal: 30 }, resizeMode: { exact: 'none' }, zoom: true, facingMode: 'environment' }, audio: false }, 'never a cropped (zoomed) picture, never the microphone');
+    assert.deepEqual(cameraConstraints('user', 'cam-7').video.deviceId, { exact: 'cam-7' });
+    assert.equal(cameraConstraints('user', 'cam-7').video.facingMode, undefined);
+    const iphone = [
+      { kind: 'videoinput', deviceId: 'f', label: 'Front Camera' }, { kind: 'videoinput', deviceId: 'b', label: 'Back Camera' },
+      { kind: 'videoinput', deviceId: 't', label: 'Back Telephoto Camera' }, { kind: 'videoinput', deviceId: 'u', label: 'Back Ultra Wide Camera' },
+      { kind: 'videoinput', deviceId: 'd', label: 'Back Dual Wide Camera' }, { kind: 'audioinput', deviceId: 'm', label: 'Back Microphone' },
+    ];
+    assert.deepEqual([pickCamera(iphone, 'environment'), pickCamera(iphone, 'user'), ultraWideOf(iphone, 'environment'), ultraWideOf(iphone, 'user')], ['b', 'f', 'u', null]);
+    const android = [
+      { kind: 'videoinput', deviceId: 'a2', label: 'camera2 2, facing back' }, { kind: 'videoinput', deviceId: 'a1', label: 'camera2 1, facing front' },
+      { kind: 'videoinput', deviceId: 'a0', label: 'camera2 0, facing back' }, { kind: 'videoinput', deviceId: 'a3', label: 'camera2 3, facing back' },
+    ];
+    assert.deepEqual([pickCamera(android, 'environment'), pickCamera(android, 'user'), ultraWideOf(android, 'environment')], ['a0', 'a1', null], 'the lowest number on a side is the main lens');
+    assert.equal(pickCamera([{ kind: 'videoinput', deviceId: 'x', label: '' }], 'user'), null, 'no labels before permission: the side is asked for instead');
+    assert.equal(pickCamera([{ kind: 'videoinput', deviceId: 'w', label: 'Integrated Webcam' }], 'environment'), null);
   });
 });

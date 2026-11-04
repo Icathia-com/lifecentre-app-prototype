@@ -133,11 +133,14 @@ Admins, and anyone with **Can post stories** on the staff list, can post them.
 **Post one:** if you can post, your own circle is always first on Home, labelled **Your story**, with a small **+**. Tap the **+**
 (or **Post a story** on Account) and the camera opens straight away, full screen, like Instagram. If you have a story up, tapping
 your circle plays it and the **+** still opens the camera.
-- **STORY**: tap the big white button for a photo, or hold it to record a video. Slide your finger up while holding to lock the
-  recording so you can let go; tap the button again to stop. A ring round the button fills as you record, with a mark at every
-  30-second part, and the parts build up along the top. It stops by itself after 6 parts (3 minutes). The small square at the
-  bottom left opens your phone's photos and videos, the arrows at the bottom right switch between the front and back cameras,
-  and the flash is at the top right.
+- **STORY**: tap the big white button for a photo, or hold it to record a video. While holding, slide up to zoom in (down to
+  zoom out), and slide left onto the lock to keep recording without holding; tap the button again to stop. Pinch the picture
+  to zoom at any time, and tap it to focus there (on phones that allow it). **1x** under the picture goes back to normal, and
+  **0.5x** appears on phones that offer their wide lens. What you see in the frame is exactly what is posted. The microphone
+  only turns on while you record. A ring round the button fills as you record, with a mark at every 30-second part, and the
+  parts build up along the top. It stops by itself after 6 parts (3 minutes). The small square at the bottom left opens your
+  phone's photos and videos, the arrows at the bottom right switch between the front and back cameras, and the flash is at
+  the top right.
 - **VOICE**: swipe the words under the button, or tap **VOICE**. Tap the microphone to record (tap it again to stop), or hold it.
   Tap the background to change its colour, or choose a photo from your phone to go behind your voice. Up to 10 parts (5 minutes).
 - **TEXT**: a colour with a cursor. Type, tap the background to change the colour, then tap the tick.

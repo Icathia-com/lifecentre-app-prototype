@@ -3399,6 +3399,16 @@ describe('Stories', () => {
     await page.click('button[aria-label="Done"]');
     await page.waitForFunction(() => !document.querySelector('.sp-edit-input'));
   };
+  const pinchCamera = (page, from, to) => page.evaluate((d0, d1) => {
+    const f = document.querySelector('.sp-cam-frame');
+    const r = f.getBoundingClientRect();
+    const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+    const ev = (type, id, x) => f.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 21, clientX: x, clientY: cy, bubbles: true, cancelable: true }));
+    ev('pointerdown', 21, cx - d0 / 2); ev('pointerdown', 22, cx + d0 / 2);
+    for (let k = 1; k <= 5; k++) { const d = d0 + ((d1 - d0) * k) / 5; ev('pointermove', 21, cx - d / 2); ev('pointermove', 22, cx + d / 2); }
+    ev('pointerup', 21, cx - d1 / 2); ev('pointerup', 22, cx + d1 / 2);
+  }, from, to);
+  const PORTRAIT = { width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 }, frameRate: { ideal: 30 }, resizeMode: { exact: 'none' }, zoom: true };
   const framePoint = async (page) => { const f = await (await page.$('.sp-frame')).boundingBox(); return (fx, fy) => [f.x + f.width * fx, f.y + f.height * fy]; };
 
   it('the camera opens straight away for a poster: STORY mode with the tool rail, the picker, the shutter and the mode switcher; a tap (or Space) takes a photo, and the preview puts words and drawings on it, saves it and posts it', async () => {
@@ -3414,6 +3424,14 @@ describe('Stories', () => {
     await page.waitForSelector('.story-cam[data-stage=camera][data-mode=story][data-ready]');
     await camOn(page);
     assert.equal(await page.$('.st-opt'), null, 'no menu in between');
+    // the live picture: no sound at all (no microphone until recording starts), inline, from a portrait request, in the story's shape
+    let camState = await editor(page);
+    assert.deepEqual([camState.previewAudioTracks, camState.micOpen], [0, false], 'no microphone while the camera only shows the picture');
+    assert.deepEqual(await page.$eval('video.sp-cam', (v) => [v.muted, v.playsInline, v.volume, v.srcObject.getAudioTracks().length]), [true, true, 0, 0]);
+    assert.deepEqual(camState.constraints, { video: { ...PORTRAIT, facingMode: 'user' }, audio: false });
+    const shape = await page.$eval('.sp-cam-frame', (f) => { const r = f.getBoundingClientRect(); return r.width / r.height; });
+    assert.ok(Math.abs(shape - 9 / 16) < 0.005, `the picture is shown in the shape it is posted in: ${shape}`);
+    assert.deepEqual(await labels(page, '.sp-zoom-chips button'), ['Zoom 1x'], 'no 0.5x without a wide lens');
     assert.deepEqual(await labels(page, '.sp-top button'), ['Close', 'Flash off']);
     assert.deepEqual(await labels(page, '.sp-rail button'), ['Text', 'Draw', 'More tools']);
     assert.deepEqual(await labels(page, '.sp-controls [aria-label]'), ['Choose from your phone', 'Take a photo. Hold to record a video', 'Switch camera']);
@@ -3424,7 +3442,21 @@ describe('Stories', () => {
     await page.click('.sp-rail button[aria-label="Fewer tools"]');
     await shot(page, 'stories-camera');
     await checkAccessibility(page, 'Story camera');
-    // the keyboard: Space on the shutter takes the photo
+    // pinch to zoom: this camera cannot zoom itself, so the picture is zoomed digitally, and the level shows, then hides
+    await pinchCamera(page, 60, 150);
+    camState = await editor(page);
+    assert.ok(Math.abs(camState.zoom - 2.5) < 0.01 && camState.digital === camState.zoom && !camState.cameraZooms, `pinched to 2.5x: ${JSON.stringify(camState)}`);
+    assert.match(await page.$eval('video.sp-cam', (v) => v.style.transform), /^scaleX\(-1\) scale\(2\.5\d*\)$/);
+    assert.deepEqual(await page.$eval('.sp-zoom', (z) => [z.textContent, z.classList.contains('show')]), ['2.5x', true]);
+    await page.waitForFunction(() => !document.querySelector('.sp-zoom').classList.contains('show'), { timeout: 3000 });
+    await page.click('.sp-zoom-chips button[aria-label="Zoom 1x"]');
+    assert.equal((await editor(page)).zoom, 1, '1x goes back');
+    // the keyboard: the arrows zoom, and Space on the shutter takes the photo
+    await page.focus('.sp-shutter');
+    await page.keyboard.press('ArrowUp');
+    assert.equal((await editor(page)).zoom, 1.25);
+    await page.keyboard.press('ArrowDown');
+    assert.equal((await editor(page)).zoom, 1);
     await page.focus('.sp-shutter');
     await page.keyboard.press('Space');
     await page.waitForSelector('.story-cam[data-stage=preview]');
@@ -3497,14 +3529,22 @@ describe('Stories', () => {
     await page.mouse.down();
     await page.waitForSelector('.sp-shutter.rec', { timeout: 5000 });
     assert.equal(await page.$eval('.sp-shutter', (b) => b.getAttribute('aria-label')), 'Stop recording');
+    let recState = await editor(page);
+    assert.deepEqual([recState.micOpen, recState.recorderTracks, recState.throughCanvas, recState.previewAudioTracks], [true, { video: 1, audio: 1 }, true, 0], 'the microphone opens for the recording only; the selfie is recorded as seen (mirrored, cropped)');
     await page.waitForFunction(() => document.querySelectorAll('.sp-part.on').length >= 2, { timeout: 10000 });
     assert.match(await text(page, '.sp-time'), /^0:0[2-9]$/);
     const ring = await page.$eval('.sp-ring .prog', (c) => ({ len: parseFloat(c.getAttribute('stroke-dasharray')), off: parseFloat(c.style.strokeDashoffset) }));
     assert.ok(ring.off > 0 && ring.off < ring.len * 0.9, `the ring is part-way round: ${JSON.stringify(ring)}`);
     assert.equal(await page.$eval('.sp-shutter', (b) => b.classList.contains('locked')), false);
     await shot(page, 'stories-recording');
-    // slide up: locked, so letting go keeps recording
+    // slide up: zooms in while recording, and the level shows
     await page.mouse.move(sx, sy - 120, { steps: 6 });
+    recState = await editor(page);
+    assert.ok(Math.abs(recState.zoom - Math.exp(0.8)) < 0.02 && recState.digital === recState.zoom, `zoomed by sliding up: ${recState.zoom}`);
+    assert.equal(await text(page, '.sp-zoom'), '2.2x');
+    assert.equal(await page.$eval('.sp-shutter', (b) => b.classList.contains('locked')), false, 'sliding up does not lock');
+    // slide left onto the lock: letting go keeps recording
+    await page.mouse.move(sx - 120, sy - 120, { steps: 6 });
     await page.mouse.up();
     await page.waitForSelector('.sp-shutter.locked');
     await new Promise((r) => setTimeout(r, 400));
@@ -3512,6 +3552,9 @@ describe('Stories', () => {
     await shot(page, 'stories-locked');
     await page.waitForSelector('.story-cam[data-stage=preview]', { timeout: 25000 }); // stopped by itself at 6 parts of 2 seconds
     assert.deepEqual([await page.$eval('.sp-frame .sp-media', (m) => m.tagName), (await page.$$('.sp-parts .sp-part.on')).length], ['VIDEO', 6]);
+    assert.equal((await editor(page)).micOpen, false, 'the microphone is off again');
+    await page.waitForFunction(() => (document.querySelector('.sp-frame video.sp-media')?.webkitAudioDecodedByteCount || 0) > 0, { timeout: 10000 }); // the recording has sound
+    assert.deepEqual(await page.$eval('.sp-frame video.sp-media', (v) => [v.videoWidth > 0, Math.abs(v.videoWidth / v.videoHeight - 9 / 16) < 0.02]), [true, true], 'recorded in the story shape');
     await addText(page, 'Sunday 10am');
     await page.click('.sp-rail button[aria-label="Draw"]');
     const at = await framePoint(page);
@@ -3533,6 +3576,43 @@ describe('Stories', () => {
     await context.close();
   });
 
+  it('uses the camera\'s own zoom where it has one, offers 0.5x when it zooms out below 1x, and focuses where the picture is tapped', async () => {
+    await setPoster(STAFF, true);
+    const phone = (p) => p.evaluateOnNewDocument(() => { // a phone camera that zooms from 0.5x to 8x and focuses on a point
+      window.__applied = [];
+      const caps = MediaStreamTrack.prototype.getCapabilities;
+      MediaStreamTrack.prototype.getCapabilities = function () { const c = caps.call(this); return this.kind === 'video' ? { ...c, zoom: { min: 0.5, max: 8, step: 0.1 }, focusMode: ['continuous', 'single-shot'], pointsOfInterest: true } : c; };
+      MediaStreamTrack.prototype.applyConstraints = function (c) { window.__applied.push(JSON.parse(JSON.stringify(c))); return Promise.resolve(); };
+    });
+    const { page, errors, context } = await openAsStaff('/account', STAFF, { setup: async (p) => { await fakeMedia()(p); await phone(p); } });
+    await camera(page);
+    await page.waitForSelector('.sp-zoom-chips button[aria-label^="Zoom 0.5x"]');
+    let s = await editor(page);
+    assert.deepEqual([s.cameraZooms, s.ultraWide, s.zoom, s.digital, s.lens], [true, true, 1, 1, 'main']);
+    assert.deepEqual(await page.$$eval('.sp-zoom-chips button', (bs) => bs.map((b) => [b.textContent, b.getAttribute('aria-pressed')])), [['0.5x', 'false'], ['1x', 'true']]);
+    await page.click('.sp-zoom-chips button[aria-label^="Zoom 0.5x"]');
+    s = await editor(page);
+    assert.deepEqual([s.zoom, s.digital, s.lens], [0.5, 1, 'ultra']);
+    assert.deepEqual(await page.$$eval('.sp-zoom-chips button', (bs) => bs.map((b) => b.getAttribute('aria-pressed'))), ['true', 'false']);
+    assert.deepEqual((await page.evaluate(() => window.__applied)).at(-1), { advanced: [{ zoom: 0.5 }] }, 'the camera zooms itself');
+    assert.equal(await page.$eval('video.sp-cam', (v) => v.style.transform), 'scaleX(-1) scale(1)', 'no digital zoom on top');
+    await pinchCamera(page, 50, 300);
+    s = await editor(page);
+    assert.deepEqual([s.zoom, s.digital, s.lens], [3, 1, 'main'], 'a pinch zooms the camera itself, past 1x');
+    assert.deepEqual((await page.evaluate(() => window.__applied)).at(-1), { advanced: [{ zoom: 3 }] });
+    await page.click('.sp-zoom-chips button[aria-label="Zoom 1x"]');
+    assert.equal((await editor(page)).zoom, 1);
+    // a tap on the picture focuses there (the selfie is mirrored, so left and right swap for the camera)
+    const box = await (await page.$('.sp-cam-frame')).boundingBox();
+    await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.4);
+    const focus = (await page.evaluate(() => window.__applied)).at(-1).advanced[0];
+    assert.equal(focus.focusMode, 'single-shot');
+    assert.ok(Math.abs(focus.pointsOfInterest[0].x - 0.75) < 0.01 && Math.abs(focus.pointsOfInterest[0].y - 0.4) < 0.01, JSON.stringify(focus));
+    assert.equal(await page.$eval('.sp-focus', (f) => f.classList.contains('show')), true, 'a ring shows where it focuses');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
   it('VOICE: the shutter is a microphone; a tap records hands-free over a colour (tap the background to change it) or a photo from the phone, up to 10 parts; the preview plays it back and posts it with the words on the picture', async () => {
     await setPoster(STAFF, true);
     const calls = [];
@@ -3548,8 +3628,10 @@ describe('Stories', () => {
     await checkAccessibility(page, 'Voice mode');
     await choosePicture(page, '#sp-file');
     await page.waitForSelector('.sp-bg img');
+    assert.deepEqual([(await editor(page)).micOpen, (await editor(page)).previewAudioTracks], [false, null], 'no microphone until recording');
     await page.click('.sp-shutter');
     await page.waitForSelector('.sp-shutter.rec.locked');
+    assert.deepEqual((await editor(page)).recorderTracks, { video: 0, audio: 1 });
     await page.waitForFunction(() => document.querySelectorAll('.sp-part.on').length >= 2 && /0:0[3-9]/.test(document.querySelector('.sp-time')?.textContent || ''), { timeout: 10000 });
     await page.click('.sp-shutter');
     await page.waitForSelector('.story-cam[data-stage=preview]');

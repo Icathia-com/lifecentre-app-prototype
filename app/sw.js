@@ -2,7 +2,7 @@
 // It never touches data. Firestore, sign-in, the booking system, YouTube and anything else not listed below are left to the browser.
 // Files are fetched from the network first (so a new version shows up straight away) and fall back to the saved copy.
 // When the shell changes, raise VERSION: old copies are deleted when the new worker starts.
-const VERSION = 'v12';
+const VERSION = 'v13';
 const CACHE = `lc-shell-${VERSION}`;
 
 // Every file the app needs to open. app/tests/pwa.test.mjs fails if a file is missing from this list.
