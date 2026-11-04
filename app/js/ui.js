@@ -53,6 +53,9 @@ const PATHS = {
   download: '<path d="M12 4v12M6 10l6 6 6-6M4 20h16"/>',
   hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 6a1.5 1.5 0 0 1 3 0v6M14 7.5a1.5 1.5 0 0 1 3 0V13"/><path d="M8 12.5a1.5 1.5 0 0 0-3 .5v3a6 6 0 0 0 6 6h2a6 6 0 0 0 6-6v-6"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
+  book: '<path d="M2 5.5c3-1.4 6.6-1.2 10 1.2 3.4-2.4 7-2.6 10-1.2v13c-3-1.4-6.6-1.2-10 1.2-3.4-2.4-7-2.6-10-1.2z"/><path d="M12 6.7v13"/>',
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
 };
 
 export function ic(name, size = 18, stroke = 2) {

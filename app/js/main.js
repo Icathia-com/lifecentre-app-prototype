@@ -30,6 +30,9 @@ startRouter({
     { path: '/booking', name: 'booking', title: 'Book a space', load: () => import('./views/booking.js') },
     { path: '/staff', name: 'staff', title: 'Staff', load: () => import('./views/staff.js') },
     { path: '/account', name: 'account', tab: 'home', title: 'Account', load: () => import('./views/account.js') },
+    { path: '/profile', name: 'profile', tab: 'home', title: 'Profile', load: () => import('./views/profile.js') },
+    { path: '/profile/edit', name: 'profile-edit', tab: 'home', title: 'Edit profile', load: () => import('./views/profile-edit.js') },
+    { path: '/daily', name: 'daily', tab: 'home', title: 'Verse of the day', load: () => import('./views/daily.js') },
   ],
 }).then(() => showLaunchPopup(data)); // the launch pop-up, once a day, after the first screen is drawn
 // An installed app kept open overnight gets its "first open of the day" when it comes back to the screen (shown once a day).

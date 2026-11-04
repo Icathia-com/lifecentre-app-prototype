@@ -190,12 +190,14 @@ describe('Home', () => {
     assert.ok((await page.$$('.tile.line')).length >= 21 * 3);
     await context.close();
   });
-  it('opens the Account page from the avatar, which links on to Contact us', async () => {
+  it('opens the profile from the avatar, whose gear opens the Account page, which links on to Contact us', async () => {
     const { page, context } = await open();
-    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('href')), '#/account');
-    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('aria-label')), 'Account, sign in');
+    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('href')), '#/profile');
+    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('aria-label')), 'Profile');
     assert.equal(await page.$$eval('.avatar svg', (s) => s.length), 1); // a person icon while nobody is signed in
     await page.click('.avatar');
+    await waitTitle(page, 'Your profile');
+    await page.click('.pf-gear');
     await waitTitle(page, 'Account');
     assert.match(page.url(), /#\/account$/);
     await page.click('.acct-contact');
@@ -1495,7 +1497,7 @@ describe('Staff page', () => {
     await signIn(page, STAFF);
     await waitText(page, `Signed in as ${STAFF}`);
     assert.equal(await page.$('button::-p-text(Staff)'), null, 'staff should not see the Staff section');
-    assert.deepEqual(await page.$$eval('.switch button', (els) => els.map((e) => e.textContent)), ['Notices', 'Verses', 'Events']);
+    assert.deepEqual(await page.$$eval('.switch button', (els) => els.map((e) => e.textContent)), ['Notices', 'Verses', 'Devotions', 'Events']);
     await waitText(page, 'Secret notice'); // staff see drafts
 
     await page.type('#announcements-title', 'Youth night moved');
@@ -2949,7 +2951,7 @@ describe('Launch pop-up', () => {
     await page.waitForSelector('.pu-panel:not([aria-busy])'); // drawn with its data, so nothing is redrawn under a click
     assert.equal(await page.$eval('.pu-panel .cr-switch', (b) => b.getAttribute('aria-checked')), 'false');
     assert.match(await text(page, '.pu-state'), /^Off: nothing shows to members/);
-    assert.deepEqual(await page.$$eval('.switch .btn', (els) => els.map((b) => b.textContent)), ['Notices', 'Verses', 'Events', 'Staff', 'Pop-ups']);
+    assert.deepEqual(await page.$$eval('.switch .btn', (els) => els.map((b) => b.textContent)), ['Notices', 'Verses', 'Devotions', 'Events', 'Staff', 'Pop-ups']);
     await page.click('.pu-panel .btn::-p-text(New pop-up)');
     await page.waitForSelector('#pu-title');
     await page.type('#pu-title', 'Christmas service');
@@ -3739,7 +3741,7 @@ describe('Stories', () => {
     await other.context.close();
   });
 
-  it('Account: a Post a story button, the poster\'s stories with their view counts and Delete, and the name and photo shown on stories', async () => {
+  it('Account: a Post a story button, the poster\'s stories with their view counts and Delete; the name set in Edit profile is the one shown on stories', async () => {
     await setPoster(STAFF, true);
     await seedStory('mine', { author: STAFF, authorName: 'Staff Member', views: 3 });
     const calls = [];
@@ -3750,17 +3752,19 @@ describe('Stories', () => {
     }
     assert.match(await text(page, '.acct-stories'), /Video.*3 parts · 0:09 · 3 views/s);
     await new Promise((r) => setTimeout(r, 400)); // the page settles after its lists load
-    await page.evaluate(() => document.querySelector('#acct-name').focus());
-    await page.keyboard.type('Pastor Sam');
+    assert.equal(await page.$('#acct-name'), null, 'the name and photo moved to Edit profile');
     const press = (selector, label) => page.evaluate((sel, text) => { const b = [...document.querySelectorAll(sel)].find((x) => !text || x.textContent.trim() === text); b.scrollIntoView({ block: 'center' }); b.click(); }, selector, label); // no handle to go stale, and clear of the floating tab bar
-    await press('button.btn.primary', 'Save');
-    await page.waitForFunction(() => [...document.querySelectorAll('[role=status]')].some((s) => s.textContent.includes('Saved.')), { timeout: 15000 });
-    assert.equal((await readDoc('staff', STAFF)).displayName, 'Pastor Sam');
-    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:session'))).displayName, 'Pastor Sam');
     await press('button[aria-label="Delete this video story"]');
     await waitText(page, 'You have no story up at the moment.');
     assert.equal(await readDoc('stories', 'mine'), undefined);
-    // a story posted now carries the new name
+    // a new name in Edit profile goes to the staff entry, and a story posted now carries it
+    await goto(page, '/profile/edit');
+    await page.waitForSelector('#pf-name');
+    await page.type('#pf-name', 'Pastor Sam');
+    await page.click('.pf-form button[type=submit]');
+    await page.waitForFunction(() => location.hash === '#/profile', { timeout: 15000 });
+    assert.equal((await readDoc('staff', STAFF)).displayName, 'Pastor Sam');
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:session'))).displayName, 'Pastor Sam');
     await goto(page, '/stories/new');
     await page.waitForSelector('.story-cam[data-stage=camera][data-ready]');
     await page.click('.sp-modes [role=radio]::-p-text(TEXT)');
@@ -3870,6 +3874,392 @@ describe('Home greeting', () => {
     });
     assert.deepEqual(box, { text: 'Maximilianotheodorusbartholomew', clipped: true, overflow: 'ellipsis', wrap: 'nowrap', lines: 1, inside: true });
     assert.equal((await lines(page)).sr, `Good morning, Maximilianotheodorusbartholomew. ${longDate}`);
+    await context.close();
+  });
+});
+
+// ---- The daily verse flow and the profile ----
+
+const flowStep = (page) => page.$eval('.dv', (d) => d.dataset.step);
+const waitStep = (page, step) => page.waitForFunction((s) => document.querySelector('.dv')?.dataset.step === s && document.querySelector('#page-title'), { timeout: 15000 }, step);
+const dailySaved = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('lc:v1:daily') || 'null'));
+// Saved on the phone before the first load (a reload keeps what the app has saved since).
+const presetLocal = (values) => (p) => p.evaluateOnNewDocument((v) => { for (const [k, x] of Object.entries(v)) if (localStorage.getItem(`lc:v1:${k}`) === null) localStorage.setItem(`lc:v1:${k}`, JSON.stringify(x)); }, values);
+const swipe = async (page, from, to) => { await page.mouse.move(195, from); await page.mouse.down(); await page.mouse.move(195, to, { steps: 8 }); await page.mouse.up(); };
+const pickPicture = (page, selector, { width = 900, height = 1200, colour = '#2A1B6B' } = {}) => page.evaluate(async (sel, w, hgt, c) => {
+  const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = hgt;
+  const g = canvas.getContext('2d'); g.fillStyle = c; g.fillRect(0, 0, w, hgt); g.fillStyle = '#FFD25E'; g.beginPath(); g.arc(w / 2, hgt / 2, Math.min(w, hgt) / 4, 0, 7); g.fill();
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+  const dt = new DataTransfer(); dt.items.add(new File([blob], 'pic.jpg', { type: 'image/jpeg' }));
+  const input = document.querySelector(sel); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+}, selector, width, height, colour);
+const seedDevotion = (date = TODAY, extra = {}) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'devotions', date), {
+  title: 'Rest for the weary', body: 'Jesus does not ask the tired to try harder.\n\nHe asks them to come.', prayer: 'Lord, we come to you as we are. Give us your rest today. Amen.',
+  passageId: 'MAT.11.28-30', reference: 'Matthew 11:28-30', updatedBy: STAFF, ...extra,
+}));
+const seedTextStory = (id, fields = {}) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'stories', id), {
+  author: 'sam@lifecentre.sg', authorName: 'Samuel Tan', type: 'text', text: 'Good morning, church!', colours: ['#FF6A3D', '#E5326B'], duration: 6, parts: [{ start: 0, end: 6 }],
+  views: 0, createdAt: Timestamp.fromMillis(Date.now() - 3600000), expiresAt: Timestamp.fromMillis(Date.now() + 20 * 3600000), updatedBy: 'sam@lifecentre.sg', ...fields,
+}));
+const CHAPTER_VERSES = [14, 15, 16, 17, 18].map((n) => ({ n, text: n === 16 ? 'For God so loved the world, that he gave his only born Son.' : `Verse ${n} of the chapter, as the version gives it.` }));
+const seedChapter = (versionId, fields = {}) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'chapters', `${TODAY}_${versionId}`), Object.fromEntries(Object.entries({
+  date: TODAY, versionId, chapterId: 'JHN.3', passageId: 'JHN.3.16', reference: 'John 3', abbr: 'WEB', name: 'World English Bible', verses: CHAPTER_VERSES, notice: '', publisher: 'worldenglishbible.org', link: 'https://worldenglishbible.org', ...fields,
+}).filter(([, v]) => v !== undefined))));
+
+describe('The daily verse flow', () => {
+  it('opens from the Home verse: the verse large in the chosen version, then straight to the streak when there is no story or devotion', async () => {
+    await seedVotd();
+    const { page, errors, context } = await open('#/');
+    await waitVerse(page, 'NIV');
+    assert.equal(await page.$eval('.verse-card .verse-open', (a) => a.getAttribute('href')), '#/daily');
+    await page.click('.verse-open');
+    await waitTitle(page, 'Verse of the day');
+    await page.waitForSelector('.dv blockquote');
+    const shown = await page.$eval('.dv', (d) => ({
+      text: d.querySelector('blockquote').textContent, ref: d.querySelector('cite').textContent, chip: d.querySelector('.dv-chip').textContent.trim(),
+      notice: d.querySelector('.dv-notice').textContent, link: d.querySelector('.dv-notice a').href, font: parseFloat(getComputedStyle(d.querySelector('blockquote')).fontSize),
+      chapter: !!d.querySelector('.dv-btn'), tabbar: getComputedStyle(document.querySelector('.tabbar')).display,
+    }));
+    assert.deepEqual(shown, { text: 'For God so loved the world that he gave his one and only Son.', ref: 'John 3:16', chip: 'NIV', notice: `${NIV_NOTICE} Biblica`, link: 'https://www.biblica.com/', font: shown.font, chapter: false, tabbar: 'none' });
+    assert.ok(shown.font >= 30, `the verse is large (${shown.font}px)`);
+    assert.doesNotMatch(await page.$eval('.dv', (d) => d.innerText), /swipe|scroll|tap /i, 'no how-to hints');
+    assert.deepEqual(await dailySaved(page), { read: [TODAY], done: [] }, 'opening the verse counts a verse read, not yet a devotion');
+    await shot(page, 'daily-1-verse');
+    await checkAccessibility(page, 'Daily verse');
+    await page.click('.dv-next');
+    await waitStep(page, 'streak');
+    assert.deepEqual(await dailySaved(page), { read: [TODAY], done: [TODAY] });
+    const streak = await page.$eval('.dv', (d) => ({ count: d.querySelector('.dv-count').textContent, days: d.querySelector('.dv-days').textContent, dots: [...d.querySelectorAll('.dv-week li')].map((li) => li.classList.contains('done')), next: d.querySelector('.dv-next').hidden }));
+    assert.deepEqual(streak, { count: '1', days: 'day in a row', dots: [false, false, false, false, false, false, true], next: true });
+    await new Promise((r) => setTimeout(r, 400));
+    await shot(page, 'daily-3-streak');
+    await checkAccessibility(page, 'Streak');
+    await page.click('.dv-done');
+    await page.waitForFunction(() => location.hash === '#/');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('shows today\'s written devotion when no story is up: title, passage, devotion and prayer; a swipe up at its end goes on', async () => {
+    await seedDevotion();
+    const { page, errors, context } = await open('#/daily');
+    await page.waitForFunction(() => !document.querySelector('.dv-wait'));
+    await swipe(page, 600, 380);
+    await waitStep(page, 'devotion');
+    const d = await page.$eval('.dv-devotion', (a) => ({ title: a.querySelector('h2').textContent, ref: a.querySelector('.dv-dref').textContent, body: [...a.querySelectorAll('.dv-body')].map((p) => p.textContent), prayer: a.querySelector('.dv-prayer').textContent }));
+    assert.deepEqual(d, { title: 'Rest for the weary', ref: 'Matthew 11:28-30', body: ['Jesus does not ask the tired to try harder.', 'He asks them to come.'], prayer: 'PrayerLord, we come to you as we are. Give us your rest today. Amen.' });
+    await new Promise((r) => setTimeout(r, 400));
+    await shot(page, 'daily-2-devotion');
+    await checkAccessibility(page, 'Devotion');
+    await page.$eval('.dv-panel', (p) => { p.scrollTop = p.scrollHeight; });
+    await swipe(page, 600, 380);
+    await waitStep(page, 'streak');
+    await swipe(page, 300, 560); // and back down
+    await waitStep(page, 'devotion');
+    await page.keyboard.press('ArrowUp');
+    await waitStep(page, 'verse');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('plays today\'s stories in the viewer inside the flow (before any devotion), then goes on to the streak', async () => {
+    await seedDevotion();
+    await seedTextStory('st1');
+    const { page, errors, context } = await open('#/daily');
+    await page.waitForFunction(() => !document.querySelector('.dv-wait'));
+    await page.click('.dv-next');
+    await waitStep(page, 'stories');
+    await page.waitForSelector('.dv .st-layer .st-stage');
+    assert.equal(await page.$eval('.st-stage .st-who b', (b) => b.textContent), 'Samuel Tan');
+    await new Promise((r) => setTimeout(r, 500));
+    await shot(page, 'daily-2-stories');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.st-stage'));
+    assert.deepEqual(await page.$$eval('.dv-person span:last-child', (s) => s.map((x) => x.textContent)), ['Samuel Tan']);
+    await shot(page, 'daily-2-stories-after');
+    await page.click('.dv-next');
+    await waitStep(page, 'streak');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('counts on the phone with no sign-in: a verse read once a day, and a streak that starts again after a missed day', async () => {
+    const day = (n) => addDays(TODAY, n);
+    // two days in a row, then yesterday missed: back to 1 today
+    const broken = await open('#/daily', { setup: presetLocal({ daily: { read: [day(-3), day(-2)], done: [day(-3), day(-2)] } }) });
+    await broken.page.waitForFunction(() => !document.querySelector('.dv-wait'));
+    await broken.page.click('.dv-next');
+    await waitStep(broken.page, 'streak');
+    assert.equal(await text(broken.page, '.dv-count'), '1');
+    assert.deepEqual(await broken.page.$$eval('.dv-week li', (els) => els.map((li) => li.classList.contains('done'))), [false, false, false, true, true, false, true]);
+    await broken.context.close();
+    // yesterday and the day before: 3 today; opening the flow again the same day counts nothing twice
+    const kept = await open('#/daily', { setup: presetLocal({ daily: { read: [day(-2), day(-1)], done: [day(-2), day(-1)] } }) });
+    await kept.page.waitForFunction(() => !document.querySelector('.dv-wait'));
+    await kept.page.click('.dv-next');
+    await waitStep(kept.page, 'streak');
+    assert.equal(await text(kept.page, '.dv-count'), '3');
+    assert.equal(await text(kept.page, '.dv-days'), 'days in a row');
+    await kept.page.reload(); // the flow opened again the same day
+    await waitStep(kept.page, 'verse');
+    await kept.page.waitForFunction(() => !document.querySelector('.dv-wait'));
+    await kept.page.click('.dv-next');
+    await waitStep(kept.page, 'streak');
+    assert.deepEqual(await dailySaved(kept.page), { read: [day(-2), day(-1), TODAY], done: [day(-2), day(-1), TODAY] });
+    await kept.context.close();
+  });
+
+  it('offers the full chapter for versions not published by Biblica, highlights the day\'s verses, and offers Biblica\'s only once an admin turns it on', async () => {
+    await seedVotd();
+    await seedChapter(206);
+    await seedChapter(111, { abbr: 'NIV', name: 'New International Version', notice: NIV_NOTICE, publisher: 'Biblica', link: 'https://www.biblica.com' });
+    await seedChapter(2692, { abbr: 'NASB 2020', verses: undefined, text: 'Verse 15 text. For God so loved the world, that He gave His only Son. Verse 17 text.', notice: NASB_NOTICE, publisher: 'The Lockman Foundation', link: 'https://www.lockman.org' });
+    const { page, errors, context } = await open('#/daily', { setup: presetLocal({ 'bible-version': 206 }) });
+    await page.waitForSelector('.dv-btn');
+    assert.equal(await text(page, '.dv-btn'), 'Read the full chapter');
+    await page.click('.dv-btn');
+    await page.waitForSelector('.dv-chapter');
+    const ch = await page.$eval('.dv-chapter', (c) => ({ title: c.querySelector('h2').textContent, verses: [...c.querySelectorAll('.dv-v')].map((v) => v.dataset.verse), marked: [...c.querySelectorAll('mark.dv-v')].map((v) => v.dataset.verse), link: c.querySelector('.dv-ch-notice a')?.href }));
+    assert.deepEqual(ch, { title: 'John 3WEB', verses: ['14', '15', '16', '17', '18'], marked: ['16'], link: 'https://worldenglishbible.org/' });
+    await new Promise((r) => setTimeout(r, 300));
+    await shot(page, 'daily-chapter');
+    await checkAccessibility(page, 'Full chapter');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.dv-chapter'));
+    // NIV (Biblica): no button while the switch is off
+    await page.click('.dv-chip');
+    await page.waitForSelector('#vs-search');
+    await page.type('#vs-search', 'NIV');
+    await page.click('.vs-item[data-version="111"]');
+    await page.waitForFunction(() => document.querySelector('.dv-chip')?.textContent.trim() === 'NIV');
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal(await page.$('.dv-btn'), null, 'no full chapter for Biblica yet');
+    // a chapter without verse marks: the day's verses are found by their text, with Lockman's full notice
+    await page.click('.dv-chip');
+    await page.waitForSelector('#vs-search');
+    await page.type('#vs-search', 'NASB 2020');
+    await page.click('.vs-item[data-version="2692"]');
+    await page.waitForSelector('.dv-btn');
+    await page.click('.dv-btn');
+    await page.waitForSelector('.dv-chapter');
+    assert.equal(await text(page, '.dv-chapter mark'), 'For God so loved the world, that He gave His only Son.');
+    assert.match(await text(page, '.dv-ch-notice'), /Lockman Foundation\. All rights reserved/);
+    await page.click('.dv-ch-head .dv-icon');
+    await context.close();
+    // an admin turns on "Full chapter for Biblica versions": NIV offers it too
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'config', 'bible'), { biblicaChapters: true, updatedBy: ADMIN }));
+    const on = await open('#/daily', { setup: presetLocal({ 'bible-version': 111 }) });
+    await on.page.waitForSelector('.dv-btn');
+    await on.page.click('.dv-btn');
+    await on.page.waitForSelector('.dv-chapter');
+    assert.match(await text(on.page, '.dv-ch-notice'), /Biblica, Inc\./);
+    await on.context.close();
+    assert.deepEqual(errors, []);
+  });
+});
+
+describe('Staff: devotions and the Biblica switch', () => {
+  it('admins and staff schedule a devotion per date with a passage and a prayer; it lists by date and title', async () => {
+    const { page, errors, context } = await openAsStaff('/staff', STAFF, { width: 760, height: 1300 });
+    await page.click('button[aria-pressed]::-p-text(Devotions)');
+    await page.waitForSelector('#devotions-title');
+    assert.equal(await page.$eval('#devotions-body', (t) => t.maxLength), 3000);
+    await page.type('#devotions-title', 'Rest for the weary');
+    await page.type('#devotions-body', 'Jesus does not ask the tired to try harder.');
+    assert.equal(await text(page, '.pf-count'), '43/3000');
+    await page.select('#devotions-book', 'MAT');
+    await page.type('#devotions-chapter', '11');
+    await page.type('#devotions-verseFrom', '28');
+    await page.type('#devotions-verseTo', '30');
+    await page.type('#devotions-prayer', 'Lord, give us rest. Amen.');
+    await shot(page, 'staff-devotions');
+    await page.click('form button[type=submit]');
+    await waitText(page, 'Saved.', '[role=status]');
+    const date = addDays(TODAY, 1);
+    const saved = await readDoc('devotions', date);
+    assert.deepEqual([saved.title, saved.body, saved.prayer, saved.passageId, saved.reference, saved.updatedBy], ['Rest for the weary', 'Jesus does not ask the tired to try harder.', 'Lord, give us rest. Amen.', 'MAT.11.28-30', 'Matthew 11:28-30', STAFF]);
+    await waitText(page, `${dayLabel(date)} · Rest for the weary`, '.items');
+    await shot(page, 'staff-devotions-saved');
+    await checkAccessibility(page, 'Staff devotions');
+    // staff see no Biblica switch on Verses
+    await page.click('button[aria-pressed]::-p-text(Verses)');
+    await page.waitForSelector('#verses-chapter');
+    assert.equal(await page.$('#bible-biblica'), null);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('only admins see "Full chapter for Biblica versions": off at first, and turning it on saves it', async () => {
+    const { page, context } = await openAsStaff('/staff', ADMIN, { width: 760, height: 1100 });
+    await page.click('button[aria-pressed]::-p-text(Verses)');
+    await page.waitForSelector('#bible-biblica:not([disabled])');
+    assert.equal(await page.$eval('label[for=bible-biblica]', (l) => l.textContent), 'Full chapter for Biblica versions');
+    assert.equal(await page.$eval('#bible-biblica', (b) => b.checked), false);
+    await page.click('#bible-biblica');
+    await waitText(page, 'Saved.', '[role=status]');
+    assert.equal((await readDoc('config', 'bible')).biblicaChapters, true);
+    await context.close();
+  });
+});
+
+describe('Profile', () => {
+  it('opens from the Home avatar for anyone: banner, photo, name, the chips, Edit and Share, and the gear opens the Account screen', async () => {
+    const { page, errors, context } = await open('#/');
+    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('href')), '#/profile');
+    assert.equal(await page.$eval('.avatar', (a) => a.getAttribute('aria-label')), 'Profile');
+    await page.click('.avatar');
+    await waitTitle(page, 'Your profile');
+    const p = await page.$eval('.pf', (el) => ({
+      banner: !!el.querySelector('.pf-banner'), photo: !!el.querySelector('.pf-head .pf-photo'), chips: [...el.querySelectorAll('.pf-chip')].map((c) => c.textContent),
+      actions: [...el.querySelectorAll('.pf-actions > *')].map((a) => a.textContent), stories: !!el.querySelector('.pf-stories'), gear: el.querySelector('.pf-gear').getAttribute('href'),
+    }));
+    assert.deepEqual(p, { banner: true, photo: true, chips: ['0verses read', '0devotions', '0day streak'], actions: ['Edit profile', 'Share my profile'], stories: false, gear: '#/account' });
+    await checkAccessibility(page, 'Profile');
+    await page.click('.pf-gear');
+    await waitTitle(page, 'Account');
+    await page.waitForSelector('#bk-email');
+    assert.match(await text(page, '#main'), /Staff sign-in with Google/);
+    assert.equal(await page.$eval('.bk-head .round-btn', (a) => a.getAttribute('href')), '#/profile');
+    await page.click('.acct-contact');
+    await waitTitle(page, 'Contact us');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('edits the photo (cropped round), the banner (cropped wide), name, bio or verse and birthday, keeps them on the phone, and sends none of it anywhere', async () => {
+    const sent = [];
+    const { page, errors, context } = await open('#/profile/edit', { setup: (p) => p.on('request', (r) => sent.push(`${r.url()} ${r.postData() ?? ''}`)) });
+    await pickPicture(page, '#pf-photo-file');
+    await page.waitForSelector('.crop-layer .crop-frame.circle');
+    await new Promise((r) => setTimeout(r, 200));
+    await page.$eval('.crop-zoom', (z) => { z.value = '1.5'; z.dispatchEvent(new Event('input')); });
+    await shot(page, 'profile-crop-photo');
+    await page.click('.crop-use');
+    await page.waitForFunction(() => !document.querySelector('.crop-layer') && document.querySelector('.pf-head img.pf-photo')?.src.startsWith('data:image/jpeg'));
+    await pickPicture(page, '#pf-banner-file', { width: 1600, height: 900, colour: '#1F3A63' });
+    await page.waitForSelector('.crop-layer .crop-frame.wide');
+    await page.click('.crop-use');
+    await page.waitForFunction(() => !document.querySelector('.crop-layer') && document.querySelector('.pf-banner').style.backgroundImage.includes('data:image/jpeg'));
+    await page.select('#pf-month', '2');
+    await page.select('#pf-day', '29');
+    await page.type('#pf-name', 'Grace Lim');
+    await page.type('#pf-bio', `The Lord is my shepherd; I shall not want. ${'x'.repeat(200)}`);
+    assert.equal(await page.$eval('#pf-bio', (t) => t.value.length), 150);
+    assert.equal(await text(page, '.pf-count'), '150/150');
+    await page.$eval('#pf-bio', (t) => { t.value = 'The Lord is my shepherd; I shall not want. Psalm 23:1'; t.dispatchEvent(new Event('input')); });
+    await shot(page, 'profile-edit');
+    await checkAccessibility(page, 'Edit profile');
+    const before = sent.length;
+    await page.click('.pf-form button[type=submit]');
+    await page.waitForFunction(() => location.hash === '#/profile');
+    await waitTitle(page, 'Grace Lim');
+    const p = await page.$eval('.pf', (el) => ({ bio: el.querySelector('.pf-bio').textContent, chips: [...el.querySelectorAll('.pf-chip')].map((c) => c.textContent), photo: el.querySelector('.pf-head img').src.slice(0, 23), banner: el.querySelector('.pf-banner').style.backgroundImage.includes('data:image/jpeg') }));
+    assert.deepEqual(p, { bio: 'The Lord is my shepherd; I shall not want. Psalm 23:1', chips: ['0verses read', '0devotions', '0day streak', '29 Febbirthday'], photo: 'data:image/jpeg;base64,', banner: true });
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('lc:v1:profile')));
+    assert.deepEqual(Object.keys(saved).sort(), ['banner', 'bio', 'birthday', 'name', 'photo']);
+    assert.deepEqual(saved.birthday, { day: 29, month: 2 }, 'day and month, never a year');
+    assert.ok(saved.photo.length < 60000 && saved.banner.length < 300000, `pictures kept small (${saved.photo.length}, ${saved.banner.length})`);
+    const dims = await page.evaluate((src) => new Promise((r) => { const i = new Image(); i.onload = () => r([i.width, i.height]); i.src = src; }), saved.banner);
+    assert.deepEqual(dims, [1200, 400], 'the banner is cropped wide');
+    assert.ok(!sent.slice(before).some((s) => /Grace|Psalm|data:image|shepherd/.test(s)), 'nothing about the profile is sent');
+    await new Promise((r) => setTimeout(r, 300));
+    await shot(page, 'profile');
+    await goto(page, '/');
+    await page.waitForSelector('.avatar img');
+    assert.equal(await page.$eval('.avatar', (a) => a.textContent), '');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('Share my profile: the phone\'s share sheet with the invitation, or the list of Copy link, WhatsApp, Telegram and Email', async () => {
+    const message = "Grace invited you to the Life Centre app. Join us: https://icathia.com/lifecentre-app-prototype/app/";
+    const noSheet = (p) => p.evaluateOnNewDocument(() => { Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true }); });
+    const { page, errors, context } = await open('#/profile', { setup: async (p) => { await noSheet(p); await presetLocal({ profile: { name: 'Grace Lim', bio: 'Psalm 23', birthday: { day: 3, month: 4 } } })(p); } });
+    await page.click('.pf-share');
+    await page.waitForSelector('.share-sheet');
+    const sheet = await page.$eval('.share-sheet', (s) => ({ msg: s.querySelector('.sh-msg').textContent, items: [...s.querySelectorAll('.sh-item')].map((i) => [i.textContent, i.getAttribute('href')]) }));
+    assert.equal(sheet.msg, message);
+    assert.deepEqual(sheet.items, [
+      ['Copy link', null],
+      ['WhatsApp', `https://wa.me/?text=${encodeURIComponent(message)}`],
+      ['Telegram', `https://t.me/share/url?url=${encodeURIComponent('https://icathia.com/lifecentre-app-prototype/app/')}&text=${encodeURIComponent('Grace invited you to the Life Centre app. Join us:')}`],
+      ['Email', `mailto:?subject=${encodeURIComponent('Join me on the Life Centre app')}&body=${encodeURIComponent(message)}`],
+    ]);
+    assert.doesNotMatch(JSON.stringify(sheet), /Lim|Psalm/, 'no profile details');
+    await shot(page, 'profile-share-fallback');
+    await checkAccessibility(page, 'Share list');
+    await page.evaluate(() => { navigator.clipboard.writeText = async (t) => { window.__copied = t; }; }); // note what is copied
+    await page.click('.share-sheet .sh-item');
+    await waitText(page, 'Copied', '.share-sheet');
+    assert.equal(await page.evaluate(() => window.__copied), message);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.share-sheet'));
+    await context.close();
+    // with the phone's own share sheet, and no name set
+    const withSheet = await open('#/profile', { setup: (p) => p.evaluateOnNewDocument(() => { window.__shared = []; Object.defineProperty(Navigator.prototype, 'share', { value: async (d) => { window.__shared.push(d); }, configurable: true }); }) });
+    await withSheet.page.click('.pf-share');
+    await withSheet.page.waitForFunction(() => window.__shared.length === 1);
+    assert.deepEqual(await withSheet.page.evaluate(() => window.__shared), [{ text: "You're invited to the Life Centre app. Join us: https://icathia.com/lifecentre-app-prototype/app/" }]);
+    assert.equal(await withSheet.page.$('.share-sheet'), null);
+    await withSheet.context.close();
+    assert.deepEqual(errors, []);
+  });
+
+  it('posters see their live stories with view counts and an Add story tile; their new name and photo go to their staff entry through the upload Worker', async () => {
+    const UPLOADS = 'https://lifecentre-uploads.lifecentre-app-prototype.workers.dev/';
+    const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, PUT, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' };
+    const uploads = [];
+    const fakeWorker = async (p) => {
+      await p.setRequestInterception(true);
+      p.on('request', (req) => {
+        const u = req.url();
+        if (req.method() === 'OPTIONS' && u.startsWith(UPLOADS)) return req.respond({ status: 204, headers: CORS });
+        if (u.startsWith(`${UPLOADS}upload?`)) { const kind = new URL(u).searchParams.get('kind'); uploads.push({ kind, type: req.headers()['content-type'], auth: !!req.headers().authorization }); return req.respond({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ key: `${kind}/2026/11/1.jpeg`, publicUrl: `https://media.test/${kind}/2026/11/1.jpeg`, bytes: 1 }) }); }
+        if (u.startsWith('https://media.test/')) return req.respond({ status: 200, contentType: 'image/png', body: readFileSync(new URL('../icons/favicon-32.png', import.meta.url)) });
+        return req.continue();
+      });
+    };
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'staff', STAFF), { role: 'staff', postStories: true, updatedBy: ADMIN }));
+    await seedTextStory('mine', { author: STAFF, authorName: 'Staff Member', views: 3, updatedBy: STAFF });
+    await seedTextStory('other');
+    const { page, errors, context } = await openAsStaff('/profile', STAFF, { setup: fakeWorker });
+    await page.waitForSelector('.pf-thumb');
+    const strip = await page.$eval('.pf-stories', (s) => ({ title: s.querySelector('h2').textContent, tiles: [...s.querySelectorAll('.pf-tile')].map((t) => [t.getAttribute('href'), t.getAttribute('aria-label') ?? t.textContent]) }));
+    assert.deepEqual(strip, { title: 'Your stories', tiles: [['#/stories/new', 'Add story'], [null, 'Text story, 3 views']] });
+    await shot(page, 'profile-poster');
+    await page.click('.pf-thumb');
+    await page.waitForSelector('.st-stage');
+    await page.waitForFunction(() => document.querySelector('.st-views')?.textContent === '3 views');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.st-stage'));
+    await goto(page, '/profile/edit');
+    await page.waitForSelector('#pf-name');
+    await pickPicture(page, '#pf-photo-file');
+    await page.waitForSelector('.crop-use');
+    await page.click('.crop-use');
+    await page.waitForFunction(() => !document.querySelector('.crop-layer'));
+    await page.type('#pf-name', 'Pastor Sam');
+    await page.click('.pf-form button[type=submit]');
+    await page.waitForFunction(() => location.hash === '#/profile', { timeout: 20000 });
+    assert.deepEqual(uploads, [{ kind: 'avatars', type: 'image/jpeg', auth: true }]);
+    const entry = await readDoc('staff', STAFF);
+    assert.deepEqual([entry.displayName, entry.photo, entry.postStories], ['Pastor Sam', 'https://media.test/avatars/2026/11/1.jpeg', true]);
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('lc:v1:session'))).displayName, 'Pastor Sam');
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  it('someone without "Can post stories" keeps their profile on the phone only: no upload and no change to their staff entry', async () => {
+    const requests = [];
+    const { page, context } = await openAsStaff('/profile/edit', LEADER, { setup: (p) => p.on('request', (r) => requests.push(r.url())) });
+    await page.waitForSelector('#pf-name');
+    await page.type('#pf-name', 'Leader Lee');
+    const before = requests.length;
+    await page.click('.pf-form button[type=submit]');
+    await page.waitForFunction(() => location.hash === '#/profile');
+    assert.ok(!requests.slice(before).some((u) => u.includes('workers.dev')));
+    assert.equal((await readDoc('staff', LEADER)).displayName, undefined);
+    assert.equal(await pageTitle(page), 'Leader Lee');
     await context.close();
   });
 });

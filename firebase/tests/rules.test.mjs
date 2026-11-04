@@ -518,3 +518,71 @@ describe('videos (Watch)', () => {
     await assertSucceeds(deleteDoc(doc(user(ADMIN), 'videos', 'v1')));
   });
 });
+
+describe('devotions, chapters and the Biblica switch', () => {
+  const devotion = (email, extra = {}) => ({ title: 'Rest for the weary', body: 'Come to me, all who are weary.', prayer: 'Lord, give us rest.', passageId: 'MAT.11.28-30', reference: 'Matthew 11:28-30', updatedBy: email, ...extra });
+  const chapter = { date: '2026-11-04', versionId: 206, chapterId: 'JHN.3', passageId: 'JHN.3.16', reference: 'John 3', abbr: 'WEB', verses: [{ n: 16, text: 'For God so loved the world' }] };
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'devotions', '2026-11-04'), devotion(STAFF));
+      await setDoc(doc(db, 'chapters', '2026-11-04_206'), chapter);
+    });
+  });
+
+  it('everyone reads devotions, chapters and the switch, signed in or not', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'devotions', '2026-11-04')));
+    await assertSucceeds(getDocs(collection(anon(), 'devotions')));
+    await assertSucceeds(getDoc(doc(anon(), 'chapters', '2026-11-04_206')));
+    await assertSucceeds(getDoc(doc(anon(), 'config', 'bible')));
+  });
+
+  it('admins and staff schedule, change and delete a devotion; leaders, other people and the public cannot', async () => {
+    await assertSucceeds(setDoc(doc(user(STAFF), 'devotions', '2026-11-05'), devotion(STAFF, { updatedAt: serverTimestamp() })));
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'devotions', '2026-11-04'), devotion(ADMIN)));
+    await assertSucceeds(deleteDoc(doc(user(STAFF), 'devotions', '2026-11-05')));
+    await assertFails(setDoc(doc(user(LEADER), 'devotions', '2026-11-06'), devotion(LEADER)));
+    await assertFails(setDoc(doc(user('visitor@example.com'), 'devotions', '2026-11-06'), devotion('visitor@example.com')));
+    await assertFails(setDoc(doc(anon(), 'devotions', '2026-11-06'), devotion(STAFF)));
+    await assertFails(setDoc(doc(user(STAFF, false), 'devotions', '2026-11-06'), devotion(STAFF)));
+    await assertFails(deleteDoc(doc(user(LEADER), 'devotions', '2026-11-04')));
+    await assertFails(deleteDoc(doc(anon(), 'devotions', '2026-11-04')));
+  });
+
+  it('keeps a devotion to its shape: a date id, up to 3000 characters, a passage of at most 25 verses, every part, the writer named', async () => {
+    const db = user(STAFF);
+    await assertSucceeds(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { body: 'a'.repeat(3000) })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { body: 'a'.repeat(3001) })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { body: '' })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { title: 'x'.repeat(121) })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { prayer: '' })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { passageId: 'PSA.119.1-26', reference: 'Psalm 119:1-26' })));
+    await assertSucceeds(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { passageId: 'PSA.119.1-25', reference: 'Psalm 119:1-25' })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { passageId: 'Matthew 11' })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(STAFF, { extra: 'no' })));
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), devotion(ADMIN)));
+    await assertFails(setDoc(doc(db, 'devotions', 'tomorrow'), devotion(STAFF)));
+    const { title, ...noTitle } = devotion(STAFF);
+    void title;
+    await assertFails(setDoc(doc(db, 'devotions', '2026-11-07'), noTitle));
+  });
+
+  it('nobody in the app writes a chapter: the daily job does', async () => {
+    for (const db of [anon(), user(STAFF), user(ADMIN)]) {
+      await assertFails(setDoc(doc(db, 'chapters', '2026-11-05_206'), chapter));
+      await assertFails(deleteDoc(doc(db, 'chapters', '2026-11-04_206')));
+    }
+  });
+
+  it('only admins turn "Full chapter for Biblica versions" on or off, in their own name', async () => {
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'config', 'bible'), { biblicaChapters: true, updatedBy: ADMIN, updatedAt: serverTimestamp() }));
+    await assertSucceeds(setDoc(doc(user(ADMIN), 'config', 'bible'), { biblicaChapters: false, updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(STAFF), 'config', 'bible'), { biblicaChapters: true, updatedBy: STAFF }));
+    await assertFails(setDoc(doc(user(LEADER), 'config', 'bible'), { biblicaChapters: true, updatedBy: LEADER }));
+    await assertFails(setDoc(doc(anon(), 'config', 'bible'), { biblicaChapters: true, updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(ADMIN), 'config', 'bible'), { biblicaChapters: 'yes', updatedBy: ADMIN }));
+    await assertFails(setDoc(doc(user(ADMIN), 'config', 'bible'), { biblicaChapters: true, updatedBy: STAFF }));
+    await assertFails(setDoc(doc(user(ADMIN), 'config', 'bible'), { biblicaChapters: true, popupsOn: true, updatedBy: ADMIN }));
+    await assertFails(deleteDoc(doc(user(ADMIN), 'config', 'bible')));
+  });
+});

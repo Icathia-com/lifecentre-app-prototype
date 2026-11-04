@@ -33,10 +33,12 @@ export function createVerseCard({ builtIn, votd }) {
         onPick: (id) => { chosen = id; saveVersion(id); saveRecent(id); draw(); host.querySelector('.verse-chip')?.focus(); },
       }),
     }, h('span', { class: 'chip' }, card.abbr, ic('down', 11, 2.4)));
+    // The verse and its reference open today's flow (#/daily): the verse full screen, then today's stories or devotion, then the streak.
     host.replaceChildren(h('div', { class: 'verse-card' },
       h('div', { class: 'verse-top' }, h('h2', { id: 'verse-h' }, 'Verse of the day'), chip),
-      h('blockquote', { lang: langOf(card), class: [sizeClass(card.text), wide ? 'wide-script' : null].filter(Boolean).join(' ') || null }, card.text),
-      h('cite', {}, card.reference),
+      h('a', { class: 'verse-open', href: '#/daily' },
+        h('blockquote', { lang: langOf(card), class: [sizeClass(card.text), wide ? 'wide-script' : null].filter(Boolean).join(' ') || null }, card.text),
+        h('cite', {}, card.reference)),
       card.footnotes.length ? h('ol', { class: 'verse-notes', 'aria-label': 'Footnotes' }, card.footnotes.map((n) => h('li', {}, n))) : null,
       card.notice || card.link
         ? h('p', { class: 'verse-notice' }, card.notice, card.notice && card.link ? ' ' : null,

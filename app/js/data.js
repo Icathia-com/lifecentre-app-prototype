@@ -31,6 +31,12 @@ const readers = {
     approvedBy: d.approvedBy, note: d.note, createdAt: ms(d.createdAt), updatedAt: ms(d.updatedAt),
   }),
   config: (id, d) => ({ popupsOn: !!d.popupsOn, livePopupId: d.livePopupId ?? null }),
+  devotions: (id, d) => clean({ id, title: d.title, body: d.body, prayer: d.prayer, passageId: d.passageId, reference: d.reference }),
+  chapters: (id, d) => clean({
+    id, date: d.date, versionId: d.versionId, chapterId: d.chapterId, passageId: d.passageId, reference: d.reference, abbr: d.abbr, name: d.name,
+    verses: Array.isArray(d.verses) ? d.verses.filter((v) => v && Number.isInteger(v.n) && typeof v.text === 'string') : undefined,
+    text: d.text, notice: d.notice, publisher: d.publisher, link: d.link,
+  }),
 };
 const NO_CONFIG = () => ({ popupsOn: false, livePopupId: null });
 
@@ -50,6 +56,7 @@ const writers = {
     ...clean({ authorPhoto: v.authorPhoto, mediaUrl: v.mediaUrl, mediaType: v.mediaType, text: v.text, bgImage: v.bgImage, overlay: v.overlay }),
   }),
   videos: (v) => ({ title: v.title, src: v.src, ...clean({ org: v.org, desc: v.desc, videoId: v.videoId, url: v.url, dur: v.dur }) }),
+  devotions: (v) => ({ title: v.title, body: v.body, prayer: v.prayer, passageId: v.passageId, reference: v.reference }),
   popups: (v) => ({
     title: v.title, image: v.image, start: Timestamp.fromMillis(v.start), end: Timestamp.fromMillis(v.end), status: v.status, requestedBy: v.requestedBy,
     ...clean({ eventId: v.eventId, approvedBy: v.approvedBy, note: v.note }), ...(v.createdAt ? { createdAt: Timestamp.fromMillis(v.createdAt) } : {}),
@@ -64,6 +71,7 @@ const SORTS = {
   videos: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
   popups: (a, b) => (b.createdAt ?? b.updatedAt ?? 0) - (a.createdAt ?? a.updatedAt ?? 0),
   stories: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
+  devotions: (a, b) => (a.id < b.id ? 1 : -1),
 };
 
 const CACHE_PREFIX = 'lc:v1:';
@@ -117,6 +125,31 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
         const snap = await getDocFromServer(doc(db, 'votd', key));
         return snap.exists() ? readers.votd(snap.id, snap.data()) : null;
       }, (v) => v, () => null);
+    },
+
+    // The written devotion staff scheduled for a date, or null.
+    getDevotion(key = dateKey(now())) {
+      return load(`devotion:${key}`, async () => {
+        const snap = await getDocFromServer(doc(db, 'devotions', key));
+        return snap.exists() ? readers.devotions(snap.id, snap.data()) : null;
+      }, (v) => v, () => null);
+    },
+
+    // The whole chapter of a day's passage in one version (chapters/{date}_{versionId}, written by the daily job), or null.
+    getChapter(key, versionId) {
+      const id = `${key}_${Number(versionId)}`;
+      return load(`chapter:${id}`, async () => {
+        const snap = await getDocFromServer(doc(db, 'chapters', id));
+        return snap.exists() ? readers.chapters(snap.id, snap.data()) : null;
+      }, (v) => v, () => null);
+    },
+
+    // config/bible: whether Biblica versions may show the full chapter (off until an admin turns it on).
+    getBibleConfig() {
+      return load('config-bible', async () => {
+        const snap = await getDocFromServer(doc(db, 'config', 'bible'));
+        return { biblicaChapters: snap.exists() && snap.data().biblicaChapters === true };
+      }, (v) => v, () => ({ biblicaChapters: false }));
     },
 
     // Published announcements, pinned first, newest first, expired ones left out.
@@ -241,6 +274,8 @@ export function createData(db, { now = Date.now, timeoutMs = 8000 } = {}) {
         if (snap.exists()) await updateDoc(ref, fields);
         else await setDoc(ref, { popupsOn: false, ...fields });
       },
+      // The "Full chapter for Biblica versions" switch (admins).
+      setBibleConfig: (email, { biblicaChapters }) => setDoc(doc(db, 'config', 'bible'), { biblicaChapters: !!biblicaChapters, updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
       // A staff member's own display name and photo (the only things they may change about their entry).
       updateMe: (email, { displayName, photo }) => updateDoc(doc(db, 'staff', email.toLowerCase()), { displayName: String(displayName ?? '').trim().slice(0, 60), photo: photo || '', updatedBy: email.toLowerCase(), updatedAt: serverTimestamp() }),
     },

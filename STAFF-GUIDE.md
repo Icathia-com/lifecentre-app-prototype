@@ -8,6 +8,8 @@ This guide is for church staff, leaders and admins. You do not need any technica
 |---|:---:|:---:|:---:|
 | Post notices | Yes | Yes | No |
 | Add verses | Yes | Yes | No |
+| Schedule written devotions | Yes | Yes | No |
+| Turn on "Full chapter for Biblica versions" | Yes | No | No |
 | Create and edit events | Yes | Yes | No |
 | Add a video to Watch | Yes | No | Yes |
 | Remove a video from Watch | Yes | Yes | Yes |
@@ -19,7 +21,8 @@ This guide is for church staff, leaders and admins. You do not need any technica
 
 ## Sign in
 
-1. Open the app and tap the round avatar at the top right of Home. This opens **Account**.
+1. Open the app and tap the round avatar at the top right of Home. This opens your **profile**. Tap the gear at its top right to
+   open **Account**.
 2. Tap **Staff sign-in with Google** and choose your Google account.
 3. Account now shows your email and your role, with your tools underneath (**Admin tools** or **Staff tools**).
 
@@ -53,6 +56,28 @@ You choose the passage. The app shows its text on the Home screen on the day you
 A passage can be up to 25 verses. The list shows each verse by its date and reference only; the text is filled in for you, usually within the hour, and only for today and tomorrow.
 
 To change a verse, tap it in the list, edit it, and tap **Save**. You cannot change its date; delete it and add a new one instead.
+
+**The daily verse flow.** Tapping the verse on Home opens it full screen in the member's version. From there they swipe up (or tap
+the arrow) to today's stories, or to today's written devotion when no story is up (see below), and then to their streak: how many
+days in a row they reached the end. Without a story or a devotion the verse leads straight to the streak. Counting happens on each
+phone, with no sign-in, and is never sent anywhere.
+
+**Read the full chapter.** For most versions the verse screen offers **Read the full chapter**, with the day's verses highlighted.
+The chapter is fetched by the hourly verse job, for today only, and kept for 7 days. For versions published by Biblica (NIV, the
+Tamil, Malayalam, Thai and Chinese Contemporary versions) it is offered only once an admin ticks **Full chapter for Biblica
+versions**, at the top of **Verses** on the staff page. Leave it off until the church has Biblica's permission.
+
+## Schedule a devotion
+
+A written devotion shows in the daily verse flow on any day when nobody has a story up.
+
+1. Sign in, then tap **Devotions**.
+2. Pick the **Date** (tomorrow by default) and fill in the **Title** and the **Devotion** (up to 3000 characters; a blank line
+   starts a new paragraph).
+3. Pick the **Book**, the **Chapter**, **Verse from** and, for more than one verse, **Verse to** (up to 25 verses).
+4. Write the closing **Prayer**, then tap **Save**.
+
+One devotion per date. To change one, tap **Edit** next to it in the list; to remove it, tap **Delete**.
 
 ## Create an event
 
@@ -131,7 +156,7 @@ Stories are short posts that everyone can watch from the circles at the top of H
 Admins, and anyone with **Can post stories** on the staff list, can post them.
 
 **Post one:** if you can post, your own circle is always first on Home, labelled **Your story**, with a small **+**. Tap the **+**
-(or **Post a story** on Account) and the camera opens straight away, full screen, like Instagram. If you have a story up, tapping
+(or **Add story** on your profile, or **Post a story** on Account) and the camera opens straight away, full screen, like Instagram. If you have a story up, tapping
 your circle plays it and the **+** still opens the camera.
 - **STORY**: tap the big white button for a photo, or hold it to record a video. While holding, slide up to zoom in (down to
   zoom out), and slide left onto the lock to keep recording without holding; tap the button again to stop. Pinch the picture
@@ -159,11 +184,20 @@ A story's file stays available for up to two days after it is deleted or has exp
 **Watching:** tap a circle. The bars across the top are the parts. Tap the right side for the next part, the left side for the one
 before, hold to pause, swipe left or right for the next or previous person, swipe down to close. Sound is on for video and voice.
 
-**Your stories:** on Account, under **Stories**, each of your live stories shows how many times it was watched (a number only) and a
-**Delete** button, which removes it, all parts included.
+**Your stories:** your profile (the avatar on Home) shows your live stories with how many times each was watched (a number only),
+and an **Add story** tile. To delete one, open Account (the gear), where each story under **Stories** has a **Delete** button,
+which removes it, all parts included.
 
-**Your name and photo:** on Account, under **Your name and photo**, set the display name and picture shown on your stories. They start
-as your Google name and photo.
+**Your name and photo:** tap **Edit profile** on your profile. If you can post stories, the display name and photo you save there
+are also the ones shown on your stories. They start as your Google name and photo.
+
+## Profiles (everyone)
+
+Anyone with the app has a profile, signed in or not: tap the avatar at the top right of Home. It shows a banner, a photo, a name, a
+bio or Bible verse, a birthday (day and month only), and counts of verses read, devotions done and the current streak.
+**Edit profile** changes them; **Share my profile** sends an invitation to the app with the person's first name and the app's
+address, and nothing else. Profiles stay on the phone and are never sent to the church, except that people who can post stories
+also save their name and photo to the staff list for their story circle.
 
 ## Manage the staff list (admins only)
 

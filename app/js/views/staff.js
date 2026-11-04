@@ -1,4 +1,4 @@
-// Staff page: Google sign-in, then add, edit or delete church notices and scheduled verses, and manage events.
+// Staff page: Google sign-in, then add, edit or delete church notices, scheduled verses and written devotions, and manage events.
 // Events are created and edited in the app itself (#/events/new); this page lists them so they can be found and deleted.
 // Admins can also manage the staff list. The security rules decide what each account may do.
 import { data, getAuthTools } from '../firebase.js';
@@ -6,6 +6,24 @@ import { h, dateKey, addDays, formatDay, msToSgInput, sgInputToMs } from '../uti
 import { TYPES, siteName } from '../sites.js';
 import { BOOKS, buildPassage, parsePassageId, parseReference } from '../bible.js';
 import { popupsPanel } from './popups-panel.js';
+import { DEVOTION_LIMITS, prepareDevotion } from '../daily.js';
+
+// The "Full chapter for Biblica versions" switch (admins, on the Verses tab). Off until an admin turns it on: until then the
+// daily verse flow offers the full chapter only for versions whose publisher is not Biblica, and the daily job stores none.
+function biblicaSwitch(user) {
+  const status = h('p', { class: 'note', role: 'status', hidden: '' });
+  const box = h('input', { type: 'checkbox', id: 'bible-biblica', disabled: '' });
+  box.addEventListener('change', async () => {
+    box.disabled = true;
+    try { await data.admin.setBibleConfig(user.email, { biblicaChapters: box.checked }); status.textContent = 'Saved.'; } catch (err) { box.checked = !box.checked; status.textContent = `Could not save: ${explain(err)}`; }
+    status.hidden = false;
+    box.disabled = false;
+  });
+  data.getBibleConfig().then(({ value }) => { box.checked = !!value.biblicaChapters; box.disabled = false; });
+  return h('section', { class: 'card', 'aria-label': 'Full chapter' },
+    h('div', { class: 'field check' }, box, h('label', { for: 'bible-biblica' }, 'Full chapter for Biblica versions')),
+    status);
+}
 
 // Admins and staff post content; leaders are on the staff list but cannot (the security rules enforce this too).
 const POSTERS = ['admin', 'staff'];
@@ -46,6 +64,25 @@ const PANELS = {
       return built.ok ? { values: { date: v.date, passageId: built.passageId, reference: built.reference } } : { error: built.error };
     },
     show: (v) => [`${dateLabel(v.id)} · ${v.reference}`, []],
+    extra: (user, entry) => (entry.role === 'admin' ? biblicaSwitch(user) : null), // admins: the full chapter for Biblica versions
+  },
+  // Written devotions: one per date, shown in the daily verse flow on days with no story up.
+  devotions: {
+    label: 'Devotions', noun: 'devotion', idField: 'date', roles: POSTERS,
+    fields: [
+      { name: 'date', label: 'Date', type: 'date', required: true, lockWhenEditing: true },
+      { name: 'title', label: 'Title', type: 'text', required: true, max: DEVOTION_LIMITS.title },
+      { name: 'body', label: 'Devotion', type: 'textarea', required: true, max: DEVOTION_LIMITS.body, rows: 10, counter: true },
+      { name: 'book', label: 'Book', type: 'select', required: true, options: BOOKS.map((b) => ({ value: b.code, label: b.name })) },
+      { name: 'chapter', label: 'Chapter', type: 'whole', required: true, max: 3 },
+      { name: 'verseFrom', label: 'Verse from', type: 'whole', required: true, max: 3 },
+      { name: 'verseTo', label: 'Verse to (optional)', type: 'whole', max: 3 },
+      { name: 'prayer', label: 'Prayer', type: 'textarea', required: true, max: DEVOTION_LIMITS.prayer, rows: 4 },
+    ],
+    blank: () => ({ date: addDays(dateKey(), 1), book: 'PSA' }),
+    fromItem: (d) => { const p = parsePassageId(d.passageId); return { ...d, date: d.id, ...(p ? { book: p.code, chapter: p.chapter, verseFrom: p.from, verseTo: p.to ?? undefined } : {}) }; },
+    prepare: (v) => prepareDevotion(v),
+    show: (d) => [`${dateLabel(d.id)} · ${d.title}`, [d.reference]],
   },
   events: {
     label: 'Events', noun: 'event', roles: POSTERS, external: true, // created and edited in the app (#/events/new)
@@ -91,7 +128,14 @@ function fieldEl(f, value, id, editing) {
   }
   const common = { id, name: f.name, required: f.required, maxlength: f.max };
   let input;
-  if (f.type === 'textarea') input = h('textarea', { ...common, rows: 5 }, value ?? '');
+  if (f.type === 'textarea') {
+    input = h('textarea', { ...common, rows: f.rows ?? 5 }, value ?? '');
+    if (f.counter) {
+      const count = h('span', { class: 'pf-count', 'aria-live': 'polite' }, `${String(value ?? '').length}/${f.max}`);
+      input.addEventListener('input', () => { count.textContent = `${input.value.length}/${f.max}`; });
+      return h('div', { class: 'field' }, h('label', { for: id }, f.label), input, count);
+    }
+  }
   else if (f.type === 'select') {
     input = h('select', common, f.options.map((o) => {
       const [v, label] = typeof o === 'string' ? [o, o] : [o.value, o.label];
@@ -264,7 +308,8 @@ export async function render(root) {
       switcher.replaceChildren(...names.map((n) => h('button', {
         type: 'button', class: 'btn', 'aria-pressed': String(n === current), onclick: () => { current = n; draw(); },
       }, PANELS[n].label)));
-      holder.replaceChildren(PANELS[current].custom ? PANELS[current].custom(user, entry) : panel(current, PANELS[current], user));
+      const spec = PANELS[current];
+      holder.replaceChildren(...[spec.extra?.(user, entry), spec.custom ? spec.custom(user, entry) : panel(current, spec, user)].filter(Boolean));
     }
     draw();
     return h('div', { class: 'stack' },

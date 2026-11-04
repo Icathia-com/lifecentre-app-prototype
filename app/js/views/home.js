@@ -15,6 +15,7 @@ import { createStoriesRow } from './story-row.js';
 import { openStories } from './story-viewer.js';
 import { groupByAuthor } from '../stories.js';
 import { load, STORIES_SEEN } from '../local.js';
+import { PROFILE_KEY, cleanProfile } from '../profile.js';
 
 const COLW = 100;    // every day column is 100px wide, so a wider screen simply shows more days
 const TOTAL = 553;   // 26 weeks back and the year ahead, drawn only a few columns at a time
@@ -83,15 +84,18 @@ export function render(root) {
   const fab = h('button', { type: 'button', class: 'fab', 'aria-label': 'Add', 'aria-expanded': 'false', 'aria-controls': 'fab-menu', onclick: () => setMenu(menu.hidden) }, icon(PLUS));
   const note = h('p', { class: 'note', role: 'status', hidden: '' });
 
-  // The avatar opens the Account page: sign in there, or see who is signed in and sign out.
-  // It shows the first letter of whoever is signed in (a member for bookings, or staff with Google), else a person icon.
-  const avatar = h('a', { class: 'avatar', href: '#/account', 'aria-label': 'Account' });
+  // The avatar opens the profile (its gear has the Account screen). It shows the photo set on this phone, else the first letter
+  // of the name set there or of whoever is signed in (a member for bookings, or staff with Google), else a person icon.
+  const avatar = h('a', { class: 'avatar', href: '#/profile', 'aria-label': 'Profile' });
   let staffSession = null;
   let memberSession = null;
   const showAvatar = () => {
-    const who = (memberSession?.name || memberSession?.email || staffSession?.email || '').trim();
-    avatar.replaceChildren(who ? who[0].toUpperCase() : icon(PERSON));
-    avatar.setAttribute('aria-label', who ? `Account, signed in as ${memberSession?.email || staffSession?.email}` : 'Account, sign in');
+    const mine = cleanProfile(load(PROFILE_KEY, {}));
+    const who = (mine.name || memberSession?.name || memberSession?.email || staffSession?.email || '').trim();
+    avatar.replaceChildren(mine.photo ? h('img', { src: mine.photo, alt: '' }) : who ? who[0].toUpperCase() : icon(PERSON));
+    avatar.classList.toggle('has-photo', !!mine.photo);
+    const signedIn = memberSession?.email || staffSession?.email;
+    avatar.setAttribute('aria-label', signedIn ? `Profile, signed in as ${signedIn}` : 'Profile');
   };
   // The greeting at the top: the time of day in Singapore and the person's first name (the member sign-in first, else the Google
   // sign-in). Screen readers hear it as one sentence in the heading; the three visible lines are hidden from them. It changes
